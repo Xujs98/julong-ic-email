@@ -941,6 +941,12 @@
     .mailbox-export-option input { width: 18px; height: 18px; min-height: 0; margin: 1px 0 0; accent-color: var(--green); }
     .mailbox-export-option strong { display: block; color: var(--text); font-size: 14px; }
     .mailbox-export-option small { display: block; margin-top: 4px; color: var(--faint); font-size: 11px; line-height: 1.5; }
+    .mailbox-export-format-label { margin-top: 18px; }
+    .mailbox-export-format-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .mailbox-export-format { min-width: 0; padding: 12px 14px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 14px; color: var(--text); background: color-mix(in srgb, var(--panel) 94%, var(--bg-soft)); cursor: pointer; font-weight: 900; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+    .mailbox-export-format:hover { border-color: color-mix(in srgb, var(--green) 48%, var(--line)); background: var(--dragon-accent-soft); transform: translateY(-1px); }
+    .mailbox-export-format:has(input:checked) { border-color: color-mix(in srgb, var(--green) 62%, var(--line)); background: var(--dragon-accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 24%, transparent); }
+    .mailbox-export-format input { width: 18px; height: 18px; min-height: 0; margin: 0; accent-color: var(--green); }
     .mailbox-export-hint { margin-top: 14px; padding: 12px 14px; border-radius: 13px; color: var(--muted); background: var(--th-bg); font-size: 12px; line-height: 1.65; }
     .mailbox-export-status { min-height: 20px; margin-top: 12px; color: var(--bad); font-size: 12px; font-weight: 800; }
     .mailbox-export-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
@@ -977,6 +983,7 @@
       .mailbox-export-head { padding: 20px 18px 16px; }
       .mailbox-export-content { padding: 18px; }
       .mailbox-export-options { grid-template-columns: 1fr; }
+      .mailbox-export-format-options { grid-template-columns: 1fr; }
       .mailbox-export-actions { display: grid; grid-template-columns: 1fr 1fr; }
       .mailbox-messages-modal { max-height: calc(100vh - 22px); border-radius: 24px 24px 16px 16px; }
       .mailbox-messages-backdrop { align-items: flex-end; padding: 11px; }
@@ -1912,7 +1919,13 @@
           <label class="mailbox-export-option"><input id="mailboxExportAPI" type="checkbox" value="api" checked><span><strong>API</strong><small>长期取码 API 地址</small></span></label>
           <label class="mailbox-export-option"><input id="mailboxExportHTML" type="checkbox" value="html" checked><span><strong>HTML 地址</strong><small>可视化接码页面</small></span></label>
         </div>
-        <div id="mailboxExportHint" class="mailbox-export-hint">导出文件使用 CSV 格式，可直接用 Excel 打开。</div>
+        <span class="mailbox-export-label mailbox-export-format-label">选择文件格式</span>
+        <div class="mailbox-export-format-options">
+          <label class="mailbox-export-format"><input type="radio" name="mailboxExportFormat" value="txt" onchange="updateMailboxExportHint()"><span>TXT</span></label>
+          <label class="mailbox-export-format"><input type="radio" name="mailboxExportFormat" value="csv" onchange="updateMailboxExportHint()" checked><span>CSV</span></label>
+          <label class="mailbox-export-format"><input type="radio" name="mailboxExportFormat" value="json" onchange="updateMailboxExportHint()"><span>JSON</span></label>
+        </div>
+        <div id="mailboxExportHint" class="mailbox-export-hint">CSV 文件包含表头，可直接用 Excel 打开。</div>
         <div id="mailboxExportStatus" class="mailbox-export-status" aria-live="polite"></div>
         <div class="mailbox-export-actions">
           <button type="button" class="ghost" onclick="closeMailboxExport()">取消</button>
@@ -2776,12 +2789,11 @@
         ? '只导出当前已选择的出库邮箱。'
         : '导出当前筛选条件下全部分页中的出库邮箱。';
       $('mailboxExportCount').textContent = `${count} 个邮箱`;
-      $('mailboxExportHint').textContent = mailboxExportScope === 'batch'
-        ? '导出选中的邮箱；文件使用 CSV 格式，可直接用 Excel 打开。'
-        : '导出当前搜索和 Apple 账号筛选下的全部结果，自动跨越所有分页。';
       for (const id of ['mailboxExportEmail', 'mailboxExportAPI', 'mailboxExportHTML']) {
         $(id).checked = true;
       }
+      document.querySelector('input[name="mailboxExportFormat"][value="csv"]').checked = true;
+      updateMailboxExportHint();
       $('mailboxExportStatus').textContent = '';
       $('mailboxExportSubmit').disabled = false;
       $('mailboxExportSubmit').textContent = mailboxExportScope === 'batch' ? '导出选中' : '导出全部';
@@ -2811,6 +2823,33 @@
       ].filter(([, id]) => $(id).checked).map(([field]) => field);
     }
 
+    function selectedOutboundExportFormat() {
+      const selected = document.querySelector('input[name="mailboxExportFormat"]:checked');
+      return selected ? selected.value : 'csv';
+    }
+
+    function outboundExportFormatSpec(format) {
+      if (format === 'txt') {
+        return {extension:'txt', mime:'text/plain;charset=utf-8', description:'TXT 文件', accept:{'text/plain':['.txt']}};
+      }
+      if (format === 'json') {
+        return {extension:'json', mime:'application/json;charset=utf-8', description:'JSON 文件', accept:{'application/json':['.json']}};
+      }
+      return {extension:'csv', mime:'text/csv;charset=utf-8', description:'CSV 文件', accept:{'text/csv':['.csv']}};
+    }
+
+    function updateMailboxExportHint() {
+      const scopeText = mailboxExportScope === 'batch'
+        ? '只包含当前选中的出库邮箱。'
+        : '包含当前搜索和 Apple 账号筛选下的全部分页。';
+      const formatText = {
+        txt: 'TXT 使用制表符分隔字段，每行一个邮箱记录。',
+        csv: 'CSV 包含表头，可直接用 Excel 打开。',
+        json: 'JSON 使用结构化数组，便于程序读取。'
+      }[selectedOutboundExportFormat()];
+      $('mailboxExportHint').textContent = `${scopeText}${formatText}`;
+    }
+
     function outboundExportFieldValue(row, field) {
       if (field === 'email') return row.email || '';
       if (field === 'api') {
@@ -2834,6 +2873,28 @@
       return '\uFEFF' + lines.join('\r\n');
     }
 
+    function outboundExportTXT(rows, fields) {
+      const headers = {email: '邮箱', api: 'API', html: 'HTML地址'};
+      const clean = value => String(value || '').replace(/[\t\r\n]+/g, ' ');
+      const lines = [fields.map(field => headers[field]).join('\t')];
+      for (const row of rows) {
+        lines.push(fields.map(field => clean(outboundExportFieldValue(row, field))).join('\t'));
+      }
+      return '\uFEFF' + lines.join('\r\n');
+    }
+
+    function outboundExportJSON(rows, fields) {
+      return JSON.stringify(rows.map(row => Object.fromEntries(
+        fields.map(field => [field, outboundExportFieldValue(row, field)])
+      )), null, 2);
+    }
+
+    function outboundExportContent(rows, fields, format) {
+      if (format === 'txt') return outboundExportTXT(rows, fields);
+      if (format === 'json') return outboundExportJSON(rows, fields);
+      return outboundExportCSV(rows, fields);
+    }
+
     async function loadAllOutboundMailboxesForExport() {
       const params = mailboxListQuery();
       params.set('status', 'outbound');
@@ -2851,19 +2912,20 @@
       return rows;
     }
 
-    function outboundExportFilename(scope) {
+    function outboundExportFilename(scope, format) {
       const now = new Date();
       const pad = value => String(value).padStart(2, '0');
       const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      return `julong-outbound-${scope}-${stamp}.csv`;
+      return `julong-outbound-${scope}-${stamp}.${outboundExportFormatSpec(format).extension}`;
     }
 
-    async function saveOutboundExportFile(blob, filename) {
+    async function saveOutboundExportFile(blob, filename, format) {
+      const spec = outboundExportFormatSpec(format);
       if (window.showSaveFilePicker) {
         try {
           const handle = await window.showSaveFilePicker({
             suggestedName: filename,
-            types: [{description: 'CSV 文件', accept: {'text/csv': ['.csv']}}]
+            types: [{description: spec.description, accept: spec.accept}]
           });
           const writable = await handle.createWritable();
           await writable.write(blob);
@@ -2903,16 +2965,18 @@
           $('mailboxExportStatus').textContent = '当前范围没有可导出的出库邮箱。';
           return;
         }
-        const content = outboundExportCSV(rows, fields);
-        const filename = outboundExportFilename(mailboxExportScope);
-        const saved = await saveOutboundExportFile(new Blob([content], {type:'text/csv;charset=utf-8'}), filename);
+        const format = selectedOutboundExportFormat();
+        const spec = outboundExportFormatSpec(format);
+        const content = outboundExportContent(rows, fields, format);
+        const filename = outboundExportFilename(mailboxExportScope, format);
+        const saved = await saveOutboundExportFile(new Blob([content], {type:spec.mime}), filename, format);
         if (!saved) {
           $('mailboxExportStatus').textContent = '已取消导出。';
           return;
         }
         const fieldNames = fields.map(field => ({email:'邮箱', api:'API', html:'HTML 地址'})[field]).join('、');
-        log(`已导出 ${rows.length} 个出库邮箱：${fieldNames}`);
-        showToast(`已导出 ${rows.length} 个邮箱：${fieldNames}`);
+        log(`已导出 ${rows.length} 个出库邮箱：${fieldNames}（${format.toUpperCase()}）`);
+        showToast(`已导出 ${rows.length} 个邮箱：${format.toUpperCase()}`);
         closeMailboxExport();
       } catch (err) {
         $('mailboxExportStatus').textContent = '导出失败：' + err.message;
