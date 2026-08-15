@@ -168,6 +168,13 @@ func TestMailboxTableSupportsOutboundWorkflow(t *testing.T) {
 		`params.set('status', 'outbound')`,
 		`params.set('exclude_status', 'outbound')`,
 		`outbound:'出库'`,
+		`id="mailboxExportAllButton"`,
+		`id="mailboxBatchExportButton"`,
+		`id="mailboxExportModal"`,
+		`openMailboxExport('batch')`,
+		`selectedOutboundExportFields`,
+		`loadAllOutboundMailboxesForExport`,
+		`outboundExportCSV`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("mailbox outbound workflow source missing %q", want)

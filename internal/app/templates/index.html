@@ -927,6 +927,24 @@
       box-shadow: 0 36px 120px rgba(6, 22, 55, .28);
       overflow: hidden;
     }
+    body.mailbox-export-open { overflow: hidden; }
+    .mailbox-export-modal { width: min(610px, 100%); border-radius: 26px; }
+    .mailbox-export-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 26px 28px 20px; border-bottom: 1px solid var(--line); background: linear-gradient(135deg, color-mix(in srgb, var(--panel) 90%, var(--green) 10%), var(--panel)); }
+    .mailbox-export-head h2 { margin: 0; color: var(--text); font-size: 23px; }
+    .mailbox-export-head p { margin: 7px 0 0; color: var(--muted); line-height: 1.65; }
+    .mailbox-export-count { min-width: 82px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line)); border-radius: 999px; color: var(--green-2); background: var(--dragon-accent-soft); text-align: center; font-size: 12px; font-weight: 900; white-space: nowrap; }
+    .mailbox-export-content { padding: 22px 28px 26px; }
+    .mailbox-export-label { display: block; margin-bottom: 11px; color: var(--muted); font-size: 12px; font-weight: 900; }
+    .mailbox-export-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .mailbox-export-option { min-width: 0; padding: 15px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; border: 1px solid var(--line); border-radius: 16px; color: var(--text); background: color-mix(in srgb, var(--panel) 94%, var(--bg-soft)); cursor: pointer; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+    .mailbox-export-option:hover { border-color: color-mix(in srgb, var(--green) 48%, var(--line)); background: var(--dragon-accent-soft); transform: translateY(-1px); }
+    .mailbox-export-option input { width: 18px; height: 18px; min-height: 0; margin: 1px 0 0; accent-color: var(--green); }
+    .mailbox-export-option strong { display: block; color: var(--text); font-size: 14px; }
+    .mailbox-export-option small { display: block; margin-top: 4px; color: var(--faint); font-size: 11px; line-height: 1.5; }
+    .mailbox-export-hint { margin-top: 14px; padding: 12px 14px; border-radius: 13px; color: var(--muted); background: var(--th-bg); font-size: 12px; line-height: 1.65; }
+    .mailbox-export-status { min-height: 20px; margin-top: 12px; color: var(--bad); font-size: 12px; font-weight: 800; }
+    .mailbox-export-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    .mailbox-export-actions button { min-height: 42px; padding: 9px 17px; }
     body.mailbox-messages-open { overflow: hidden; }
     .mailbox-messages-modal { width: min(920px, 100%); max-height: min(820px, calc(100vh - 40px)); display: flex; flex-direction: column; border-radius: 26px; }
     .mailbox-messages-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 25px 26px 20px; border-bottom: 1px solid var(--line); background: linear-gradient(135deg, color-mix(in srgb, var(--panel) 90%, var(--green) 10%), var(--panel)); }
@@ -954,6 +972,12 @@
     .mailbox-message-html > summary::-webkit-details-marker { display: none; }
     .mailbox-message-frame { display: block; width: 100%; height: 430px; margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
     @media (max-width: 640px) {
+      .mailbox-export-backdrop { align-items: flex-end; padding: 11px; }
+      .mailbox-export-modal { border-radius: 24px 24px 16px 16px; }
+      .mailbox-export-head { padding: 20px 18px 16px; }
+      .mailbox-export-content { padding: 18px; }
+      .mailbox-export-options { grid-template-columns: 1fr; }
+      .mailbox-export-actions { display: grid; grid-template-columns: 1fr 1fr; }
       .mailbox-messages-modal { max-height: calc(100vh - 22px); border-radius: 24px 24px 16px 16px; }
       .mailbox-messages-backdrop { align-items: flex-end; padding: 11px; }
       .mailbox-messages-head { display: block; padding: 20px 18px 16px; }
@@ -1333,7 +1357,7 @@
     .mailbox-batch-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .mailbox-batch-actions button, .mailbox-batch-actions select { min-height: 36px; padding: 7px 11px; border-radius: 10px; font-size: 12px; }
     .mailbox-batch-actions select { width: auto; min-width: 132px; }
-    .mailbox-table-wrap { border-radius: 16px; margin-top: 30px;}
+    .mailbox-table-wrap { border-radius: 16px; margin-top: 30px;height: 500px;}
     .mailbox-table { min-width: 1560px; table-layout: auto; }
     .mailbox-table th {
       height: 58px;
@@ -1766,6 +1790,7 @@
             <div class="mailbox-control-stack">
               <div class="mailbox-action-row">
                 <button id="syncICloudMailboxesButton" onclick="syncICloudMailboxes()">同步已有邮箱</button>
+                <button id="mailboxExportAllButton" type="button" onclick="openMailboxExport('all')" hidden>全部导出</button>
                 <button onclick="clearMailboxSearch()">清空搜索</button>
               </div>
               <div class="pager">
@@ -1789,6 +1814,7 @@
               <button type="button" onclick="batchSyncMailboxes()">同步邮件</button>
               <button id="mailboxBatchOutboundButton" type="button" class="primary" onclick="batchOutboundMailboxes()">出库</button>
               <button id="mailboxBatchReturnButton" type="button" onclick="batchReturnMailboxes()" hidden>退回库存</button>
+              <button id="mailboxBatchExportButton" type="button" onclick="openMailboxExport('batch')" hidden>批量导出</button>
               <select id="mailboxBatchStatus" onchange="batchSetMailboxStatus(this.value)">
                 <option value="">批量改状态</option>
                 <option value="available">设为可用</option>
@@ -1870,6 +1896,31 @@
       <div id="mailboxMessagesList" class="mailbox-messages-list"><div class="mailbox-messages-loading">正在读取邮件…</div></div>
     </section>
   </div>
+  <div id="mailboxExportModal" class="modal-backdrop mailbox-export-backdrop" aria-hidden="true" onclick="closeMailboxExport(event)">
+    <section class="modal mailbox-export-modal" role="dialog" aria-modal="true" aria-labelledby="mailboxExportTitle" onclick="event.stopPropagation()">
+      <header class="mailbox-export-head">
+        <div>
+          <h2 id="mailboxExportTitle">导出出库邮箱</h2>
+          <p id="mailboxExportSubtitle">选择需要写入导出文件的内容。</p>
+        </div>
+        <span id="mailboxExportCount" class="mailbox-export-count">0 个邮箱</span>
+      </header>
+      <div class="mailbox-export-content">
+        <span class="mailbox-export-label">选择导出内容（可多选）</span>
+        <div class="mailbox-export-options">
+          <label class="mailbox-export-option"><input id="mailboxExportEmail" type="checkbox" value="email" checked><span><strong>邮箱</strong><small>隐私邮箱地址</small></span></label>
+          <label class="mailbox-export-option"><input id="mailboxExportAPI" type="checkbox" value="api" checked><span><strong>API</strong><small>长期取码 API 地址</small></span></label>
+          <label class="mailbox-export-option"><input id="mailboxExportHTML" type="checkbox" value="html" checked><span><strong>HTML 地址</strong><small>可视化接码页面</small></span></label>
+        </div>
+        <div id="mailboxExportHint" class="mailbox-export-hint">导出文件使用 CSV 格式，可直接用 Excel 打开。</div>
+        <div id="mailboxExportStatus" class="mailbox-export-status" aria-live="polite"></div>
+        <div class="mailbox-export-actions">
+          <button type="button" class="ghost" onclick="closeMailboxExport()">取消</button>
+          <button id="mailboxExportSubmit" type="button" class="primary" onclick="exportOutboundMailboxes()">开始导出</button>
+        </div>
+      </div>
+    </section>
+  </div>
   <div id="runConfigModal" class="modal-backdrop" onclick="closeRunConfig(event)">
     <section class="modal" onclick="event.stopPropagation()">
       <div class="panel-head">
@@ -1948,6 +1999,8 @@
     let activeMailboxMessagesID = '';
     let mailboxMessagesRequestID = 0;
     let mailboxMessagesPreviousFocus = null;
+    let mailboxExportScope = 'all';
+    let mailboxExportPreviousFocus = null;
     let selectedCreateAccountIDs = new Set();
     let currentUser = null;
     const viewStorageKey = 'julong_mail_active_view';
@@ -2024,6 +2077,11 @@
       if (event.key === 'Escape' && $('mailboxMessagesModal').classList.contains('show')) {
         event.preventDefault();
         closeMailboxMessages();
+        return;
+      }
+      if (event.key === 'Escape' && $('mailboxExportModal').classList.contains('show')) {
+        event.preventDefault();
+        closeMailboxExport();
       }
     });
 
@@ -2070,6 +2128,8 @@
       }
       if ($('mailboxBatchOutboundButton')) $('mailboxBatchOutboundButton').hidden = outbound;
       if ($('mailboxBatchReturnButton')) $('mailboxBatchReturnButton').hidden = !outbound;
+      if ($('mailboxExportAllButton')) $('mailboxExportAllButton').hidden = !outbound;
+      if ($('mailboxBatchExportButton')) $('mailboxBatchExportButton').hidden = !outbound;
     }
 
     function initViewNavigation() {
@@ -2698,6 +2758,169 @@
     function closeRunConfig(event) {
       if (event && event.target !== $('runConfigModal')) return;
       $('runConfigModal').classList.remove('show');
+    }
+
+    function openMailboxExport(scope = 'all') {
+      if (activeView !== 'outbound') return;
+      const batchRows = selectedMailboxList();
+      if (scope === 'batch' && batchRows.length === 0) {
+        showToast('请先选择需要导出的出库邮箱');
+        return;
+      }
+      mailboxExportScope = scope === 'batch' ? 'batch' : 'all';
+      const count = mailboxExportScope === 'batch'
+        ? batchRows.length
+        : Number(lastMailboxPagination.total || 0);
+      $('mailboxExportTitle').textContent = mailboxExportScope === 'batch' ? '批量导出选中邮箱' : '全部导出出库邮箱';
+      $('mailboxExportSubtitle').textContent = mailboxExportScope === 'batch'
+        ? '只导出当前已选择的出库邮箱。'
+        : '导出当前筛选条件下全部分页中的出库邮箱。';
+      $('mailboxExportCount').textContent = `${count} 个邮箱`;
+      $('mailboxExportHint').textContent = mailboxExportScope === 'batch'
+        ? '导出选中的邮箱；文件使用 CSV 格式，可直接用 Excel 打开。'
+        : '导出当前搜索和 Apple 账号筛选下的全部结果，自动跨越所有分页。';
+      for (const id of ['mailboxExportEmail', 'mailboxExportAPI', 'mailboxExportHTML']) {
+        $(id).checked = true;
+      }
+      $('mailboxExportStatus').textContent = '';
+      $('mailboxExportSubmit').disabled = false;
+      $('mailboxExportSubmit').textContent = mailboxExportScope === 'batch' ? '导出选中' : '导出全部';
+      mailboxExportPreviousFocus = document.activeElement;
+      document.body.classList.add('mailbox-export-open');
+      $('mailboxExportModal').classList.add('show');
+      $('mailboxExportModal').setAttribute('aria-hidden', 'false');
+      requestAnimationFrame(() => $('mailboxExportEmail').focus());
+    }
+
+    function closeMailboxExport(event) {
+      if (event && event.target !== $('mailboxExportModal')) return;
+      $('mailboxExportModal').classList.remove('show');
+      $('mailboxExportModal').setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('mailbox-export-open');
+      if (mailboxExportPreviousFocus && typeof mailboxExportPreviousFocus.focus === 'function') {
+        mailboxExportPreviousFocus.focus({preventScroll: true});
+      }
+      mailboxExportPreviousFocus = null;
+    }
+
+    function selectedOutboundExportFields() {
+      return [
+        ['email', 'mailboxExportEmail'],
+        ['api', 'mailboxExportAPI'],
+        ['html', 'mailboxExportHTML']
+      ].filter(([, id]) => $(id).checked).map(([field]) => field);
+    }
+
+    function outboundExportFieldValue(row, field) {
+      if (field === 'email') return row.email || '';
+      if (field === 'api') {
+        try {
+          return mailboxCodeURL(row, {waitMs: 12000}).toString();
+        } catch (_) {
+          return row.api_url || '';
+        }
+      }
+      if (field === 'html') return row.html_link_url || '';
+      return '';
+    }
+
+    function outboundExportCSV(rows, fields) {
+      const headers = {email: '邮箱', api: 'API', html: 'HTML地址'};
+      const escapeCSV = value => `"${String(value || '').replace(/"/g, '""')}"`;
+      const lines = [fields.map(field => escapeCSV(headers[field])).join(',')];
+      for (const row of rows) {
+        lines.push(fields.map(field => escapeCSV(outboundExportFieldValue(row, field))).join(','));
+      }
+      return '\uFEFF' + lines.join('\r\n');
+    }
+
+    async function loadAllOutboundMailboxesForExport() {
+      const params = mailboxListQuery();
+      params.set('status', 'outbound');
+      params.delete('exclude_status');
+      params.set('page_size', '500');
+      params.set('page', '1');
+      const first = await api('/api/mailboxes?' + params.toString());
+      const rows = [...(first.mailboxes || [])];
+      const totalPages = Math.max(1, Number(first.pagination && first.pagination.total_pages || 1));
+      for (let page = 2; page <= totalPages; page += 1) {
+        params.set('page', String(page));
+        const data = await api('/api/mailboxes?' + params.toString());
+        rows.push(...(data.mailboxes || []));
+      }
+      return rows;
+    }
+
+    function outboundExportFilename(scope) {
+      const now = new Date();
+      const pad = value => String(value).padStart(2, '0');
+      const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      return `julong-outbound-${scope}-${stamp}.csv`;
+    }
+
+    async function saveOutboundExportFile(blob, filename) {
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{description: 'CSV 文件', accept: {'text/csv': ['.csv']}}]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return true;
+        } catch (err) {
+          if (err && err.name === 'AbortError') return false;
+          log('系统保存对话框不可用，改用浏览器默认下载：' + err.message);
+        }
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      return true;
+    }
+
+    async function exportOutboundMailboxes() {
+      const fields = selectedOutboundExportFields();
+      if (fields.length === 0) {
+        $('mailboxExportStatus').textContent = '请至少选择一项导出内容。';
+        return;
+      }
+      const button = $('mailboxExportSubmit');
+      button.disabled = true;
+      button.textContent = '正在生成…';
+      $('mailboxExportStatus').textContent = '';
+      try {
+        const rows = mailboxExportScope === 'batch'
+          ? selectedMailboxList()
+          : await loadAllOutboundMailboxesForExport();
+        if (rows.length === 0) {
+          $('mailboxExportStatus').textContent = '当前范围没有可导出的出库邮箱。';
+          return;
+        }
+        const content = outboundExportCSV(rows, fields);
+        const filename = outboundExportFilename(mailboxExportScope);
+        const saved = await saveOutboundExportFile(new Blob([content], {type:'text/csv;charset=utf-8'}), filename);
+        if (!saved) {
+          $('mailboxExportStatus').textContent = '已取消导出。';
+          return;
+        }
+        const fieldNames = fields.map(field => ({email:'邮箱', api:'API', html:'HTML 地址'})[field]).join('、');
+        log(`已导出 ${rows.length} 个出库邮箱：${fieldNames}`);
+        showToast(`已导出 ${rows.length} 个邮箱：${fieldNames}`);
+        closeMailboxExport();
+      } catch (err) {
+        $('mailboxExportStatus').textContent = '导出失败：' + err.message;
+        log('导出出库邮箱失败：' + err.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = mailboxExportScope === 'batch' ? '导出选中' : '导出全部';
+      }
     }
 
     async function exportRuntimeData() {
