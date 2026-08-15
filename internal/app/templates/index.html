@@ -2843,7 +2843,7 @@
         ? '只包含当前选中的出库邮箱。'
         : '包含当前搜索和 Apple 账号筛选下的全部分页。';
       const formatText = {
-        txt: 'TXT 使用制表符分隔字段，每行一个邮箱记录。',
+        txt: 'TXT 每行一个邮箱记录，所选字段按顺序使用 ---- 连接。',
         csv: 'CSV 包含表头，可直接用 Excel 打开。',
         json: 'JSON 使用结构化数组，便于程序读取。'
       }[selectedOutboundExportFormat()];
@@ -2874,12 +2874,10 @@
     }
 
     function outboundExportTXT(rows, fields) {
-      const headers = {email: '邮箱', api: 'API', html: 'HTML地址'};
       const clean = value => String(value || '').replace(/[\t\r\n]+/g, ' ');
-      const lines = [fields.map(field => headers[field]).join('\t')];
-      for (const row of rows) {
-        lines.push(fields.map(field => clean(outboundExportFieldValue(row, field))).join('\t'));
-      }
+      const lines = rows.map(row => fields.map(
+        field => clean(outboundExportFieldValue(row, field))
+      ).join('----'));
       return '\uFEFF' + lines.join('\r\n');
     }
 

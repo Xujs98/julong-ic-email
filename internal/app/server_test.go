@@ -177,6 +177,7 @@ func TestMailboxTableSupportsOutboundWorkflow(t *testing.T) {
 		`loadAllOutboundMailboxesForExport`,
 		`outboundExportCSV`,
 		`outboundExportTXT`,
+		`.join('----')`,
 		`outboundExportJSON`,
 		`outboundExportContent`,
 		`name="mailboxExportFormat" value="txt"`,
