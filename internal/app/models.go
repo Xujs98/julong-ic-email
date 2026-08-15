@@ -22,15 +22,35 @@ const (
 )
 
 type State struct {
-	NextID         int              `json:"next_id"`
-	Users          []User           `json:"users,omitempty"`
-	WebSessions    []WebSession     `json:"web_sessions,omitempty"`
-	Accounts       []Account        `json:"accounts"`
-	Mailboxes      []Mailbox        `json:"mailboxes"`
-	Messages       []Message        `json:"messages"`
-	ICloudSession  *ICloudSession   `json:"icloud_session,omitempty"`
-	ICloudSessions []ICloudSession  `json:"icloud_sessions,omitempty"`
-	CreateSettings []CreateSettings `json:"create_settings,omitempty"`
+	NextID           int               `json:"next_id"`
+	Users            []User            `json:"users,omitempty"`
+	WebSessions      []WebSession      `json:"web_sessions,omitempty"`
+	Accounts         []Account         `json:"accounts"`
+	Mailboxes        []Mailbox         `json:"mailboxes"`
+	Messages         []Message         `json:"messages"`
+	ICloudSession    *ICloudSession    `json:"icloud_session,omitempty"`
+	ICloudSessions   []ICloudSession   `json:"icloud_sessions,omitempty"`
+	CreateSettings   []CreateSettings  `json:"create_settings,omitempty"`
+	SystemSettings   SystemSettings    `json:"system_settings,omitempty"`
+	MailboxHTMLLinks []MailboxHTMLLink `json:"mailbox_html_links,omitempty"`
+}
+
+// SystemSettings controls public registration, the administrator entry point,
+// and the lifetime of mailbox HTML code pages. API tokens are independent.
+type SystemSettings struct {
+	RegistrationEnabled bool      `json:"registration_enabled"`
+	AdminPath           string    `json:"admin_path"`
+	HTMLLinkTTLDays     int       `json:"html_link_ttl_days"`
+	UpdatedAt           time.Time `json:"updated_at,omitempty"`
+}
+
+type MailboxHTMLLink struct {
+	Token       string    `json:"token"`
+	MailboxID   string    `json:"mailbox_id"`
+	OwnerID     string    `json:"owner_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	ActivatedAt time.Time `json:"activated_at,omitempty"`
+	ExpiresAt   time.Time `json:"expires_at,omitempty"`
 }
 
 const (
@@ -100,6 +120,7 @@ type Message struct {
 	Subject    string    `json:"subject"`
 	From       string    `json:"from"`
 	Body       string    `json:"body"`
+	HTMLBody   string    `json:"html_body,omitempty"`
 	ReceivedAt time.Time `json:"received_at"`
 	CreatedAt  time.Time `json:"created_at"`
 }
@@ -297,6 +318,10 @@ type publicMailbox struct {
 	Email              string `json:"email"`
 	APITokenMask       string `json:"api_token_mask"`
 	APIURL             string `json:"api_url"`
+	HTMLLinkURL        string `json:"html_link_url,omitempty"`
+	HTMLLinkActivated  string `json:"html_link_activated_at,omitempty"`
+	HTMLLinkExpires    string `json:"html_link_expires,omitempty"`
+	HTMLLinkTTLDays    int    `json:"html_link_ttl_days"`
 	APIActive          bool   `json:"api_active"`
 	ICloudActive       bool   `json:"icloud_active"`
 	ReceiveCount       int    `json:"receive_count"`
@@ -331,6 +356,7 @@ type publicMessage struct {
 	Subject    string `json:"subject"`
 	From       string `json:"from"`
 	Body       string `json:"body"`
+	HTMLBody   string `json:"html_body,omitempty"`
 	ReceivedAt string `json:"received_at"`
 	CreatedAt  string `json:"created_at"`
 }

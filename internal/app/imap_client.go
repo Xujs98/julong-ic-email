@@ -892,7 +892,7 @@ func parseICloudIMAPMessage(item iCloudIMAPFetchedMessage) (ICloudSyncedMessage,
 		return ICloudSyncedMessage{}, "", false
 	}
 	bodyBytes, _ := io.ReadAll(io.LimitReader(msg.Body, 1<<20))
-	body := decodeICloudIMAPBody(msg.Header, bodyBytes)
+	body := decodeICloudIMAPBodies(msg.Header, bodyBytes)
 	subject := decodeMIMEHeader(msg.Header.Get("Subject"))
 	from := decodeMIMEHeader(msg.Header.Get("From"))
 	receivedAt := time.Now()
@@ -910,7 +910,8 @@ func parseICloudIMAPMessage(item iCloudIMAPFetchedMessage) (ICloudSyncedMessage,
 		UID:        uid,
 		Subject:    subject,
 		From:       from,
-		Body:       normalizeMailBody(subject + "\n" + body),
+		Body:       normalizeMailBody(subject + "\n" + firstNonEmpty(body.Text, body.HTML)),
+		HTMLBody:   body.HTML,
 		ReceivedAt: receivedAt,
 	}, recipients, true
 }
@@ -1040,36 +1041,56 @@ func decodeMIMEHeader(value string) string {
 	return strings.TrimSpace(decoded)
 }
 
-func decodeICloudIMAPBody(header mail.Header, body []byte) string {
+type iCloudIMAPBody struct {
+	Text string
+	HTML string
+}
+
+func decodeICloudIMAPBodies(header mail.Header, body []byte) iCloudIMAPBody {
 	mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
 	if err != nil {
 		mediaType = strings.ToLower(strings.TrimSpace(header.Get("Content-Type")))
 	}
 	decoded := decodeICloudIMAPTransfer(header.Get("Content-Transfer-Encoding"), body)
+	if strings.Contains(strings.ToLower(header.Get("Content-Disposition")), "attachment") {
+		return iCloudIMAPBody{}
+	}
 	if strings.HasPrefix(strings.ToLower(mediaType), "multipart/") {
 		boundary := params["boundary"]
 		if boundary == "" {
-			return string(decoded)
+			return iCloudIMAPBody{Text: string(decoded)}
 		}
 		reader := multipart.NewReader(bytes.NewReader(decoded), boundary)
-		var parts []string
+		var textParts []string
+		var htmlParts []string
 		for i := 0; i < 30; i++ {
 			part, err := reader.NextPart()
 			if err != nil {
 				break
 			}
 			partBody, _ := io.ReadAll(io.LimitReader(part, 1<<20))
-			text := decodeICloudIMAPBody(mail.Header(part.Header), partBody)
-			if strings.TrimSpace(text) != "" {
-				parts = append(parts, text)
+			content := decodeICloudIMAPBodies(mail.Header(part.Header), partBody)
+			if strings.TrimSpace(content.Text) != "" {
+				textParts = append(textParts, content.Text)
+			}
+			if strings.TrimSpace(content.HTML) != "" {
+				htmlParts = append(htmlParts, content.HTML)
 			}
 		}
-		return strings.Join(parts, "\n")
+		return iCloudIMAPBody{Text: strings.Join(textParts, "\n"), HTML: strings.Join(htmlParts, "\n")}
+	}
+	if strings.HasPrefix(strings.ToLower(mediaType), "text/html") {
+		return iCloudIMAPBody{HTML: string(decoded)}
 	}
 	if strings.HasPrefix(strings.ToLower(mediaType), "text/") || mediaType == "" {
-		return string(decoded)
+		return iCloudIMAPBody{Text: string(decoded)}
 	}
-	return string(decoded)
+	return iCloudIMAPBody{}
+}
+
+func decodeICloudIMAPBody(header mail.Header, body []byte) string {
+	decoded := decodeICloudIMAPBodies(header, body)
+	return firstNonEmpty(decoded.Text, decoded.HTML)
 }
 
 func decodeICloudIMAPTransfer(encoding string, body []byte) []byte {

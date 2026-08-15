@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"icloud-privacy-mail/internal/app"
+	"github.com/Xujs98/julong-ic-email/internal/app"
 )
 
 func main() {
@@ -73,7 +73,7 @@ func main() {
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	logger.Info("iCloud Privacy Mail panel started", "addr", "http://"+server.Addr)
+	logger.Info("矩龙邮箱 panel started", "addr", "http://"+server.Addr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error("server stopped", "err", err)
 		os.Exit(1)

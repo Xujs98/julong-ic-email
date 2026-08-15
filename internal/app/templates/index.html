@@ -3,7 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>iCloud Privacy Mail</title>
+  <title>矩龙邮箱</title>
+  <script>
+    (() => {
+      const themes = ['mint','sky','graphite','sunset','violet','rose','forest','midnight','obsidian','aurora'];
+      let theme = 'sky';
+      try { theme = localStorage.getItem('julong_mail_theme') || 'sky'; } catch (_) {}
+      document.documentElement.dataset.theme = themes.includes(theme) ? theme : 'sky';
+    })();
+  </script>
   <style>
     :root {
       color-scheme: light;
@@ -51,7 +59,7 @@
       --head-bg: rgb(var(--surface-rgb) / .86);
       --input-bg: rgb(var(--surface-rgb) / .9);
     }
-    body[data-theme="sky"] {
+    :root[data-theme="sky"] {
       --surface-rgb: 255 255 255;
       --bg: #eef4fc; --bg-soft: #f6faff; --panel: #ffffff; --card: #ffffff;
       --text: #0a1b35; --ink: #0f1f3d; --ink-soft: #243b63; --muted: #4f6488; --faint: #7c8fb0;
@@ -64,7 +72,7 @@
       --shadow: 0 16px 42px rgba(37, 99, 235, .08); --shadow-strong: 0 30px 78px rgba(37, 99, 235, .15);
       --focus-ring: rgba(37, 99, 235, .16);
     }
-    body[data-theme="graphite"] {
+    :root[data-theme="graphite"] {
       --surface-rgb: 255 255 255;
       --bg: #f1f2f4; --bg-soft: #f8f9fa; --panel: #ffffff; --card: #ffffff;
       --text: #14181f; --ink: #1a1f27; --ink-soft: #313a47; --muted: #5b6675; --faint: #8a93a1;
@@ -77,7 +85,7 @@
       --shadow: 0 14px 38px rgba(15, 23, 42, .07); --shadow-strong: 0 28px 70px rgba(15, 23, 42, .14);
       --focus-ring: rgba(71, 85, 105, .16);
     }
-    body[data-theme="sunset"] {
+    :root[data-theme="sunset"] {
       --surface-rgb: 255 252 249;
       --bg: #fbf4ee; --bg-soft: #fef9f4; --panel: #fffdfb; --card: #fffdfb;
       --text: #2a1505; --ink: #2e1a0a; --ink-soft: #4a2f18; --muted: #7c5a3e; --faint: #ac8d72;
@@ -90,7 +98,7 @@
       --shadow: 0 14px 36px rgba(120, 60, 20, .08); --shadow-strong: 0 28px 72px rgba(120, 60, 20, .16);
       --focus-ring: rgba(251, 115, 56, .18);
     }
-    body[data-theme="violet"] {
+    :root[data-theme="violet"] {
       --surface-rgb: 252 251 255;
       --bg: #f4f2fb; --bg-soft: #faf8ff; --panel: #ffffff; --card: #fdfcff;
       --text: #190b33; --ink: #1a1330; --ink-soft: #2c2350; --muted: #5d5478; --faint: #948db0;
@@ -103,7 +111,7 @@
       --shadow: 0 14px 36px rgba(45, 27, 90, .08); --shadow-strong: 0 28px 72px rgba(45, 27, 90, .16);
       --focus-ring: rgba(124, 108, 160, .20);
     }
-    body[data-theme="rose"] {
+    :root[data-theme="rose"] {
       --surface-rgb: 255 251 252;
       --bg: #faf2f5; --bg-soft: #fef7f9; --panel: #ffffff; --card: #fffafc;
       --text: #2a0a18; --ink: #2e1020; --ink-soft: #4d1f37; --muted: #7d5060; --faint: #ad8693;
@@ -116,7 +124,7 @@
       --shadow: 0 14px 36px rgba(72, 16, 40, .07); --shadow-strong: 0 28px 72px rgba(72, 16, 40, .14);
       --focus-ring: rgba(225, 29, 98, .18);
     }
-    body[data-theme="forest"] {
+    :root[data-theme="forest"] {
       --surface-rgb: 251 254 252;
       --bg: #eef4f0; --bg-soft: #f4faf6; --panel: #ffffff; --card: #ffffff;
       --text: #06251a; --ink: #0d2a1f; --ink-soft: #1d4234; --muted: #4a6a5b; --faint: #7f9a8c;
@@ -129,7 +137,7 @@
       --shadow: 0 14px 36px rgba(6, 37, 26, .07); --shadow-strong: 0 28px 72px rgba(6, 37, 26, .13);
       --focus-ring: rgba(16, 185, 129, .16);
     }
-    body[data-theme="midnight"] {
+    :root[data-theme="midnight"] {
       color-scheme: dark;
       --surface-rgb: 44 56 82;
       --bg: #0b1220; --bg-soft: #0f1830; --panel: #161f33; --card: #1d2740;
@@ -143,7 +151,7 @@
       --shadow: 0 14px 36px rgba(0, 0, 0, .5); --shadow-strong: 0 28px 72px rgba(0, 0, 0, .62);
       --focus-ring: rgba(56, 189, 248, .32);
     }
-    body[data-theme="obsidian"] {
+    :root[data-theme="obsidian"] {
       color-scheme: dark;
       --surface-rgb: 48 53 64;
       --bg: #0c0e12; --bg-soft: #111420; --panel: #16181f; --card: #1c1f27;
@@ -157,7 +165,7 @@
       --shadow: 0 14px 36px rgba(0, 0, 0, .55); --shadow-strong: 0 28px 72px rgba(0, 0, 0, .68);
       --focus-ring: rgba(34, 211, 238, .30);
     }
-    body[data-theme="aurora"] {
+    :root[data-theme="aurora"] {
       color-scheme: dark;
       --surface-rgb: 40 60 64;
       --bg: #08161a; --bg-soft: #0c1f22; --panel: #102528; --card: #163133;
@@ -916,6 +924,77 @@
       box-shadow: 0 36px 120px rgba(6, 22, 55, .28);
       overflow: hidden;
     }
+    body.app-confirm-open { overflow: hidden; }
+    .app-confirm-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 22px;
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+      background: color-mix(in srgb, var(--ink) 42%, transparent);
+      backdrop-filter: blur(14px) saturate(1.12);
+      transition: opacity .22s ease, visibility .22s ease;
+    }
+    .app-confirm-backdrop.show { visibility: visible; opacity: 1; pointer-events: auto; }
+    .app-confirm-card {
+      position: relative;
+      width: min(470px, 100%);
+      overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--green) 24%, var(--line));
+      border-radius: 26px;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 92% 2%, color-mix(in srgb, var(--green) 18%, transparent), transparent 34%),
+        color-mix(in srgb, var(--panel) 96%, transparent);
+      box-shadow: 0 32px 96px color-mix(in srgb, var(--ink) 30%, transparent);
+      transform: translateY(16px) scale(.96);
+      transition: transform .28s var(--ease-spring, cubic-bezier(.22,1,.36,1));
+    }
+    .app-confirm-backdrop.show .app-confirm-card { transform: translateY(0) scale(1); }
+    .app-confirm-accent { height: 5px; background: linear-gradient(90deg, var(--green), var(--green-2)); }
+    .app-confirm-card.tone-danger .app-confirm-accent { background: linear-gradient(90deg, var(--bad), #fb7185); }
+    .app-confirm-card.tone-warning .app-confirm-accent { background: linear-gradient(90deg, var(--warn), #fbbf24); }
+    .app-confirm-content { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 16px; padding: 26px 26px 18px; }
+    .app-confirm-icon {
+      width: 58px;
+      height: 58px;
+      display: grid;
+      place-items: center;
+      border: 1px solid color-mix(in srgb, var(--green) 30%, var(--line));
+      border-radius: 19px;
+      color: var(--green-2);
+      background: color-mix(in srgb, var(--green) 12%, var(--panel));
+      box-shadow: 0 12px 26px color-mix(in srgb, var(--green) 16%, transparent);
+      font-size: 26px;
+      font-weight: 950;
+    }
+    .tone-danger .app-confirm-icon { color: var(--bad); border-color: var(--bad-line); background: var(--bad-soft); box-shadow: 0 12px 26px color-mix(in srgb, var(--bad) 15%, transparent); }
+    .tone-warning .app-confirm-icon { color: var(--warn); border-color: var(--warn-line); background: var(--warn-soft); box-shadow: 0 12px 26px color-mix(in srgb, var(--warn) 14%, transparent); }
+    .app-confirm-kicker { margin-bottom: 7px; color: var(--green-2); font-size: 11px; font-weight: 950; letter-spacing: .12em; }
+    .tone-danger .app-confirm-kicker { color: var(--bad); }
+    .tone-warning .app-confirm-kicker { color: var(--warn); }
+    .app-confirm-title { margin: 0; color: var(--text); font-size: 22px; line-height: 1.25; letter-spacing: -.03em; }
+    .app-confirm-message { margin: 11px 0 0; color: var(--ink-soft); font-size: 15px; font-weight: 750; line-height: 1.65; white-space: pre-line; word-break: break-word; }
+    .app-confirm-detail { margin: 9px 0 0; color: var(--muted); font-size: 13px; line-height: 1.7; white-space: pre-line; word-break: break-word; }
+    .app-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 26px 24px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel-2) 76%, transparent); }
+    .app-confirm-actions button { min-width: 104px; padding: 11px 18px; border-radius: 13px; }
+    .app-confirm-actions .app-confirm-submit { color: var(--on-accent); border-color: transparent; background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: 0 12px 24px color-mix(in srgb, var(--green) 22%, transparent); }
+    .tone-danger .app-confirm-submit { color: #fff; background: linear-gradient(135deg, var(--bad), #dc2626); box-shadow: 0 12px 24px color-mix(in srgb, var(--bad) 22%, transparent); }
+    .tone-warning .app-confirm-submit { color: #fff; background: linear-gradient(135deg, var(--warn), #d97706); box-shadow: 0 12px 24px color-mix(in srgb, var(--warn) 20%, transparent); }
+    @media (max-width: 540px) {
+      .app-confirm-backdrop { padding: 14px; align-items: flex-end; }
+      .app-confirm-card { border-radius: 24px 24px 18px 18px; }
+      .app-confirm-content { grid-template-columns: 48px minmax(0, 1fr); gap: 13px; padding: 22px 20px 16px; }
+      .app-confirm-icon { width: 48px; height: 48px; border-radius: 16px; font-size: 22px; }
+      .app-confirm-title { font-size: 20px; }
+      .app-confirm-actions { padding: 15px 20px 20px; }
+      .app-confirm-actions button { flex: 1; min-width: 0; }
+    }
     body[data-density="compact"] .content-head { padding: 12px 18px; }
     body[data-density="compact"] .content-main { padding: 0; }
     body[data-density="compact"] .global-log-panel { margin: 0 18px 24px; }
@@ -1089,23 +1168,370 @@
         transition-duration: .001ms !important;
       }
     }
+
+    /* ===== 矩龙邮箱 / theme-aware reference UI ===== */
+    :root {
+      --dragon-blue: var(--green);
+      --dragon-blue-dark: var(--green-2);
+      --dragon-sky: var(--bg);
+      --dragon-muted: var(--muted);
+      --dragon-line: var(--line);
+      --dragon-panel: var(--panel);
+      --dragon-shadow: var(--shadow-strong);
+      --dragon-page-a: color-mix(in srgb, var(--bg-soft) 86%, var(--green) 14%);
+      --dragon-page-b: var(--bg);
+      --dragon-page-c: color-mix(in srgb, var(--bg) 88%, var(--green) 12%);
+      --dragon-panel-glass: color-mix(in srgb, var(--panel) 94%, transparent);
+      --dragon-card-soft: color-mix(in srgb, var(--card) 91%, var(--green) 9%);
+      --dragon-accent-soft: color-mix(in srgb, var(--green) 11%, var(--panel));
+      --dragon-accent-soft-2: color-mix(in srgb, var(--green) 17%, var(--panel));
+      --dragon-accent-shadow: 0 14px 30px color-mix(in srgb, var(--green) 24%, transparent);
+    }
+    body {
+      background: linear-gradient(135deg, var(--dragon-page-a) 0%, var(--dragon-page-b) 52%, var(--dragon-page-c) 100%) !important;
+      color: var(--text);
+    }
+    .app-shell { grid-template-columns: clamp(270px, 15vw, 320px) minmax(0, 1fr); gap: 0; padding: 0; }
+    .sidebar {
+      top: 0; height: 100vh; padding: 30px 26px 24px; border: 0; border-right: 1px solid var(--line);
+      border-radius: 0; background: var(--dragon-panel-glass); box-shadow: var(--shadow);
+      display: flex; flex-direction: column; overflow: auto;
+    }
+    .brand { display: flex; align-items: center; gap: 14px; padding: 8px 14px 28px; margin: 0; border: 0; background: transparent; box-shadow: none; }
+    .brand-logo { width: 52px; height: 52px; flex: 0 0 52px; display: grid; place-items: center; border-radius: 16px; color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: var(--dragon-accent-shadow); }
+    .brand-logo svg { width: 32px; height: 32px; }
+    .brand-name { color: var(--text); font-size: 27px; font-weight: 900; letter-spacing: -.04em; white-space: nowrap; }
+    .side-nav { display: grid; gap: 9px; padding: 4px 0; }
+    .nav-item {
+      min-height: 70px; grid-template-columns: 52px minmax(0,1fr) auto; gap: 14px; padding: 10px 14px 10px 12px;
+      border: 1px solid transparent; border-radius: 18px; background: color-mix(in srgb, var(--card) 76%, transparent); box-shadow: var(--shadow);
+      color: var(--muted); font-size: 16px; font-weight: 850;
+    }
+    .nav-item:hover { transform: translateX(2px); color: var(--text); background: var(--dragon-accent-soft); }
+    .nav-item.active { color: var(--green-2); border-color: color-mix(in srgb, var(--green) 34%, var(--line)); background: linear-gradient(110deg, var(--dragon-accent-soft-2), color-mix(in srgb, var(--ok-soft) 45%, var(--panel))); box-shadow: var(--dragon-accent-shadow); }
+    .nav-ico { width: 52px; height: 52px; border: 0; border-radius: 15px; color: var(--green-2); background: var(--dragon-accent-soft); box-shadow: none; }
+    .nav-ico svg { width: 22px; height: 22px; }
+    .nav-item.active .nav-ico { color: var(--on-accent); border: 0; background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: var(--dragon-accent-shadow); }
+    .nav-item .count-dot { background: var(--count-bg); color: var(--muted); }
+    .nav-item.active .count-dot { color: var(--green-2); background: var(--panel); }
+    .sidebar-note { margin-top: auto; display: grid; gap: 8px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: color-mix(in srgb, var(--panel) 84%, transparent); color: var(--faint); font-size: 13px; line-height: 1.65; }
+    .sidebar-note strong { color: var(--text); font-size: 16px; }
+    .content { display: block; min-width: 0; }
+    .content-head { position: relative; top: auto; min-height: 218px; padding: 40px 48px 26px; border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
+    .content-head > div:first-child { align-self: flex-start; }
+    .content-head .eyebrow { display: none; }
+    .content-head h2 { color: var(--text); font-size: clamp(30px, 2.3vw, 42px); font-weight: 950; letter-spacing: -.05em; }
+    .content-head .sub { margin-top: 8px; color: var(--muted); font-size: 17px; }
+    .fresh-chip { display: inline-flex; align-items: center; gap: 6px; margin-top: 20px; padding: 8px 14px; border: 1px solid var(--ok-line); border-radius: 999px; color: var(--ok); background: var(--ok-soft); font-size: 13px; font-weight: 900; }
+    .fresh-chip span { font-size: 12px; }
+    .content-actions { align-self: flex-start; display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding-top: 14px; }
+    .backend-status { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; white-space: nowrap; }
+    .backend-status i { width: 11px; height: 11px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 6px var(--ok-soft); }
+    button.hero-button, .logout-button, .header-more > summary { min-height: 56px; padding: 0 22px; border: 1px solid var(--line); border-radius: 16px; font-size: 16px; font-weight: 900; }
+    button.hero-button { color: var(--green-2); border-color: color-mix(in srgb, var(--green) 12%, var(--line)); background: var(--dragon-accent-soft); box-shadow: none; }
+    button.hero-button:hover { color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: var(--dragon-accent-shadow); }
+    .logout-button { color: var(--muted); background: var(--panel); }
+    .header-more { position: relative; }
+    .header-more > summary { display: flex; align-items: center; cursor: pointer; list-style: none; color: var(--muted); background: var(--panel); }
+    .header-more > summary::-webkit-details-marker { display: none; }
+    .header-more-menu { position: absolute; z-index: 30; top: calc(100% + 10px); right: 0; width: 300px; display: grid; gap: 9px; padding: 16px; border: 1px solid var(--line); border-radius: 18px; color: var(--text); background: color-mix(in srgb, var(--panel) 98%, transparent); box-shadow: var(--shadow-strong); }
+    .header-more-menu > button, .header-more-menu .theme-select, .header-more-menu .segmented, .header-more-menu .version-dock { width: 100%; border-radius: 12px; }
+    .header-more-menu .theme-select { justify-content: space-between; }
+    .header-more-menu .theme-select select { flex: 1; color: var(--text); background: var(--input-bg); }
+    .header-more-menu .theme-select option { color: var(--text); background: var(--panel); }
+    .header-more-menu .segmented button { width: 50%; }
+    .header-more-menu .user-badge { padding: 8px 4px 12px; color: var(--text); border-bottom: 1px solid var(--line); }
+    .content-main { padding: 4px 48px 42px; }
+    .view-section.active { animation: viewIn .3s ease-out; }
+    .view-section[data-view="overview"].active, .panel.view-section.active, .global-log-panel { border: 1px solid var(--line); border-radius: 28px; background: var(--dragon-panel-glass); box-shadow: var(--dragon-shadow); }
+    .view-section[data-view="overview"].active { padding: 28px; }
+    .grid { gap: 16px; margin-bottom: 18px; }
+    .card, .quick-card { border: 1px solid var(--line); border-radius: 18px; background: var(--dragon-card-soft); box-shadow: none; }
+    .card::before { height: 3px; background: linear-gradient(90deg, var(--green), var(--green-2)); }
+    .card strong { color: var(--text); }
+    .quick-card i { color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); }
+    .panel { overflow: visible; }
+    .panel-head { padding: 34px 30px 20px; border: 0; background: transparent; }
+    .panel-head h2 { color: var(--text); font-size: 24px; font-weight: 950; }
+    .panel-head p { margin-top: 10px; color: var(--muted); font-size: 16px; }
+    .toolbar, .form, .field-grid { padding-left: 30px; padding-right: 30px; }
+    .list-toolbar { grid-template-columns: minmax(260px, 1fr) minmax(300px, .8fr); padding-top: 0; padding-bottom: 22px; }
+    .search-field, .mailbox-filter-field { color: var(--muted); }
+    input, textarea, select { border-color: var(--line); border-radius: 13px; color: var(--text); background: var(--input-bg); min-height: 44px; }
+    input::placeholder, textarea::placeholder { color: var(--faint); }
+    input:focus, textarea:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 4px var(--focus-ring); }
+    button { border-color: var(--line); border-radius: 12px; color: var(--green-2); background: var(--dragon-accent-soft); }
+    button.primary { color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: var(--dragon-accent-shadow); }
+    button.danger { color: var(--bad); border-color: var(--bad-line); background: var(--bad-soft); }
+    .account-tabs, .session-tabs { border-color: var(--line); background: color-mix(in srgb, var(--panel-2) 84%, transparent); }
+    .account-tabs button.active, .session-tabs button.active { color: var(--green-2); background: var(--dragon-accent-soft-2); }
+    .table-wrap { margin: 0 30px 28px; border: 1px solid var(--line); border-radius: 20px; overflow: auto; }
+    table { min-width: 1040px; color: var(--text); }
+    th, td { padding: 16px 18px; border-top-color: var(--line); }
+    th { color: var(--muted); background: var(--th-bg); font-size: 13px; }
+    tbody tr:hover { background: var(--dragon-accent-soft); }
+    .account-group td { color: var(--green-2); background: color-mix(in srgb, var(--th-bg) 88%, var(--green) 12%); }
+    .email { color: var(--text); font-weight: 900; }
+    .pill { border: 0; color: var(--green-2); background: var(--dragon-accent-soft-2); }
+    .pill.status-available, .pill.status-active { color: var(--ok); background: var(--ok-soft); }
+    .row-actions button { min-height: 38px; }
+    .row-actions button:last-child, .row-actions button.danger { color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); }
+    /* 图 1 风格的邮箱表格与批量操作 */
+    .mailbox-batch-bar {
+      margin: 0 30px 14px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line));
+      border-radius: 15px;
+      background: color-mix(in srgb, var(--dragon-accent-soft-2) 82%, var(--panel));
+    }
+    .mailbox-batch-bar[hidden] { display: none; }
+    .mailbox-batch-summary { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; color: var(--muted); }
+    .mailbox-batch-summary strong { color: var(--green-2); font-size: 22px; }
+    .mailbox-batch-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+    .mailbox-batch-actions button, .mailbox-batch-actions select { min-height: 36px; padding: 7px 11px; border-radius: 10px; font-size: 12px; }
+    .mailbox-batch-actions select { width: auto; min-width: 132px; }
+    .mailbox-table-wrap { border-radius: 16px; }
+    .mailbox-table { min-width: 1560px; table-layout: auto; }
+    .mailbox-table th {
+      height: 58px;
+      padding: 14px 16px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 900;
+      white-space: nowrap;
+      background: color-mix(in srgb, var(--th-bg) 92%, var(--panel));
+    }
+    .mailbox-table td { height: 76px; padding: 14px 16px; color: var(--muted); white-space: nowrap; }
+    .mailbox-table tbody tr { transition: background .15s ease; }
+    .mailbox-table tbody tr.selected { background: color-mix(in srgb, var(--green) 9%, var(--card)); }
+    .mailbox-table tbody tr:hover { background: color-mix(in srgb, var(--green) 6%, var(--card)); }
+    .mailbox-check-column { width: 52px; text-align: center; }
+    .mailbox-check {
+      width: 18px;
+      height: 18px;
+      min-height: 0;
+      margin: 0;
+      border-radius: 5px;
+      accent-color: var(--green);
+      cursor: pointer;
+      vertical-align: middle;
+    }
+    .mailbox-id { color: var(--muted); font-weight: 900; font-variant-numeric: tabular-nums; }
+    .mailbox-label-cell { max-width: 180px; }
+    .mailbox-label-chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 160px;
+      padding: 6px 10px;
+      overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--green) 24%, var(--line));
+      border-radius: 9px;
+      color: var(--green-2);
+      background: var(--dragon-accent-soft);
+      font-size: 12px;
+      font-weight: 850;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .mailbox-label-chip.empty { color: var(--faint); border-color: var(--line); background: var(--th-bg); }
+    .mailbox-status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 58px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 900;
+    }
+    .mailbox-status-badge.ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
+    .mailbox-status-badge.warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-soft); }
+    .mailbox-status-badge.bad { color: var(--bad); border-color: var(--bad-line); background: var(--bad-soft); }
+    .mailbox-status-badge.off { color: var(--faint); background: var(--th-bg); }
+    .copy-email-button {
+      max-width: 330px;
+      min-height: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      color: var(--text);
+      background: transparent;
+      box-shadow: none;
+      font-size: 14px;
+      font-weight: 850;
+      text-align: left;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .copy-email-button:hover { color: var(--green-2); background: transparent; transform: none; }
+    .copy-email-button::after { content: "复制"; margin-left: 8px; color: var(--faint); font-size: 10px; font-weight: 800; opacity: 0; transition: opacity .15s ease; }
+    .copy-email-button:hover::after { opacity: 1; }
+    .mailbox-account-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+    .mailbox-updated-cell { font-variant-numeric: tabular-nums; }
+    .mailbox-html-expiry-cell { min-width: 158px; }
+    .html-expiry { display: grid; gap: 2px; line-height: 1.25; }
+    .html-expiry strong { color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .html-expiry small { color: var(--faint); font-size: 10px; }
+    .html-expiry.pending strong { color: var(--warn); }
+    .html-expiry.active strong { color: var(--ok); }
+    .html-expiry.expired strong { color: var(--bad); }
+    .mailbox-table .mailbox-code-cell { min-width: 132px; max-width: 180px; }
+    .mailbox-table .code-inline-result { min-width: 104px; }
+    .mailbox-table .row-actions { flex-wrap: nowrap; gap: 7px; position: relative; }
+    .mailbox-table .row-actions button,
+    .mailbox-table .row-actions button:last-child,
+    .mailbox-table .row-actions button.danger {
+      width: 38px;
+      height: 38px;
+      min-height: 38px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+      border: 0;
+      border-radius: 10px;
+      color: var(--muted);
+      background: color-mix(in srgb, var(--th-bg) 82%, var(--panel));
+      box-shadow: none;
+    }
+    .mailbox-table .row-actions button:hover { color: var(--green-2); background: var(--dragon-accent-soft-2); transform: translateY(-1px); }
+    .mailbox-table .row-actions button.action-sync { color: var(--green-2); background: var(--dragon-accent-soft-2); }
+    .mailbox-table .row-actions button.action-delete { color: var(--bad); background: var(--bad-soft); }
+    .mailbox-table .row-actions button svg, .mailbox-more > summary svg { width: 19px; height: 19px; }
+    .mailbox-more { position: relative; }
+    .mailbox-more > summary {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      color: var(--muted);
+      background: color-mix(in srgb, var(--th-bg) 82%, var(--panel));
+      cursor: pointer;
+      list-style: none;
+    }
+    .mailbox-more > summary::-webkit-details-marker { display: none; }
+    .mailbox-more-menu {
+      position: absolute;
+      z-index: 30;
+      right: 0;
+      top: 44px;
+      width: 178px;
+      padding: 8px;
+      display: grid;
+      gap: 5px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: var(--shadow-strong);
+    }
+    .mailbox-table .mailbox-more-menu button,
+    .mailbox-table .mailbox-more-menu button:last-child,
+    .mailbox-table .mailbox-more-menu button.danger {
+      width: 100%;
+      height: auto;
+      min-height: 34px;
+      padding: 7px 9px;
+      display: block;
+      border-radius: 8px;
+      color: var(--text);
+      background: transparent;
+      text-align: left;
+      font-size: 12px;
+    }
+    .mailbox-table .mailbox-more-menu button.danger { color: var(--bad); }
+    .app-toast {
+      position: fixed;
+      z-index: 120;
+      right: 24px;
+      bottom: 24px;
+      max-width: min(420px, calc(100vw - 32px));
+      padding: 13px 16px;
+      border: 1px solid color-mix(in srgb, var(--green) 34%, var(--line));
+      border-radius: 13px;
+      color: var(--text);
+      background: color-mix(in srgb, var(--panel) 94%, var(--green) 6%);
+      box-shadow: var(--shadow-strong);
+      font-size: 13px;
+      font-weight: 850;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(12px);
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    .app-toast.show { opacity: 1; transform: translateY(0); }
+    .global-log-panel { margin: 0 48px 40px; overflow: hidden; }
+    .global-log-panel .log { color: var(--log-ink); background: var(--log-bg); }
+    .modal { border-color: var(--line); border-radius: 24px; color: var(--text); background: var(--panel); }
+    @media (max-width: 1180px) {
+      .app-shell { grid-template-columns: 250px minmax(0,1fr); }
+      .content-head { min-height: 190px; padding: 30px 28px 22px; }
+      .content-main { padding: 0 28px 32px; }
+      .global-log-panel { margin-left: 28px; margin-right: 28px; }
+      .content-actions { flex-wrap: wrap; }
+      .backend-status { width: 100%; justify-content: flex-end; }
+    }
+    @media (max-width: 900px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .sidebar { position: relative; height: auto; padding: 18px; border-right: 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr; }
+      .brand { padding-bottom: 12px; }
+      .side-nav { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .sidebar-note { display: none; }
+      .content-head { flex-direction: column; align-items: flex-start; min-height: 0; }
+      .content-actions { width: 100%; justify-content: flex-start; }
+      .backend-status { width: auto; }
+      .list-toolbar { grid-template-columns: 1fr; }
+      .mailbox-control-stack { grid-column: 1; justify-items: start; }
+      .mailbox-batch-bar { align-items: flex-start; flex-direction: column; }
+      .mailbox-batch-actions { justify-content: flex-start; }
+    }
+    @media (max-width: 620px) {
+      .side-nav { grid-template-columns: 1fr; }
+      .content-head, .content-main { padding-left: 16px; padding-right: 16px; }
+      .content-actions { display: grid; grid-template-columns: 1fr 1fr; }
+      .backend-status { grid-column: 1 / -1; justify-content: flex-start; }
+      .header-more { position: static; }
+      .header-more-menu { position: fixed; left: 16px; right: 16px; top: 120px; width: auto; }
+      button.hero-button, .logout-button, .header-more > summary { width: 100%; justify-content: center; padding: 0 14px; font-size: 14px; }
+      .view-section[data-view="overview"].active { padding: 18px; }
+      .panel-head { padding: 24px 20px 16px; }
+      .toolbar, .form, .field-grid { padding-left: 20px; padding-right: 20px; }
+      .table-wrap { margin-left: 20px; margin-right: 20px; }
+      .mailbox-batch-bar { margin-left: 20px; margin-right: 20px; }
+      .global-log-panel { margin-left: 16px; margin-right: 16px; }
+    }
   </style>
 </head>
 <body>
+  <div id="appToast" class="app-toast" role="status" aria-live="polite"></div>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand">
-        <div class="eyebrow">Pure Protocol Console</div>
-        <h1>iCloud Privacy Mail</h1>
-        <div class="sub">隐私邮箱创建、同步和取码 API 工作台。</div>
+      <div class="brand" aria-label="矩龙邮箱">
+        <span class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M16 4.2c1.45 5.76 3.89 8.2 9.65 9.65-5.76 1.45-8.2 3.89-9.65 9.65-1.45-5.76-3.89-8.2-9.65-9.65C12.11 12.4 14.55 9.96 16 4.2Z" fill="currentColor"/></svg>
+        </span>
+        <span class="brand-name">矩龙邮箱</span>
       </div>
 
       <nav class="side-nav" aria-label="功能分类">
-        <button class="nav-item active" data-view="overview" onclick="setActiveView('overview')"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.7"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.7"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.7"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.7"/></svg></span><span>概览</span><span class="count-dot" id="navOverviewCount">0</span></button>
-        <button class="nav-item" data-view="session" onclick="setActiveView('session')"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="4.6"/><path d="m12.4 12.4 7.6 7.6"/><path d="m16.6 16.6 2-2"/></svg></span><span>登录态</span><span class="count-dot" id="navSessionCount">0</span></button>
-        <button class="nav-item" data-view="create" onclick="setActiveView('create')"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M12 8.4v7.2M8.4 12h7.2"/></svg></span><span>创建邮箱</span></button>
-        <button class="nav-item" data-view="mailboxes" onclick="setActiveView('mailboxes')"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.4 6.3 6.7A2 2 0 0 1 8.2 5.4h7.6a2 2 0 0 1 1.9 1.3L20 13.4"/><path d="M4 13.4h4.2l1.3 2.2h5l1.3-2.2H20v3.7A1.9 1.9 0 0 1 18.1 19.2H5.9A1.9 1.9 0 0 1 4 17.1z"/></svg></span><span>邮箱池</span><span class="count-dot" id="navMailboxCount">0</span></button>
+        <button class="nav-item active" data-view="overview" onclick="setActiveView('overview', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4.5h5.5v15H5zM13.5 4.5H19v15h-5.5z"/></svg></span><span>管理总览</span><span class="count-dot" id="navOverviewCount">0</span></button>
+        <button class="nav-item" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4.5" y="4.5" width="15" height="15" rx="1.5"/><path d="M8.5 8.5h7v7h-7z"/></svg></span><span>全部邮箱</span><span class="count-dot" id="navMailboxCount">0</span></button>
+        <button class="nav-item" data-view="create" onclick="setActiveView('create', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg></span><span>新建邮箱</span></button>
+        <button class="nav-item nav-alias" data-view="session" onclick="setActiveView('session', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h9.5a3.5 3.5 0 0 1 0 7H8"/><path d="m9 5-3 3 3 3"/></svg></span><span>转发邮箱</span></button>
+        <button class="nav-item nav-alias" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v10h-15z"/><path d="m5.5 8.5 6.5 5 6.5-5"/></svg></span><span>统一收件箱</span></button>
+        <button class="nav-item nav-alias" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 7.5h10M8.5 11.5h7M10 15.5h4"/><path d="M5 3.8h14v16.4H5z"/></svg></span><span>取件码与发货</span></button>
+        <button class="nav-item" data-view="session" onclick="setActiveView('session', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/></svg></span><span>iCloud 账号</span><span class="count-dot" id="navSessionCount">0</span></button>
+        <button class="nav-item" data-view="settings" onclick="setActiveView('settings', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3.8v2.1M12 18.1v2.1M3.8 12h2.1M18.1 12h2.1M6.2 6.2l1.5 1.5M16.3 16.3l1.5 1.5M17.8 6.2l-1.5 1.5M7.7 16.3l-1.5 1.5"/><circle cx="12" cy="12" r="3.4"/></svg></span><span>系统设置</span></button>
       </nav>
+      <aside class="sidebar-note">
+        <strong>安全提醒</strong>
+        <span>系统不会保存明文取件码。再次发货时，请重新获取最新邮件。</span>
+      </aside>
     </aside>
 
     <section class="content">
@@ -1114,44 +1540,26 @@
           <div class="eyebrow">当前分类</div>
           <h2 id="activeViewTitle">概览</h2>
           <div class="sub" id="activeViewSubtitle">查看账号、邮箱和验证码数量。</div>
+          <div class="fresh-chip"><span>✓</span> 数据已更新</div>
         </div>
         <div class="content-actions">
-          <div class="appearance-controls" aria-label="界面设置">
-            <label class="theme-select" aria-label="界面风格">
-              <span>主题</span>
-              <select id="themeSelect" onchange="setTheme(this.value)">
-                <optgroup label="浅色">
-                  <option value="mint">清透薄荷</option>
-                  <option value="sky">蓝调</option>
-                  <option value="graphite">灰阶</option>
-                  <option value="sunset">暮光暖橘</option>
-                  <option value="violet">紫晶</option>
-                  <option value="rose">绯樱</option>
-                  <option value="forest">森野</option>
-                </optgroup>
-                <optgroup label="深色">
-                  <option value="midnight">暗夜</option>
-                  <option value="obsidian">曜石</option>
-                  <option value="aurora">极光</option>
-                </optgroup>
-              </select>
-            </label>
-            <div class="segmented" role="group" aria-label="显示密度">
-              <button type="button" data-density-option="comfortable" onclick="setDensity('comfortable')">舒展</button>
-              <button type="button" data-density-option="compact" onclick="setDensity('compact')">紧凑</button>
+          <span class="backend-status"><i></i>后端已连接</span>
+          <button class="primary hero-button" onclick="setActiveView('mailboxes'); syncICloudMailboxes()">立即收取全部邮件</button>
+          <button class="logout-button" onclick="logout()">退出登录</button>
+          <details class="header-more">
+            <summary>更多</summary>
+            <div class="header-more-menu">
+              <div class="user-badge" id="currentUserBadge">未登录</div>
+              <button onclick="openRunConfig()">运行配置</button>
+              <button onclick="refresh()">刷新状态</button>
+              <button onclick="openAdminPage()">账号数据</button>
+              <label class="theme-select" aria-label="界面风格"><span>主题</span><select id="themeSelect" onchange="setTheme(this.value)">
+                <option value="sky">矩龙蓝</option><option value="mint">清透薄荷</option><option value="graphite">灰阶</option><option value="sunset">暖橘</option><option value="violet">紫晶</option><option value="rose">绯樱</option><option value="forest">森野</option><option value="midnight">暗夜</option><option value="obsidian">曜石</option><option value="aurora">极光</option>
+              </select></label>
+              <div class="segmented" role="group" aria-label="显示密度"><button type="button" data-density-option="comfortable" onclick="setDensity('comfortable')">舒展</button><button type="button" data-density-option="compact" onclick="setDensity('compact')">紧凑</button></div>
+              <div class="version-dock"><span class="version-badge" id="versionBadge" title="正在检查最新版本">版本 -</span><button id="updateButton" class="ghost" onclick="applyAppUpdate()" hidden>更新</button></div>
             </div>
-          </div>
-          <button onclick="openRunConfig()">运行配置</button>
-          <button class="primary" onclick="refresh()">刷新状态</button>
-          <div class="version-dock">
-            <span class="version-badge" id="versionBadge" title="正在检查最新版本">版本 -</span>
-            <button id="updateButton" class="ghost" onclick="applyAppUpdate()" hidden>更新</button>
-          </div>
-          <div class="account-dock">
-            <div class="user-badge" id="currentUserBadge">未登录</div>
-            <button onclick="location.href='/manage'">账号数据</button>
-            <button class="ghost" onclick="logout()">退出</button>
-          </div>
+          </details>
         </div>
       </header>
 
@@ -1288,12 +1696,12 @@
 
         <section class="view-section panel" data-view="mailboxes">
           <div class="panel-head">
-            <h2>隐私邮箱池</h2>
-            <p>复制 API、取验证码、同步邮件和修改状态。</p>
+            <h2>全部邮箱</h2>
+            <p>每个邮箱同时属于库存、统一收件箱和取件任务。</p>
           </div>
           <div class="toolbar list-toolbar">
             <label class="search-field">全局搜索邮箱
-              <input id="mailboxSearch" placeholder="输入完整或部分邮箱，跨全部页搜索" oninput="setMailboxSearch()">
+              <input id="mailboxSearch" placeholder="搜索邮箱地址或标签" oninput="setMailboxSearch()">
             </label>
             <div class="mailbox-filter-row">
               <label class="mailbox-filter-field">同步范围
@@ -1319,11 +1727,51 @@
             </div>
           </div>
           <div id="mailboxAccountTabs" class="account-tabs"></div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>标签</th><th>邮箱</th><th>状态</th><th>收件</th><th>验证码</th><th>操作</th></tr></thead>
+          <div id="mailboxBatchBar" class="mailbox-batch-bar" hidden>
+            <div class="mailbox-batch-summary"><strong id="mailboxSelectedCount">0</strong><span>个邮箱已选择</span></div>
+            <div class="mailbox-batch-actions">
+              <button type="button" onclick="batchCopyMailboxes('email')">复制邮箱</button>
+              <button type="button" onclick="batchCopyMailboxes('api')">复制 API</button>
+              <button type="button" onclick="batchCreateHTMLLinks()">复制 HTML 地址</button>
+              <button type="button" onclick="batchSyncMailboxes()">同步邮件</button>
+              <select id="mailboxBatchStatus" onchange="batchSetMailboxStatus(this.value)">
+                <option value="">批量改状态</option>
+                <option value="available">设为可用</option>
+                <option value="used">设为已使用</option>
+                <option value="failed">设为失败</option>
+                <option value="disabled">设为停用</option>
+              </select>
+              <button type="button" onclick="batchDisableMailboxes()">停用 API</button>
+              <button type="button" class="danger" onclick="batchDeleteMailboxes()">批量永久删除</button>
+              <button type="button" class="ghost" onclick="clearMailboxSelection()">取消选择</button>
+            </div>
+          </div>
+          <div class="table-wrap mailbox-table-wrap">
+            <table class="mailbox-table">
+              <thead><tr>
+                <th class="mailbox-check-column"><input id="mailboxSelectAll" class="mailbox-check" type="checkbox" onchange="toggleSelectAllMailboxes(this.checked)" aria-label="选择当前页全部邮箱"></th>
+                <th>ID</th><th>标签</th><th>状态</th><th>邮箱</th><th>Apple 账号</th><th>邮件</th><th>更新时间</th><th>HTML 过期时间</th><th>取件码</th><th>操作</th>
+              </tr></thead>
               <tbody id="mailboxes"></tbody>
             </table>
+          </div>
+        </section>
+
+        <section class="view-section panel" data-view="settings">
+          <div class="panel-head">
+            <h2>系统设置</h2>
+            <p>管理员可以控制注册、后台入口和公开 HTML 接码地址的生命周期。</p>
+          </div>
+          <div class="notice" id="systemSettingsNotice">读取设置中…</div>
+          <div class="field-grid">
+            <label class="checkline"><input id="registrationEnabled" type="checkbox"> 开放新用户注册</label>
+            <label>后台入口路径<input id="adminPath" placeholder="/manage" pattern="/[A-Za-z0-9_/-]+"></label>
+            <label>HTML 接码地址过期天数<input id="htmlLinkTTLDays" type="number" min="1" max="3650" value="7"></label>
+            <div class="full hint">邮箱入库时自动生成 HTML 地址，首次访问才激活有效期；API 接码地址继续保持长期有效。</div>
+          </div>
+          <div class="toolbar">
+            <button class="primary" onclick="saveSystemSettings()">保存系统设置</button>
+            <span id="systemSettingsStatus" class="muted"></span>
           </div>
         </section>
 
@@ -1377,6 +1825,24 @@
       <div class="hint">导出数据：当前账号的登录账号/登录态 + 隐私邮箱池；邮箱API 每行 邮箱----API / CSV 两列；只导出邮箱为一行一个邮箱。导出邮箱支持选择指定 Apple 登录态。管理员导出全量数据，普通用户只导出自己的数据。</div>
     </section>
   </div>
+  <div id="appConfirmDialog" class="app-confirm-backdrop" aria-hidden="true" onclick="handleAppConfirmBackdrop(event)">
+    <section id="appConfirmCard" class="app-confirm-card" role="dialog" aria-modal="true" aria-labelledby="appConfirmTitle" aria-describedby="appConfirmMessage" tabindex="-1" onclick="event.stopPropagation()">
+      <div class="app-confirm-accent"></div>
+      <div class="app-confirm-content">
+        <div id="appConfirmIcon" class="app-confirm-icon" aria-hidden="true">?</div>
+        <div>
+          <div class="app-confirm-kicker">JULONG MAIL · 操作确认</div>
+          <h2 id="appConfirmTitle" class="app-confirm-title">请确认操作</h2>
+          <p id="appConfirmMessage" class="app-confirm-message"></p>
+          <p id="appConfirmDetail" class="app-confirm-detail" hidden></p>
+        </div>
+      </div>
+      <div class="app-confirm-actions">
+        <button id="appConfirmCancel" type="button" onclick="resolveAppConfirm(false)">取消</button>
+        <button id="appConfirmSubmit" class="app-confirm-submit" type="button" onclick="resolveAppConfirm(true)">确认</button>
+      </div>
+    </section>
+  </div>
   <script>
     const $ = (id) => document.getElementById(id);
     const sessionCheckEnabledStorage = 'ipm_session_check_enabled';
@@ -1391,6 +1857,9 @@
     let mailboxSearchTimer = null;
     const mailboxCodeResults = new Map();
     const mailboxSyncResults = new Map();
+    const selectedMailboxIDs = new Set();
+    const selectedMailboxRows = new Map();
+    let appToastTimer = null;
     let activeMailboxCopyMenuID = '';
     let activeICloudSessionKey = '';
     let protocolPendingID = '';
@@ -1401,11 +1870,13 @@
     let manageRefreshClockTimer = null;
     let lastSchedulerCreatedEventID = 0;
     let createAccountSelectionTouched = false;
+    let appConfirmResolver = null;
+    let appConfirmPreviousFocus = null;
     let selectedCreateAccountIDs = new Set();
     let currentUser = null;
-    const viewStorageKey = 'ipm_active_view';
-    const themeStorageKey = 'ipm_theme';
-    const densityStorageKey = 'ipm_density';
+    const viewStorageKey = 'julong_mail_active_view';
+    const themeStorageKey = 'julong_mail_theme';
+    const densityStorageKey = 'julong_mail_density';
     let activeLogCategory = 'all';
     let activeView = 'overview';
     let runtimeLogText = '等待操作...';
@@ -1413,17 +1884,71 @@
     let scheduleLogText = '暂无定时创建记录。';
     let lastUpdateStatus = null;
     const viewMeta = {
-      overview: ['概览', '查看账号、邮箱和验证码数量。'],
-      session: ['登录态', '保存和检测 Apple 登录态。'],
-      create: ['创建邮箱', '按已保存账号创建 Hide My Email 地址。'],
-      mailboxes: ['邮箱池', '搜索、复制 API、取码和维护邮箱状态。']
+      overview: ['管理总览', '查看矩龙邮箱的账号、库存和收件状态。'],
+      session: ['iCloud 账号', '管理创建邮箱与取码所需的 iCloud 登录状态。'],
+      create: ['新建邮箱', '按已保存账号创建新的 iCloud 隐私邮箱。'],
+      mailboxes: ['全部邮箱', '查看所有 iCloud 隐私邮箱及其库存和取件状态。'],
+      settings: ['系统设置', '配置注册开关、后台入口和 HTML 接码地址生命周期。']
     };
 
-    function setActiveView(view) {
+    function askConfirm(options = {}) {
+      const config = typeof options === 'string' ? {message: options} : options;
+      if (appConfirmResolver) resolveAppConfirm(false);
+      const dialog = $('appConfirmDialog');
+      const card = $('appConfirmCard');
+      const detail = $('appConfirmDetail');
+      const tone = ['danger', 'warning'].includes(config.tone) ? config.tone : 'default';
+      card.className = `app-confirm-card tone-${tone}`;
+      $('appConfirmTitle').textContent = config.title || '请确认操作';
+      $('appConfirmMessage').textContent = config.message || '';
+      detail.textContent = config.detail || '';
+      detail.hidden = !config.detail;
+      $('appConfirmIcon').textContent = tone === 'danger' ? '!' : (tone === 'warning' ? '!' : '?');
+      $('appConfirmCancel').textContent = config.cancelText || '取消';
+      $('appConfirmSubmit').textContent = config.confirmText || '确认';
+      appConfirmPreviousFocus = document.activeElement;
+      document.body.classList.add('app-confirm-open');
+      dialog.classList.add('show');
+      dialog.setAttribute('aria-hidden', 'false');
+      requestAnimationFrame(() => $('appConfirmCancel').focus());
+      return new Promise(resolve => { appConfirmResolver = resolve; });
+    }
+
+    function resolveAppConfirm(accepted) {
+      const resolver = appConfirmResolver;
+      if (!resolver) return;
+      appConfirmResolver = null;
+      const dialog = $('appConfirmDialog');
+      dialog.classList.remove('show');
+      dialog.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('app-confirm-open');
+      if (appConfirmPreviousFocus && typeof appConfirmPreviousFocus.focus === 'function') {
+        appConfirmPreviousFocus.focus({preventScroll: true});
+      }
+      appConfirmPreviousFocus = null;
+      resolver(!!accepted);
+    }
+
+    function handleAppConfirmBackdrop(event) {
+      if (event.target === $('appConfirmDialog')) resolveAppConfirm(false);
+    }
+
+    document.addEventListener('keydown', event => {
+      if (!appConfirmResolver) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        resolveAppConfirm(false);
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        resolveAppConfirm(true);
+      }
+    });
+
+    function setActiveView(view, sourceButton = null) {
       const normalized = viewMeta[view] ? view : 'overview';
       const meta = viewMeta[normalized];
       for (const button of document.querySelectorAll('.nav-item[data-view]')) {
-        button.classList.toggle('active', button.dataset.view === normalized);
+        button.classList.toggle('active', sourceButton ? button === sourceButton : (button.dataset.view === normalized && !button.classList.contains('nav-alias')));
       }
       for (const section of document.querySelectorAll('.view-section[data-view]')) {
         section.classList.toggle('active', section.dataset.view === normalized);
@@ -1435,20 +1960,23 @@
       } catch (_) {}
       activeView = normalized;
       if (normalized === 'mailboxes') renderMailboxes();
+      if (normalized === 'settings' && currentUser && currentUser.is_admin) loadSystemSettings().catch(err => log('读取系统设置失败：' + err.message));
       renderGlobalLogs();
     }
 
     function initViewNavigation() {
       let saved = 'overview';
       try {
-        saved = localStorage.getItem(viewStorageKey) || 'overview';
+        const requested = new URLSearchParams(location.search).get('view');
+        saved = viewMeta[requested] ? requested : (localStorage.getItem(viewStorageKey) || 'overview');
       } catch (_) {}
       setActiveView(saved);
     }
 
     const THEME_SLUGS = ['mint', 'sky', 'graphite', 'sunset', 'violet', 'rose', 'forest', 'midnight', 'obsidian', 'aurora'];
     function setTheme(theme) {
-      const normalized = THEME_SLUGS.includes(theme) ? theme : 'mint';
+      const normalized = THEME_SLUGS.includes(theme) ? theme : 'sky';
+      document.documentElement.dataset.theme = normalized;
       document.body.dataset.theme = normalized;
       const themeSelect = document.getElementById('themeSelect');
       if (themeSelect && themeSelect.value !== normalized) {
@@ -1471,10 +1999,10 @@
     }
 
     function initAppearanceControls() {
-      let savedTheme = 'mint';
+      let savedTheme = 'sky';
       let savedDensity = 'comfortable';
       try {
-        savedTheme = localStorage.getItem(themeStorageKey) || 'mint';
+        savedTheme = localStorage.getItem(themeStorageKey) || 'sky';
         savedDensity = localStorage.getItem(densityStorageKey) || 'comfortable';
       } catch (_) {}
       setTheme(savedTheme);
@@ -1520,6 +2048,38 @@
       return data;
     }
 
+    async function loadSystemSettings() {
+      const data = await api('/api/system-settings');
+      const settings = data.settings || {};
+      if ($('registrationEnabled')) $('registrationEnabled').checked = !!settings.registration_enabled;
+      if ($('adminPath')) $('adminPath').value = settings.admin_path || '/manage';
+      if ($('htmlLinkTTLDays')) $('htmlLinkTTLDays').value = String(settings.html_link_ttl_days || 7);
+      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `当前后台入口：${settings.admin_path || '/manage'}；HTML 接码地址首次访问后 ${settings.html_link_ttl_days || 7} 天过期。`;
+      return settings;
+    }
+
+    async function saveSystemSettings() {
+      const payload = {
+        registration_enabled: !!($('registrationEnabled') && $('registrationEnabled').checked),
+        admin_path: ($('adminPath') ? $('adminPath').value : '/manage').trim(),
+        html_link_ttl_days: boundedInt('htmlLinkTTLDays', 7, 1, 3650)
+      };
+      const data = await api('/api/system-settings', {method:'POST', body: JSON.stringify(payload)});
+      const settings = data.settings || payload;
+      if ($('systemSettingsStatus')) $('systemSettingsStatus').textContent = '系统设置已保存';
+      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `已保存：注册${settings.registration_enabled ? '开放' : '关闭'}；后台入口 ${settings.admin_path}；HTML 地址首次访问后 ${settings.html_link_ttl_days} 天过期。`;
+      log('系统设置已保存');
+    }
+
+    async function openAdminPage() {
+      try {
+        const settings = await loadSystemSettings();
+        location.href = settings.admin_path || '/manage';
+      } catch (_) {
+        location.href = '/manage';
+      }
+    }
+
     async function ensureAuth() {
       const data = await api('/api/auth/me');
       if (!data.authenticated) {
@@ -1527,6 +2087,9 @@
         throw new Error('未登录');
       }
       currentUser = data.user;
+      const settingsButton = document.querySelector('.nav-item[data-view="settings"]');
+      if (settingsButton) settingsButton.hidden = !currentUser.is_admin;
+      if (!currentUser.is_admin && activeView === 'settings') setActiveView('overview');
       if ($('currentUserBadge')) {
         $('currentUserBadge').textContent = `${currentUser.username}${currentUser.is_admin ? ' / 管理员' : ''}`;
       }
@@ -1610,7 +2173,12 @@
     async function applyAppUpdate() {
       const button = $('updateButton');
       if (!lastUpdateStatus || !lastUpdateStatus.update_available) return;
-      if (!confirm('确认下载并应用最新版本？服务会短暂重启。')) return;
+      if (!await askConfirm({
+        title: '应用最新版本',
+        message: '现在下载并应用最新版本？',
+        detail: '更新完成后服务会短暂重启，页面连接可能中断数秒。',
+        confirmText: '下载并更新'
+      })) return;
       try {
         if (button) {
           button.disabled = true;
@@ -2038,7 +2606,7 @@
       const blob = await res.blob();
       const disposition = res.headers.get('content-disposition') || '';
       const match = disposition.match(/filename="([^"]+)"/i);
-      const filename = match ? match[1] : `icloud-privacy-mail-state-${Date.now()}.json`;
+      const filename = match ? match[1] : `julong-mail-state-${Date.now()}.json`;
       if (window.showSaveFilePicker) {
         try {
           const handle = await window.showSaveFilePicker({
@@ -2265,6 +2833,9 @@
       $('mailboxCount').textContent = status.mailboxes;
       $('messageCount').textContent = status.messages;
       $('apiStatus').textContent = status.current_user && status.current_user.is_admin ? '管理员' : '普通账号';
+      if (status.current_user && status.current_user.is_admin) {
+        await loadSystemSettings().catch(err => log('读取系统设置失败：' + err.message));
+      }
       if ($('serviceInfo')) {
         $('serviceInfo').textContent =
           `对外取码：${status.api_key_configured ? '支持全局 key + 单邮箱 key' : '仅单邮箱 key'}；` +
@@ -2520,6 +3091,9 @@
     function renderMailboxes() {
       renderMailboxAccountTabs();
       const rows = lastMailboxes || [];
+      for (const row of rows) {
+        if (selectedMailboxIDs.has(row.id)) selectedMailboxRows.set(row.id, row);
+      }
       const totalPages = Math.max(1, Number(lastMailboxPagination.total_pages || 1));
       const page = Math.max(1, Math.min(totalPages, Number(lastMailboxPagination.page || mailboxPage || 1)));
       const pageSize = Math.max(1, Number(lastMailboxPagination.page_size || mailboxPageSize || 10));
@@ -2533,52 +3107,293 @@
       if ($('mailboxPrevPage')) $('mailboxPrevPage').disabled = page <= 1;
       if ($('mailboxNextPage')) $('mailboxNextPage').disabled = page >= totalPages;
       if (rows.length === 0) {
-        $('mailboxes').innerHTML = '<tr><td colspan="6" class="muted">没有匹配的邮箱</td></tr>';
+        $('mailboxes').innerHTML = '<tr><td colspan="11" class="muted empty">没有匹配的邮箱</td></tr>';
+        renderMailboxBatchBar();
         return;
       }
-      let lastGroup = '';
       $('mailboxes').innerHTML = rows.map(row => {
-        const group = mailboxAccountTitle(row);
-        const groupRow = group !== lastGroup
-          ? `<tr class="account-group"><td colspan="6">Apple 账号：${esc(group)}</td></tr>`
-          : '';
-        lastGroup = group;
-        return `${groupRow}
-          <tr>
-            <td><div class="mail-title">${esc(row.label || '-')}</div><span class="muted">${esc(row.id)}</span></td>
-            <td><span class="email">${esc(row.email)}</span></td>
-            <td>
-              <span class="pill ${row.api_active ? '' : 'off'}">API ${row.api_active ? 'active' : 'off'}</span>
-              <span class="pill ${row.icloud_active ? '' : 'off'}">iCloud ${row.icloud_active ? 'active' : 'off'}</span>
-              <br><span class="pill ${statusClass(row.status)}">${statusText(row.status)}</span>
-            </td>
+        const status = mailboxTableStatus(row);
+        const selected = selectedMailboxIDs.has(row.id);
+        return `<tr class="${selected ? 'selected' : ''}" data-mailbox-id="${esc(row.id)}">
+            <td class="mailbox-check-column"><input class="mailbox-check" type="checkbox" ${selected ? 'checked' : ''} onchange="toggleMailboxSelection('${row.id}', this.checked)" aria-label="选择 ${esc(row.email)}"></td>
+            <td><span class="mailbox-id" title="${esc(row.id)}">${esc(mailboxDisplayID(row.id))}</span></td>
+            <td class="mailbox-label-cell"><span class="mailbox-label-chip ${row.label ? '' : 'empty'}" title="${esc(row.label || '未设置标签')}">${esc(row.label || '未设置')}</span></td>
+            <td><span class="mailbox-status-badge ${status.kind}" title="API ${row.api_active ? '正常' : '停用'} / iCloud ${row.icloud_active ? '正常' : '停用'}">${esc(status.text)}</span></td>
+            <td><button type="button" class="copy-email-button" onclick="copyMailboxEmail('${row.id}')" title="点击复制邮箱地址">${esc(row.email)}</button></td>
+            <td class="mailbox-account-cell" title="${esc(mailboxAccountTitle(row))}">${esc(mailboxAccountTitle(row))}</td>
             <td>${row.receive_count || 0}</td>
+            <td class="mailbox-updated-cell">${esc(formatMailboxDate(row.updated_at || row.created_at))}</td>
+            <td class="mailbox-html-expiry-cell">${renderMailboxHTMLExpiry(row)}</td>
             <td class="mailbox-code-cell">${renderMailboxCodeCell(row.id)}</td>
             <td><div class="row-actions">
-              <span class="copy-menu-wrap">
-                <button onclick="toggleCopyMenu('${row.id}')">API 地址</button>
-                ${renderMailboxCopyMenu(row.id)}
-              </span>
-              <button id="verifyButton-${esc(row.id)}" onclick="verifyMailbox('${row.id}')">${verifyButtonText(row.id)}</button>
-              <button class="${syncButtonClass(row.id)}" onclick="syncMailbox('${row.id}')" ${syncButtonDisabled(row.id)}>${syncButtonText(row.id)}</button>
-              <button onclick="cleanRemoteMailbox('${row.id}')" title="把本地已同步过的远端邮件移到废纸篓，并清空当前 iCloud 废纸篓">删除邮件</button>
-              <select onchange="setMailboxStatus('${row.id}', this.value)">
-                <option value="">改状态</option>
-                <option value="available">可用</option>
-                <option value="used">已使用</option>
-                <option value="failed">失败</option>
-                <option value="disabled">停用</option>
-              </select>
-              <button onclick="disableMailbox('${row.id}')">停用 API</button>
-              <button class="danger" onclick="deleteMailbox('${row.id}')">删除 API</button>
+              <button id="verifyButton-${esc(row.id)}" onclick="verifyMailbox('${row.id}')" title="获取验证码" aria-label="获取验证码">${mailboxActionIcon('eye')}</button>
+              <button class="action-sync ${syncButtonClass(row.id)}" onclick="syncMailbox('${row.id}')" ${syncButtonDisabled(row.id)} title="同步邮件" aria-label="同步邮件">${mailboxActionIcon('sync')}</button>
+              <button onclick="createMailboxHTMLLink('${row.id}')" title="复制 HTML 接码地址" aria-label="复制 HTML 接码地址">${mailboxActionIcon('link')}</button>
+              <details class="mailbox-more">
+                <summary title="更多操作" aria-label="更多操作">${mailboxActionIcon('more')}</summary>
+                <div class="mailbox-more-menu">
+                  <button type="button" onclick="copyMailboxValue('${row.id}', 'api')">复制 API 地址</button>
+                  <button type="button" onclick="copyMailboxValue('${row.id}', 'both')">复制邮箱 + API</button>
+                  <button type="button" onclick="cleanRemoteMailbox('${row.id}')">清理远端邮件</button>
+                  <button type="button" onclick="setMailboxStatus('${row.id}', 'available')">设为可用</button>
+                  <button type="button" onclick="setMailboxStatus('${row.id}', 'used')">设为已使用</button>
+                  <button type="button" onclick="setMailboxStatus('${row.id}', 'failed')">设为失败</button>
+                  ${renderMailboxAPIToggleAction(row)}
+                </div>
+              </details>
+              <button class="action-delete" onclick="deleteMailbox('${row.id}')" title="从 iCloud 永久删除邮箱" aria-label="从 iCloud 永久删除邮箱">${mailboxActionIcon('trash')}</button>
             </div>
             </td>
           </tr>`;
       }).join('');
+      renderMailboxBatchBar();
+    }
+
+    function mailboxDisplayID(id) {
+      const match = String(id || '').match(/(\d+)$/);
+      return match ? `#${Number(match[1])}` : String(id || '-');
+    }
+
+    function formatMailboxDate(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      const pad = number => String(number).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function renderMailboxHTMLExpiry(row) {
+      if (!row.html_link_url) {
+        return '<span class="html-expiry expired"><strong>未生成</strong><small>点击链接图标生成</small></span>';
+      }
+      const ttlDays = Math.max(1, Number.parseInt(row.html_link_ttl_days, 10) || 7);
+      if (!row.html_link_activated_at || !row.html_link_expires) {
+        return `<span class="html-expiry pending" title="首次访问后开始计算有效期"><strong>未激活</strong><small>激活后 ${ttlDays} 天到期</small></span>`;
+      }
+      const expiresAt = new Date(row.html_link_expires);
+      const expired = !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now();
+      if (expired) {
+        return `<span class="html-expiry expired" title="激活时间：${esc(formatMailboxDate(row.html_link_activated_at))}；到期时间：${esc(formatMailboxDate(row.html_link_expires))}"><strong>已过期</strong><small>有效期已结束</small></span>`;
+      }
+      const remainingDays = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 86400000));
+      return `<span class="html-expiry active" title="激活时间：${esc(formatMailboxDate(row.html_link_activated_at))}；到期时间：${esc(formatMailboxDate(row.html_link_expires))}"><strong>已激活</strong><small>剩余 ${remainingDays} 天</small></span>`;
+    }
+
+    function mailboxTableStatus(row) {
+      if (!row.api_active) return {text: 'API 停用', kind: 'off'};
+      if (!row.icloud_active) return {text: 'iCloud 停用', kind: 'bad'};
+      return ({
+        available: {text: '可用', kind: 'ok'},
+        used: {text: '已使用', kind: 'warn'},
+        failed: {text: '失败', kind: 'bad'},
+        disabled: {text: '停用', kind: 'off'},
+        active: {text: '正常', kind: 'ok'}
+      })[row.status] || {text: statusText(row.status), kind: 'off'};
+    }
+
+    function renderMailboxAPIToggleAction(row) {
+      if (row.api_active) {
+        return `<button type="button" onclick="disableMailbox('${row.id}')">停用 API</button>`;
+      }
+      return `<button type="button" onclick="enableMailbox('${row.id}')">启用 API</button>`;
+    }
+
+    function mailboxActionIcon(name) {
+      const icons = {
+        eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3.5 12s3-5 8.5-5 8.5 5 8.5 5-3 5-8.5 5-8.5-5-8.5-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>',
+        sync: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M19 7v4h-4"/><path d="M5 17v-4h4"/><path d="M6.7 9A6.5 6.5 0 0 1 18.5 8M5.5 16A6.5 6.5 0 0 0 17.3 15"/></svg>',
+        link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m9.5 14.5 5-5"/><path d="M7.4 17.7 5.8 19.3a3.3 3.3 0 0 1-4.7-4.7l3.2-3.2a3.3 3.3 0 0 1 4.7 0"/><path d="m16.6 6.3 1.6-1.6a3.3 3.3 0 0 1 4.7 4.7l-3.2 3.2a3.3 3.3 0 0 1-4.7 0"/></svg>',
+        trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4.5 7h15M9 3.8h6l1 3.2H8zM7 7l.8 13h8.4L17 7M10 10.5v6M14 10.5v6"/></svg>',
+        more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>'
+      };
+      return icons[name] || '';
     }
 
     function mailboxAccountTitle(row) {
       return row.account_label || row.account_apple_id || row.account_id || '未绑定 Apple 账号';
+    }
+
+    function toggleMailboxSelection(id, checked) {
+      const row = lastMailboxes.find(item => item.id === id) || selectedMailboxRows.get(id);
+      if (checked && row) {
+        selectedMailboxIDs.add(id);
+        selectedMailboxRows.set(id, row);
+      } else {
+        selectedMailboxIDs.delete(id);
+        selectedMailboxRows.delete(id);
+      }
+      renderMailboxes();
+    }
+
+    function toggleSelectAllMailboxes(checked) {
+      for (const row of lastMailboxes || []) {
+        if (checked) {
+          selectedMailboxIDs.add(row.id);
+          selectedMailboxRows.set(row.id, row);
+        } else {
+          selectedMailboxIDs.delete(row.id);
+          selectedMailboxRows.delete(row.id);
+        }
+      }
+      renderMailboxes();
+    }
+
+    function clearMailboxSelection() {
+      selectedMailboxIDs.clear();
+      selectedMailboxRows.clear();
+      renderMailboxes();
+    }
+
+    function renderMailboxBatchBar() {
+      const bar = $('mailboxBatchBar');
+      const count = selectedMailboxIDs.size;
+      if (bar) bar.hidden = count === 0;
+      if ($('mailboxSelectedCount')) $('mailboxSelectedCount').textContent = String(count);
+      const selectAll = $('mailboxSelectAll');
+      if (selectAll) {
+        const rows = lastMailboxes || [];
+        const selectedOnPage = rows.filter(row => selectedMailboxIDs.has(row.id)).length;
+        selectAll.checked = rows.length > 0 && selectedOnPage === rows.length;
+        selectAll.indeterminate = selectedOnPage > 0 && selectedOnPage < rows.length;
+      }
+    }
+
+    function selectedMailboxList() {
+      return [...selectedMailboxIDs].map(id => selectedMailboxRows.get(id)).filter(Boolean);
+    }
+
+    async function copyMailboxEmail(id) {
+      const row = lastMailboxes.find(item => item.id === id) || selectedMailboxRows.get(id);
+      if (!row) return;
+      await writeClipboard(row.email || '');
+      log(`已复制邮箱：${row.email}`);
+      showToast(`已复制邮箱：${row.email}`);
+    }
+
+    async function batchCopyMailboxes(mode) {
+      const rows = selectedMailboxList();
+      if (rows.length === 0) return;
+      const lines = rows.map(row => mode === 'api'
+        ? mailboxCodeURL(row, {waitMs: 12000}).toString()
+        : row.email || '').filter(Boolean);
+      await writeClipboard(lines.join('\n'));
+      log(`已批量复制 ${rows.length} 个${mode === 'api' ? ' API 地址' : '邮箱地址'}`);
+      showToast(`已复制 ${rows.length} 个${mode === 'api' ? ' API 地址' : '邮箱地址'}`);
+    }
+
+    async function executeMailboxBatch(rows, worker, concurrency = 4) {
+      const results = new Array(rows.length);
+      const errors = [];
+      let cursor = 0;
+      async function runNext() {
+        while (cursor < rows.length) {
+          const index = cursor++;
+          try {
+            results[index] = await worker(rows[index], index);
+          } catch (err) {
+            errors.push({row: rows[index], error: err});
+          }
+        }
+      }
+      await Promise.all(Array.from({length: Math.min(concurrency, rows.length)}, runNext));
+      return {results, errors};
+    }
+
+    async function batchCreateHTMLLinks() {
+      const rows = selectedMailboxList();
+      if (rows.length === 0) return;
+      log(`开始读取 ${rows.length} 个 HTML 接码地址...`);
+      const result = await executeMailboxBatch(rows, row => api(`/api/mailboxes/${encodeURIComponent(row.id)}/html-link`, {method:'POST', body:'{}'}));
+      const links = result.results.filter(Boolean);
+      const urls = links.map(item => item.url).filter(Boolean);
+      if (urls.length > 0) await writeClipboard(urls.join('\n'));
+      log(`HTML 地址批量生成完成：成功 ${urls.length}，失败 ${result.errors.length}${urls.length ? '，成功地址已复制' : ''}`);
+      if (urls.length > 0) {
+        const activeCount = links.filter(item => item.expires_at).length;
+        const pendingCount = Math.max(0, urls.length - activeCount);
+        const timing = [pendingCount ? `${pendingCount} 个待首次使用` : '', activeCount ? `${activeCount} 个已激活` : ''].filter(Boolean).join('，');
+        showToast(`已复制 ${urls.length} 个 HTML 地址；${timing}`);
+      }
+    }
+
+    async function batchSyncMailboxes() {
+      const rows = selectedMailboxList();
+      if (rows.length === 0) return;
+      rows.forEach(row => mailboxSyncResults.set(row.id, {loading: true}));
+      renderMailboxes();
+      const result = await executeMailboxBatch(rows, row => api(`/api/mailboxes/${encodeURIComponent(row.id)}/sync?keyword=ChatGPT`, {method:'POST', body:'{}'}), 3);
+      rows.forEach(row => mailboxSyncResults.set(row.id, {ok: !result.errors.some(item => item.row.id === row.id)}));
+      log(`批量同步完成：成功 ${rows.length - result.errors.length}，失败 ${result.errors.length}`);
+      await refresh();
+      rows.forEach(row => resetMailboxSyncResultLater(row.id));
+    }
+
+    async function batchSetMailboxStatus(status) {
+      if (!status) return;
+      const rows = selectedMailboxList();
+      if (rows.length === 0) return;
+      const result = await executeMailboxBatch(rows, row => {
+        const payload = {status, note: '面板批量改状态'};
+        if (status === 'disabled') payload.api_active = false;
+        return api(`/api/mailboxes/${encodeURIComponent(row.id)}/status`, {method:'POST', body: JSON.stringify(payload)});
+      });
+      if ($('mailboxBatchStatus')) $('mailboxBatchStatus').value = '';
+      log(`批量状态更新完成：成功 ${rows.length - result.errors.length}，失败 ${result.errors.length}`);
+      await refresh();
+    }
+
+    async function batchDisableMailboxes() {
+      const rows = selectedMailboxList();
+      if (rows.length === 0) return;
+      if (!await askConfirm({
+        title: '批量停用邮箱 API',
+        message: `将停用选中的 ${rows.length} 个邮箱 API。`,
+        detail: '停用后，外部取码请求将停止；仍可在邮箱操作菜单中重新启用。',
+        confirmText: '确认停用',
+        tone: 'warning'
+      })) return;
+      const result = await executeMailboxBatch(rows, row => api(`/api/mailboxes/${encodeURIComponent(row.id)}/disable`, {method:'POST', body:'{}'}));
+      log(`批量停用完成：成功 ${rows.length - result.errors.length}，失败 ${result.errors.length}`);
+      await refresh();
+    }
+
+    async function batchDeleteMailboxes() {
+      const rows = selectedMailboxList();
+      if (rows.length === 0) return;
+      if (!await askConfirm({
+        title: '批量永久删除邮箱',
+        message: `将从 iCloud 永久删除选中的 ${rows.length} 个邮箱。`,
+        detail: '系统会先停用活跃地址，再删除远端地址以及本地邮箱、邮件、API 和 HTML 地址。此操作不可恢复。',
+        confirmText: `永久删除 ${rows.length} 个`,
+        tone: 'danger'
+      })) return;
+      const result = await executeMailboxBatch(rows, async row => {
+        const deleted = await api(`/api/mailboxes/${encodeURIComponent(row.id)}`, {method:'DELETE'});
+        if (!deleted.local_deleted) throw new Error('远端邮箱删除完成，但本地记录清理未确认');
+        return row.id;
+      }, 1);
+      for (const id of result.results.filter(Boolean)) {
+        selectedMailboxIDs.delete(id);
+        selectedMailboxRows.delete(id);
+      }
+      const successCount = rows.length - result.errors.length;
+      log(`批量永久删除完成：成功 ${successCount}，失败 ${result.errors.length}`);
+      showToast(result.errors.length
+        ? `永久删除完成：成功 ${successCount}，失败 ${result.errors.length}`
+        : `已从 iCloud 永久删除 ${successCount} 个邮箱`);
+      await refresh();
+    }
+
+    async function createMailboxHTMLLink(id) {
+      try {
+        const data = await api(`/api/mailboxes/${encodeURIComponent(id)}/html-link`, {method:'POST', body:'{}'});
+        await writeClipboard(data.url);
+        const timing = data.expires_at ? `过期时间 ${formatMailboxDate(data.expires_at)}` : '首次访问后开始计算有效期';
+        log(`HTML 接码地址已复制：${data.url}（${timing}）`);
+        showToast(`已复制 HTML 地址；${timing}`);
+      } catch (err) {
+        log('生成 HTML 接码地址失败：' + err.message);
+      }
     }
 
     function verifyButtonText(id) {
@@ -2640,6 +3455,7 @@
       try {
         await writeClipboard(item.code);
         log(`已复制验证码：${item.email || id} -> ${item.code}`);
+        showToast(`已复制验证码：${item.code}`);
       } catch (err) {
         log('复制验证码失败：' + err.message);
       }
@@ -3052,7 +3868,13 @@
 
     async function cleanRemoteMailbox(id) {
       const row = lastMailboxes.find(x => x.id === id);
-      if (!confirm('确认把本地已同步过的远端邮件移到废纸篓，并清空当前 iCloud 废纸篓？')) return;
+      if (!await askConfirm({
+        title: '清理远端邮件',
+        message: `清理 ${row ? row.email : '当前邮箱'} 已同步过的远端邮件？`,
+        detail: '匹配邮件会先移入废纸篓，随后清空当前 iCloud 废纸篓。',
+        confirmText: '确认清理',
+        tone: 'danger'
+      })) return;
       log('开始清理远端邮件：' + (row ? row.email : id));
       try {
         const data = await api(`/api/mailboxes/${encodeURIComponent(id)}/remote-clean`, {
@@ -3071,7 +3893,13 @@
         ? activeMailboxAccountKey
         : '';
       const scopeText = accountID ? `当前 Apple 账号 TAB` : '当前可见全部登录态';
-      if (!confirm(`确认一键删除${scopeText}下已同步过的验证码邮件，并清空对应 iCloud 废纸篓？`)) return;
+      if (!await askConfirm({
+        title: '一键删除验证码邮件',
+        message: `将清理${scopeText}下已同步过的验证码邮件。`,
+        detail: '匹配邮件会移入废纸篓，并清空对应的 iCloud 废纸篓。',
+        confirmText: '确认删除',
+        tone: 'danger'
+      })) return;
       log('开始一键删除验证码邮件：' + scopeText);
       try {
         const data = await api('/api/mailboxes/remote-clean', {
@@ -3097,15 +3925,41 @@
 
     async function disableMailbox(id) {
       await api(`/api/mailboxes/${encodeURIComponent(id)}/disable`, {method:'POST', body:'{}'});
-      log('已停用：' + id);
+      log('API 已停用：' + id);
+      showToast('API 已停用');
+      await refresh();
+    }
+
+    async function enableMailbox(id) {
+      await api(`/api/mailboxes/${encodeURIComponent(id)}/enable`, {method:'POST', body:'{}'});
+      log('API 已启用：' + id);
+      showToast('API 已启用');
       await refresh();
     }
 
     async function deleteMailbox(id) {
-      if (!confirm('确认删除这个 API 绑定？')) return;
-      await api(`/api/mailboxes/${encodeURIComponent(id)}`, {method:'DELETE'});
-      log('已删除：' + id);
-      await refresh();
+      const row = lastMailboxes.find(item => item.id === id) || selectedMailboxRows.get(id);
+      const email = row ? row.email : id;
+      if (!await askConfirm({
+        title: '永久删除邮箱',
+        message: email,
+        detail: '系统会先停用活跃地址，再删除 iCloud 远端地址以及本地邮箱、邮件、API 和 HTML 地址。此操作不可恢复。',
+        confirmText: '永久删除',
+        tone: 'danger'
+      })) return;
+      try {
+        const data = await api(`/api/mailboxes/${encodeURIComponent(id)}`, {method:'DELETE'});
+        selectedMailboxIDs.delete(id);
+        selectedMailboxRows.delete(id);
+        const remote = data.remote || {};
+        const detail = remote.already_missing ? '远端已不存在，本地记录已清理' : 'iCloud 远端与本地记录均已删除';
+        log(`邮箱已永久删除：${email}（${detail}）`);
+        showToast(`已永久删除邮箱：${email}`);
+        await refresh();
+      } catch (err) {
+        log(`永久删除邮箱失败：${email}；${err.message}`);
+        showToast(`删除失败：${err.message}`);
+      }
     }
 
     async function copyMailboxValue(id, mode) {
@@ -3119,6 +3973,16 @@
       renderMailboxes();
       const label = mode === 'email' ? '邮箱' : (mode === 'api' ? 'API' : '邮箱+API');
       log(`已复制${label}：${email}`);
+      showToast(`已复制${label}：${email}`);
+    }
+
+    function showToast(message) {
+      const toast = $('appToast');
+      if (!toast) return;
+      toast.textContent = message;
+      toast.classList.add('show');
+      if (appToastTimer) clearTimeout(appToastTimer);
+      appToastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
     }
 
     async function writeClipboard(text) {

@@ -16,6 +16,7 @@ captures/
 苹果登录JS分析/
 .anna_manifest_tmp.json
 .anna_skills/
+.codex-artifacts/
 verification-code-speedup.md
 *.db
 *.sqlite

@@ -2337,6 +2337,74 @@ func TestICloudClientListPrivacyMailboxes(t *testing.T) {
 	}
 }
 
+func TestICloudClientDeletePrivacyMailboxDeactivatesThenDeletes(t *testing.T) {
+	var paths []string
+	var requestBodies []map[string]string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v2/hme/list":
+			_, _ = w.Write([]byte(`{"success":true,"result":{"hmeEmails":[{"anonymousId":"remote-1","hme":"Delete.Me@icloud.com","isActive":true}]}}`))
+		case "POST /v1/hme/deactivate", "POST /v1/hme/delete":
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			requestBodies = append(requestBodies, body)
+			_, _ = w.Write([]byte(`{"success":true,"result":{}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+
+	client := &ICloudClient{client: ts.Client()}
+	result, err := client.DeletePrivacyMailbox(t.Context(), ICloudSession{
+		PremiumMailBaseURL: ts.URL,
+		DSID:               "123",
+		Host:               "www.icloud.com",
+		Cookies:            []SessionCookie{{Name: "session", Value: "x", Domain: "127.0.0.1", Path: "/"}},
+	}, "delete.me@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Found || !result.Deactivated || !result.Deleted || result.AlreadyMissing || result.AnonymousID != "remote-1" {
+		t.Fatalf("delete result = %+v", result)
+	}
+	wantPaths := []string{"GET /v2/hme/list", "POST /v1/hme/deactivate", "POST /v1/hme/delete"}
+	if strings.Join(paths, "\n") != strings.Join(wantPaths, "\n") {
+		t.Fatalf("paths = %#v, want %#v", paths, wantPaths)
+	}
+	if len(requestBodies) != 2 || requestBodies[0]["anonymousId"] != "remote-1" || requestBodies[1]["anonymousId"] != "remote-1" {
+		t.Fatalf("delete request bodies = %#v", requestBodies)
+	}
+}
+
+func TestICloudClientDeletePrivacyMailboxTreatsMissingRemoteAsDeleted(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v2/hme/list" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"result":{"hmeEmails":[]}}`))
+	}))
+	defer ts.Close()
+
+	result, err := (&ICloudClient{client: ts.Client()}).DeletePrivacyMailbox(t.Context(), ICloudSession{
+		PremiumMailBaseURL: ts.URL,
+		DSID:               "123",
+		Host:               "www.icloud.com",
+		Cookies:            []SessionCookie{{Name: "session", Value: "x", Domain: "127.0.0.1", Path: "/"}},
+	}, "missing@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Found || result.Deleted || !result.AlreadyMissing {
+		t.Fatalf("missing remote result = %+v", result)
+	}
+}
+
 func TestICloudClientListPrivacyMailboxesRetriesEOF(t *testing.T) {
 	attempts := 0
 	client := &ICloudClient{client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -3640,6 +3708,19 @@ func TestMailboxCodeQueryWaitMSWaitsForSyncResult(t *testing.T) {
 	if !body.Success || body.Code != "777777" {
 		t.Fatalf("code body = %+v, want waited code 777777", body)
 	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		server.mailboxCodeMu.Lock()
+		pollers := len(server.mailboxCodePollers)
+		server.mailboxCodeMu.Unlock()
+		if pollers == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("mailbox code poller still active after waited result")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func TestMailboxCodeQueryReturnsCodeInsertedDuringWaitTimeout(t *testing.T) {
@@ -4340,6 +4421,292 @@ func TestLoginProtectsManagementAPI(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status with admin login = %d, want 200", rr.Code)
+	}
+}
+
+func TestMailboxAPICanBeEnabledAfterDisable(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	cookie, _ := registerTestUser(t, handler, "api-toggle-owner", "toggle123")
+	mailbox := createTestMailboxWithCookie(t, handler, cookie, "toggle", "toggle@icloud.com")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/mailboxes/"+url.PathEscape(mailbox.ID)+"/disable", strings.NewReader(`{}`))
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("disable mailbox API = %d body=%s", rr.Code, rr.Body.String())
+	}
+	disabled, ok := store.FindMailboxByID(mailbox.ID)
+	if !ok || disabled.APIActive || disabled.Status != StatusDisabled {
+		t.Fatalf("disabled mailbox = %+v ok=%v", disabled, ok)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/mailboxes/"+url.PathEscape(mailbox.ID)+"/enable", strings.NewReader(`{}`))
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("enable mailbox API = %d body=%s", rr.Code, rr.Body.String())
+	}
+	enabled, ok := store.FindMailboxByID(mailbox.ID)
+	if !ok || !enabled.APIActive || enabled.Status != StatusAvailable || enabled.Note != "API 已启用" {
+		t.Fatalf("enabled mailbox = %+v ok=%v", enabled, ok)
+	}
+}
+
+func TestDeleteMailboxPermanentlyDeletesRemoteBeforeLocalData(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	cookie, user := registerTestUser(t, handler, "delete-owner", "delete123")
+	if err := store.SaveICloudSessionForOwner(user.ID, ICloudSession{
+		OwnerID:            user.ID,
+		AppleID:            "delete-owner@icloud.com",
+		PremiumMailBaseURL: "https://mail.example.invalid",
+		DSID:               "delete-dsid",
+		Cookies:            []SessionCookie{{Name: "session", Value: "x", Domain: ".icloud.com", Path: "/"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := store.AddMailboxForOwner(user.ID, "", "delete", "delete-me@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AddMessage(mailbox.ID, "code", "sender@example.com", "code 123456", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	server.deletePrivacyMailbox = func(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error) {
+		if session.DSID != "delete-dsid" || email != mailbox.Email {
+			t.Fatalf("remote delete input = session:%+v email:%q", session, email)
+		}
+		return ICloudMailboxDeleteResult{Email: email, Found: true, Deactivated: true, Deleted: true}, nil
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/mailboxes/"+url.PathEscape(mailbox.ID), nil)
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("delete mailbox = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		LocalDeleted bool                      `json:"local_deleted"`
+		Remote       ICloudMailboxDeleteResult `json:"remote"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.LocalDeleted || !body.Remote.Deactivated || !body.Remote.Deleted {
+		t.Fatalf("delete response = %+v body=%s", body, rr.Body.String())
+	}
+	if _, ok := store.FindMailboxByID(mailbox.ID); ok {
+		t.Fatal("mailbox still exists after remote deletion")
+	}
+	if messages := store.MessagesForMailbox(mailbox.ID); len(messages) != 0 {
+		t.Fatalf("messages after deletion = %+v", messages)
+	}
+	for _, link := range store.Snapshot().MailboxHTMLLinks {
+		if link.MailboxID == mailbox.ID {
+			t.Fatalf("HTML link still exists after deletion: %+v", link)
+		}
+	}
+}
+
+func TestDeleteMailboxKeepsLocalDataWhenRemoteDeleteFails(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	cookie, user := registerTestUser(t, handler, "delete-fail-owner", "delete123")
+	if err := store.SaveICloudSessionForOwner(user.ID, ICloudSession{
+		OwnerID:            user.ID,
+		AppleID:            "delete-fail@icloud.com",
+		PremiumMailBaseURL: "https://mail.example.invalid",
+		DSID:               "delete-fail-dsid",
+		Cookies:            []SessionCookie{{Name: "session", Value: "x", Domain: ".icloud.com", Path: "/"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := store.AddMailboxForOwner(user.ID, "", "keep", "keep-me@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.deletePrivacyMailbox = func(context.Context, ICloudSession, string) (ICloudMailboxDeleteResult, error) {
+		return ICloudMailboxDeleteResult{}, errCode("icloud_mailbox_delete_failed", "远端永久删除失败", true)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/mailboxes/"+url.PathEscape(mailbox.ID), nil)
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("failed remote delete = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if _, ok := store.FindMailboxByID(mailbox.ID); !ok {
+		t.Fatal("local mailbox was deleted after remote failure")
+	}
+	if link, ok := store.MailboxHTMLLinkForMailbox(mailbox.ID); !ok || link.Token == "" {
+		t.Fatal("HTML link was deleted after remote failure")
+	}
+}
+
+func TestMailboxHTMLLinkAndSystemSettings(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{PublicBaseURL: "https://mail.example"}, store, discardLogger())
+	adminCookie, _ := registerTestUser(t, handler, "admin", "admin123")
+	mailbox := createTestMailboxWithCookie(t, handler, adminCookie, "demo", "demo@icloud.com")
+	if mailbox.HTMLLinkURL == "" {
+		t.Fatal("mailbox HTML link was not generated during mailbox creation")
+	}
+	if mailbox.HTMLLinkActivated != "" || mailbox.HTMLLinkExpires != "" {
+		t.Fatalf("new mailbox HTML link should be inactive: %+v", mailbox)
+	}
+	if mailbox.Label != "demo" || mailbox.HTMLLinkTTLDays != 7 {
+		t.Fatalf("new mailbox label/HTML TTL = %+v, want label demo and 7 days", mailbox)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/mailboxes/"+url.PathEscape(mailbox.ID)+"/html-link", strings.NewReader(`{}`))
+	req.AddCookie(adminCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create html link = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var linkBody struct {
+		URL         string `json:"url"`
+		ActivatedAt string `json:"activated_at"`
+		ExpiresAt   string `json:"expires_at"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &linkBody); err != nil || linkBody.URL == "" {
+		t.Fatalf("invalid html link response: %s", rr.Body.String())
+	}
+	if linkBody.URL != mailbox.HTMLLinkURL {
+		t.Fatalf("HTML link changed before activation: got %q want %q", linkBody.URL, mailbox.HTMLLinkURL)
+	}
+	if linkBody.ActivatedAt != "" || linkBody.ExpiresAt != "" {
+		t.Fatalf("HTML link started expiring before first use: %s", rr.Body.String())
+	}
+	parsed, err := url.Parse(linkBody.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":false,"admin_path":"/control-panel","html_link_ttl_days":2}`))
+	req.AddCookie(adminCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save system settings = %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	htmlBody := `<!doctype html><html><head><style>.code{color:#2563eb}</style></head><body><h1>ChatGPT code</h1><strong class="code">246810</strong></body></html>`
+	if _, err := store.AddMessageContent(mailbox.ID, "Your ChatGPT verification code", "noreply@example.test", normalizeMailBody(htmlBody), htmlBody, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	activationStartedAt := time.Now()
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, parsed.Path, nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "最近邮件") || !strings.Contains(rr.Body.String(), "buildEmailDocument") || !strings.Contains(rr.Body.String(), "setAttribute('sandbox','')") {
+		t.Fatalf("public html page = %d body=%s", rr.Code, rr.Body.String())
+	}
+	activatedLink, ok := store.MailboxHTMLLinkForMailbox(mailbox.ID)
+	if !ok || activatedLink.ActivatedAt.IsZero() || activatedLink.ExpiresAt.IsZero() {
+		t.Fatalf("HTML link was not activated on first use: %+v", activatedLink)
+	}
+	if activatedLink.ActivatedAt.Before(activationStartedAt) {
+		t.Fatalf("HTML link activated before first request: %s < %s", activatedLink.ActivatedAt, activationStartedAt)
+	}
+	if want := activatedLink.ActivatedAt.AddDate(0, 0, 2); !activatedLink.ExpiresAt.Equal(want) {
+		t.Fatalf("HTML link expires at %s, want %s", activatedLink.ExpiresAt, want)
+	}
+	firstActivatedAt := activatedLink.ActivatedAt
+	firstExpiresAt := activatedLink.ExpiresAt
+
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, parsed.Path+"/data", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("public html data = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var publicBody struct {
+		Messages []publicMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &publicBody); err != nil || len(publicBody.Messages) != 1 || !strings.Contains(publicBody.Messages[0].HTMLBody, "246810") {
+		t.Fatalf("public html body missing: %s", rr.Body.String())
+	}
+	activatedLink, ok = store.MailboxHTMLLinkForMailbox(mailbox.ID)
+	if !ok || !activatedLink.ActivatedAt.Equal(firstActivatedAt) || !activatedLink.ExpiresAt.Equal(firstExpiresAt) {
+		t.Fatalf("repeated use reset HTML link lifetime: got %+v", activatedLink)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/mailboxes", nil)
+	req.AddCookie(adminCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list mailboxes = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var mailboxList struct {
+		Mailboxes []publicMailbox `json:"mailboxes"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &mailboxList); err != nil || len(mailboxList.Mailboxes) != 1 {
+		t.Fatalf("invalid mailbox list: %s", rr.Body.String())
+	}
+	if mailboxList.Mailboxes[0].HTMLLinkActivated == "" || mailboxList.Mailboxes[0].HTMLLinkExpires == "" {
+		t.Fatalf("mailbox list omitted HTML expiry fields: %+v", mailboxList.Mailboxes[0])
+	}
+	if mailboxList.Mailboxes[0].Label != "demo" || mailboxList.Mailboxes[0].HTMLLinkTTLDays != 2 {
+		t.Fatalf("mailbox list label/HTML TTL = %+v, want label demo and 2 days", mailboxList.Mailboxes[0])
+	}
+
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/control-panel", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "账号数据管理") {
+		t.Fatalf("custom admin page = %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(`{"username":"new-user","password":"newpass"}`))
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("registration disabled status = %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestExpiredMailboxHTMLLinksAreCleanedWithoutChangingAPI(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	now := time.Now()
+	state := State{
+		NextID: 2,
+		Mailboxes: []Mailbox{{
+			ID: "mbx_1", Email: "keep-api@icloud.com", APIToken: "api-stays-valid",
+			APIActive: true, ICloudActive: true, Status: StatusAvailable, CreatedAt: now, UpdatedAt: now,
+		}},
+		MailboxHTMLLinks: []MailboxHTMLLink{{Token: "expired-html", MailboxID: "mbx_1", CreatedAt: now.Add(-48 * time.Hour), ExpiresAt: now.Add(-time.Hour)}},
+		SystemSettings:   SystemSettings{RegistrationEnabled: true, AdminPath: "/manage", HTMLLinkTTLDays: 7, UpdatedAt: now},
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := store.Snapshot()
+	if len(snapshot.MailboxHTMLLinks) != 1 {
+		t.Fatalf("HTML links after cleanup = %d, want one replacement", len(snapshot.MailboxHTMLLinks))
+	}
+	replacement := snapshot.MailboxHTMLLinks[0]
+	if replacement.Token == "expired-html" || replacement.Token == "" || replacement.MailboxID != "mbx_1" {
+		t.Fatalf("invalid replacement HTML link: %+v", replacement)
+	}
+	if !replacement.ActivatedAt.IsZero() || !replacement.ExpiresAt.IsZero() {
+		t.Fatalf("replacement HTML link should wait for first use: %+v", replacement)
+	}
+	if len(snapshot.Mailboxes) != 1 || snapshot.Mailboxes[0].APIToken != "api-stays-valid" || !snapshot.Mailboxes[0].APIActive {
+		t.Fatalf("mailbox API changed during cleanup: %+v", snapshot.Mailboxes)
 	}
 }
 

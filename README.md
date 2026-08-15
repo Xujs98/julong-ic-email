@@ -1,4 +1,6 @@
-# iCloud Privacy Mail 取码平台
+# 矩龙邮箱（julong-ic-email）
+
+> **二开说明**：本项目由 Xujs98 基于原项目 [q1953258942/iCloud-Privacy-Mail](https://github.com/q1953258942/iCloud-Privacy-Mail) 二次开发，当前维护仓库为 [Xujs98/julong-ic-email](https://github.com/Xujs98/julong-ic-email)。原项目版权与许可继续归原作者及其许可文件约定所有。
 
 独立 Go 服务，用来登录 iCloud、创建 Hide My Email 隐私邮箱、同步验证码邮件，并给外部注册项目提供取码 API。
 
@@ -14,6 +16,13 @@
 - 批量/定时创建：可勾选多个 Apple 登录态；手动创建会让选中账号同时跑一轮，定时只设置间隔，失败账号只在本次定时创建中临时跳过，其他账号继续创建，直到本次账号全部失败后等待下一次。
 - 邮件同步：创建邮箱的 Apple 登录态只用于创建；验证码收件使用 iCloud 邮箱账号 + App 专用密码，通过 IMAP 监听和同步最新验证码邮件。
 - 取码 API：每个隐私邮箱自动生成独立 `mailbox_key` 和 API 地址。
+- 全部邮箱表格：统一按 ID、标签、状态、邮箱、Apple 账号、邮件数、更新时间、HTML 过期时间、取件码和操作列展示；HTML 地址未访问时显示“未激活”和激活后的有效天数，访问后显示“已激活”和剩余天数；点击邮箱、API、HTML 地址或验证码后会复制并显示浮动提示。
+- 邮箱批量操作：支持跨分页选择邮箱，批量复制邮箱/API/HTML 地址、同步邮件、修改状态、停用 API，以及从 iCloud 永久删除邮箱。
+- 邮箱 API 启停：已启用邮箱的操作菜单显示“停用 API”；停用后同一位置自动切换为“启用 API”，重新启用后恢复为可用状态。
+- 主题询问框：更新、停用、远端清理、永久删除和账号删除等操作统一使用矩龙邮箱自绘弹层，适配全部明暗主题与移动端，不再调用浏览器原生询问框。
+- 邮箱永久删除：删除按钮会先停用活跃的 Hide My Email 地址，再调用 iCloud 永久删除；远端成功或确认已不存在后，才清理本地邮箱、邮件、API token 和 HTML 地址。
+- HTML 接码页：邮箱入库时自动生成 `/mailbox/{token}` 公开地址，首次打开页面或数据接口时才激活有效期；页面自动刷新最新验证码和最近邮件，HTML 邮件会在隔离预览区按原始排版可视化展示。
+- 系统设置：管理员可关闭注册、修改后台入口路径、设置 HTML 接码地址首次访问后的有效天数；过期 HTML 链接自动清理并补发新的未激活地址，邮箱 API 不受影响且不会按时间过期。
 - 自动取号 API：外部项目可用全局 `api_key` 领取可用邮箱，领取后自动标记为已使用。
 - 登录态检测：可手动检测 iCloud Mail 是否还能同步，也可在前端开启定时检测。
 - 数据导出：当前登录用户可导出自己有权访问的数据；管理员导出全量数据；邮箱/API 导出支持按 Apple 登录态筛选。
@@ -28,6 +37,8 @@ internal/app/templates/    前端页面模板
 config.example.json        配置模板
 README.md                  使用与部署说明
 更新日志.md                 公开版功能更新记录
+AGENTS.md                  开发、验证、提交和 GitHub 推送约定
+scripts/push-with-retry.sh 推送失败后的三次自动重试脚本
 ```
 
 以下目录是运行或排障产物，默认被 `.gitignore` 排除，不应提交或打包给别人：
@@ -73,7 +84,7 @@ Copy-Item .\config.example.json .\config.json
 | `icloud_default_host` | iCloud 登录态校验 Host，默认 `www.icloud.com.cn` |
 | `icloud_client_id` | iCloud Web 公共 Client ID，通常不用修改 |
 | `update_enabled` | 是否启用面板“检测更新/在线更新”，默认 `true` |
-| `update_repository` | 未配置 manifest 时读取的 GitHub 仓库，默认 `q1953258942/iCloud-Privacy-Mail` |
+| `update_repository` | 未配置 manifest 时读取的 GitHub 仓库，默认 `Xujs98/julong-ic-email` |
 | `update_manifest_url` | 可选的更新 manifest 地址；配置后优先按 manifest 选择当前系统架构的二进制和 sha256 |
 | `update_asset_name` | 可选的发布资产文件名；不填时自动匹配当前 `os/arch` |
 
@@ -83,13 +94,13 @@ Copy-Item .\config.example.json .\config.json
 {
   "host": "127.0.0.1",
   "port": 8787,
-  "data_path": "/opt/icloud-privacy-mail/shared/data/state.json",
+  "data_path": "/opt/julong-ic-email/shared/data/state.json",
   "api_key": "CHANGE_ME_GLOBAL_API_KEY",
   "public_base_url": "https://www.example.com",
   "icloud_default_host": "www.icloud.com.cn",
   "icloud_client_id": "d39ba9916b7251055b22c7f910e2ea796ee65e98b2ddecea8f5dde8d9d1a815d",
   "update_enabled": true,
-  "update_repository": "q1953258942/iCloud-Privacy-Mail",
+  "update_repository": "Xujs98/julong-ic-email",
   "update_manifest_url": "",
   "update_asset_name": ""
 }
@@ -113,10 +124,10 @@ Copy-Item .\config.example.json .\config.json
   "published_at": "2026-07-02T00:00:00Z",
   "assets": [
     {
-      "name": "panel_linux_amd64",
+      "name": "julong-ic-email_linux_amd64",
       "os": "linux",
       "arch": "amd64",
-      "url": "https://github.com/q1953258942/iCloud-Privacy-Mail/releases/download/2026.07.02/panel_linux_amd64",
+      "url": "https://github.com/Xujs98/julong-ic-email/releases/download/2026.07.02/julong-ic-email_linux_amd64",
       "sha256": "..."
     }
   ]
@@ -128,7 +139,7 @@ Linux 服务器建议使用 systemd 托管并设置 `Restart=on-failure` 或 `Re
 发布边界：
 
 - 每次修复功能、问题或公开行为，都必须提升 `AppVersion`、提交 Git，并发布新的 GitHub Release。
-- GitHub Release 必须上传裸二进制资产，至少包含 `icloud-privacy-mail_linux_amd64`；Windows 可附带 `icloud-privacy-mail_windows_amd64.exe` 供手动下载。
+- GitHub Release 必须上传裸二进制资产，至少包含 `julong-ic-email_linux_amd64`；Windows 可附带 `julong-ic-email_windows_amd64.exe` 供手动下载。
 - 在线更新只读取 GitHub `latest release` 或 `update_manifest_url` 指向的最新版本，不要求用户逐个中间版本升级；从任意旧版本点击更新都会直接更新到最新 Release。
 - `data_path`、`config.json`、Apple 登录态、Cookie、取码缓存和运行数据不属于 Release 资产，更新时不覆盖。
 
@@ -145,6 +156,35 @@ http://127.0.0.1:8787/login
 ```
 
 首次注册的账号自动成为管理员。
+
+管理员登录后可在侧边栏进入“系统设置”：
+
+- 开启或关闭新用户注册；首次部署尚无用户时仍允许创建首个管理员。
+- 设置后台数据管理入口，例如 `/julong-control`，保存后立即生效；`/manage` 保留兼容入口。
+- 设置 HTML 接码地址从首次访问开始计算的有效天数（1-3650 天）。过期时只清理 HTML token，并为邮箱补一个新的未激活地址；不会删除邮箱、邮件或 API token。
+
+邮箱入库或同步到本地时会自动生成 HTML 接码地址。在“全部邮箱”中点击链接图标会复制类似下面的地址：
+
+```text
+https://mail.example.com/mailbox/TOKEN
+```
+
+新地址生成后处于“待首次使用”状态，不消耗有效期。第一次打开页面或请求同 token 的 `/data` 接口时，系统按当时设置的有效天数写入激活时间和过期时间；重复访问不会续期。该页面无需登录，只能查看 token 对应的单个邮箱。邮箱 API 地址继续使用原有 `mailbox_key`，没有时间过期规则。
+
+最近邮件会自动区分纯文本和 HTML 内容。HTML 邮件保留排版并通过沙箱预览，页面会移除脚本、表单、跳转和外部资源；历史上只保存了纯文本的邮件会自动清理残留 CSS 后再展示。
+
+“全部邮箱”使用统一表格展示，并单独显示“HTML 过期时间”：未激活地址显示“待首次使用”，首次打开后显示具体到期时间。点击邮箱、API、HTML 地址或验证码会复制并显示操作提示；勾选一行或使用表头全选后，会出现批量操作栏。跨分页选择会保留，点击“取消选择”可一次清空。
+
+批量操作包括：
+
+- 复制邮箱地址或 API 地址；
+- 复制选中邮箱已自动生成的 HTML 接码地址；
+- 同步选中邮箱的邮件；
+- 批量修改可用、已使用、失败或停用状态；
+- 停用邮箱 API；
+- 从 iCloud 永久删除选中邮箱（执行前会再次确认，按 Apple 账号串行执行）。
+
+永久删除依赖邮箱所属 Apple 账号已保存的旧接口 iCloud 登录态。远端停用或删除失败时，本地邮箱、邮件、API token 和 HTML 地址会完整保留，方便修复登录态后重试。
 
 ## 账号与权限
 
@@ -378,8 +418,8 @@ GET /api/runtime/export-mailbox-emails?format=txt&account_id=<account_id>
 推荐部署结构：
 
 ```text
-/opt/icloud-privacy-mail/
-  icloud-privacy-mail
+/opt/julong-ic-email/
+  julong-ic-email
   config.json
   shared/data/state.json
   backups/
@@ -388,9 +428,9 @@ GET /api/runtime/export-mailbox-emails?format=txt&account_id=<account_id>
 `shared/data/state.json` 推荐只允许服务用户读写，例如：
 
 ```bash
-chown -R icloud-mail:icloud-mail /opt/icloud-privacy-mail/shared
-chmod 700 /opt/icloud-privacy-mail/shared/data
-chmod 600 /opt/icloud-privacy-mail/shared/data/state.json
+chown -R icloud-mail:icloud-mail /opt/julong-ic-email/shared
+chmod 700 /opt/julong-ic-email/shared/data
+chmod 600 /opt/julong-ic-email/shared/data/state.json
 ```
 
 如果部署后页面空白、登录态丢失或日志出现 `permission denied`，优先检查 `state.json` 的属主和权限。
@@ -401,27 +441,27 @@ chmod 600 /opt/icloud-privacy-mail/shared/data/state.json
 $env:GOOS='linux'
 $env:GOARCH='amd64'
 $env:CGO_ENABLED='0'
-go build -trimpath -ldflags="-s -w" -o .\dist\icloud-privacy-mail-linux-amd64 .\cmd\panel
+go build -trimpath -ldflags="-s -w" -o .\dist\julong-ic-email-linux-amd64 .\cmd\panel
 ```
 
 systemd 示例：
 
 ```ini
 [Unit]
-Description=iCloud Privacy Mail
+Description=矩龙邮箱
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/icloud-privacy-mail
-ExecStart=/opt/icloud-privacy-mail/icloud-privacy-mail --config /opt/icloud-privacy-mail/config.json
+WorkingDirectory=/opt/julong-ic-email
+ExecStart=/opt/julong-ic-email/julong-ic-email --config /opt/julong-ic-email/config.json
 Restart=always
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=/opt/icloud-privacy-mail
+ReadWritePaths=/opt/julong-ic-email
 
 [Install]
 WantedBy=multi-user.target
@@ -448,13 +488,13 @@ server {
 ```powershell
 go test ./...
 go vet ./...
-go build -trimpath -o .\bin\icloud-privacy-mail.exe .\cmd\panel
+go build -trimpath -o .\bin\julong-ic-email.exe .\cmd\panel
 ```
 
 服务器验证：
 
 ```bash
-systemctl is-active icloud-privacy-mail
+systemctl is-active julong-ic-email
 curl -fsS http://127.0.0.1:8787/login >/dev/null
 curl -fsSI https://www.example.com/login
 ```

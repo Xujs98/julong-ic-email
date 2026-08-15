@@ -311,7 +311,7 @@ func getJSON(ctx context.Context, url string, out any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "iCloud-Privacy-Mail-Updater/"+AppVersion)
+	req.Header.Set("User-Agent", "Julong-IC-Email-Updater/"+AppVersion)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -361,7 +361,7 @@ func downloadAndReplaceExecutable(ctx context.Context, downloadURL, wantSHA256, 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "iCloud-Privacy-Mail-Updater/"+AppVersion)
+	req.Header.Set("User-Agent", "Julong-IC-Email-Updater/"+AppVersion)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("下载更新失败：%w", err)

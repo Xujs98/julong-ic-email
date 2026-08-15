@@ -17,6 +17,39 @@ type FileStore struct {
 	state State
 }
 
+const (
+	defaultAdminPath       = "/manage"
+	defaultHTMLLinkTTLDays = 7
+)
+
+func defaultSystemSettings() SystemSettings {
+	return SystemSettings{
+		RegistrationEnabled: true,
+		AdminPath:           defaultAdminPath,
+		HTMLLinkTTLDays:     defaultHTMLLinkTTLDays,
+	}
+}
+
+func normalizeSystemSettings(settings SystemSettings) SystemSettings {
+	if strings.TrimSpace(settings.AdminPath) == "" {
+		settings.AdminPath = defaultAdminPath
+	}
+	if !strings.HasPrefix(settings.AdminPath, "/") {
+		settings.AdminPath = "/" + settings.AdminPath
+	}
+	settings.AdminPath = strings.TrimRight(strings.TrimSpace(settings.AdminPath), "/")
+	if settings.AdminPath == "" {
+		settings.AdminPath = defaultAdminPath
+	}
+	if settings.HTMLLinkTTLDays <= 0 {
+		settings.HTMLLinkTTLDays = defaultHTMLLinkTTLDays
+	}
+	if settings.HTMLLinkTTLDays > 3650 {
+		settings.HTMLLinkTTLDays = 3650
+	}
+	return settings
+}
+
 type DeleteUserResult struct {
 	UserID         string `json:"user_id"`
 	Username       string `json:"username"`
@@ -45,11 +78,13 @@ func (s *FileStore) load() error {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			s.state.SystemSettings = defaultSystemSettings()
 			return s.saveLocked()
 		}
 		return err
 	}
 	if len(strings.TrimSpace(string(data))) == 0 {
+		s.state.SystemSettings = defaultSystemSettings()
 		return s.saveLocked()
 	}
 	if err := json.Unmarshal(data, &s.state); err != nil {
@@ -58,10 +93,273 @@ func (s *FileStore) load() error {
 	if s.state.NextID <= 0 {
 		s.state.NextID = 1
 	}
+	changed := false
+	if s.state.SystemSettings.UpdatedAt.IsZero() {
+		s.state.SystemSettings = defaultSystemSettings()
+		changed = true
+	} else {
+		normalized := normalizeSystemSettings(s.state.SystemSettings)
+		if normalized != s.state.SystemSettings {
+			s.state.SystemSettings = normalized
+			changed = true
+		}
+	}
+	now := time.Now()
+	if s.migrateMailboxHTMLLinkActivationLocked() {
+		changed = true
+	}
+	if s.cleanupExpiredMailboxHTMLLinksLocked(now) > 0 {
+		changed = true
+	}
 	if s.migrateLegacyMailboxAccountIDsLocked() {
+		changed = true
+	}
+	linksChanged, err := s.ensureMailboxHTMLLinksLocked(now)
+	if err != nil {
+		return err
+	}
+	if linksChanged {
+		changed = true
+	}
+	if changed {
 		return s.saveLocked()
 	}
 	return nil
+}
+
+func (s *FileStore) SystemSettings() SystemSettings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	changed := s.cleanupExpiredMailboxHTMLLinksLocked(now) > 0
+	if ensured, err := s.ensureMailboxHTMLLinksLocked(now); err == nil && ensured {
+		changed = true
+	}
+	if changed {
+		_ = s.saveLocked()
+	}
+	settings := s.state.SystemSettings
+	if settings.UpdatedAt.IsZero() {
+		settings = defaultSystemSettings()
+	}
+	return normalizeSystemSettings(settings)
+}
+
+func (s *FileStore) SaveSystemSettings(settings SystemSettings) (SystemSettings, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settings = normalizeSystemSettings(settings)
+	settings.UpdatedAt = time.Now()
+	s.state.SystemSettings = settings
+	s.cleanupExpiredMailboxHTMLLinksLocked(time.Now())
+	return settings, s.saveLocked()
+}
+
+func (s *FileStore) CreateMailboxHTMLLink(mailboxID string, force bool) (MailboxHTMLLink, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	s.cleanupExpiredMailboxHTMLLinksLocked(now)
+	mailboxID = strings.TrimSpace(mailboxID)
+	idx := s.mailboxIndexLocked(mailboxID)
+	if idx < 0 {
+		return MailboxHTMLLink{}, errCode("mailbox_not_found", "邮箱不存在", false)
+	}
+	if !force {
+		for _, link := range s.state.MailboxHTMLLinks {
+			if link.MailboxID == mailboxID && mailboxHTMLLinkValidAt(link, now) {
+				return link, nil
+			}
+		}
+	}
+	filtered := s.state.MailboxHTMLLinks[:0]
+	for _, link := range s.state.MailboxHTMLLinks {
+		if link.MailboxID == mailboxID {
+			continue
+		}
+		filtered = append(filtered, link)
+	}
+	s.state.MailboxHTMLLinks = filtered
+	link, err := s.newMailboxHTMLLinkLocked(mailboxID, s.state.Mailboxes[idx].OwnerID, now)
+	if err != nil {
+		return MailboxHTMLLink{}, err
+	}
+	s.state.MailboxHTMLLinks = append(s.state.MailboxHTMLLinks, link)
+	return link, s.saveLocked()
+}
+
+func (s *FileStore) ActivateMailboxHTMLLink(token string, now time.Time) (MailboxHTMLLink, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if now.IsZero() {
+		now = time.Now()
+	}
+	token = strings.TrimSpace(token)
+	changed := s.cleanupExpiredMailboxHTMLLinksLocked(now) > 0
+	for i, link := range s.state.MailboxHTMLLinks {
+		if link.Token != token {
+			continue
+		}
+		if link.ActivatedAt.IsZero() || link.ExpiresAt.IsZero() {
+			settings := normalizeSystemSettings(s.state.SystemSettings)
+			if settings.UpdatedAt.IsZero() {
+				settings = defaultSystemSettings()
+			}
+			link.ActivatedAt = now
+			link.ExpiresAt = now.AddDate(0, 0, settings.HTMLLinkTTLDays)
+			s.state.MailboxHTMLLinks[i] = link
+			changed = true
+		}
+		if changed {
+			if err := s.saveLocked(); err != nil {
+				return MailboxHTMLLink{}, false, err
+			}
+		}
+		return link, true, nil
+	}
+	if changed {
+		if err := s.saveLocked(); err != nil {
+			return MailboxHTMLLink{}, false, err
+		}
+	}
+	return MailboxHTMLLink{}, false, nil
+}
+
+func (s *FileStore) FindMailboxHTMLLink(token string) (MailboxHTMLLink, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	token = strings.TrimSpace(token)
+	now := time.Now()
+	changed := false
+	filtered := s.state.MailboxHTMLLinks[:0]
+	var found MailboxHTMLLink
+	for _, link := range s.state.MailboxHTMLLinks {
+		if !mailboxHTMLLinkValidAt(link, now) {
+			changed = true
+			continue
+		}
+		if link.Token == token {
+			found = link
+		}
+		filtered = append(filtered, link)
+	}
+	if changed {
+		s.state.MailboxHTMLLinks = filtered
+		_ = s.saveLocked()
+	}
+	return found, found.Token != ""
+}
+
+func (s *FileStore) MailboxHTMLLinkForMailbox(mailboxID string) (MailboxHTMLLink, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	mailboxID = strings.TrimSpace(mailboxID)
+	now := time.Now()
+	changed := s.cleanupExpiredMailboxHTMLLinksLocked(now) > 0
+	for _, link := range s.state.MailboxHTMLLinks {
+		if link.MailboxID == mailboxID && mailboxHTMLLinkValidAt(link, now) {
+			if changed {
+				_ = s.saveLocked()
+			}
+			return link, true
+		}
+	}
+	idx := s.mailboxIndexLocked(mailboxID)
+	if idx >= 0 {
+		link, err := s.newMailboxHTMLLinkLocked(mailboxID, s.state.Mailboxes[idx].OwnerID, now)
+		if err == nil {
+			s.state.MailboxHTMLLinks = append(s.state.MailboxHTMLLinks, link)
+			_ = s.saveLocked()
+			return link, true
+		}
+	}
+	if changed {
+		_ = s.saveLocked()
+	}
+	return MailboxHTMLLink{}, false
+}
+
+func (s *FileStore) CleanupExpiredMailboxHTMLLinks(now time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	removed := s.cleanupExpiredMailboxHTMLLinksLocked(now)
+	ensured, err := s.ensureMailboxHTMLLinksLocked(now)
+	if err != nil {
+		return removed, err
+	}
+	if removed == 0 && !ensured {
+		return 0, nil
+	}
+	return removed, s.saveLocked()
+}
+
+func (s *FileStore) cleanupExpiredMailboxHTMLLinksLocked(now time.Time) int {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	removed := 0
+	filtered := s.state.MailboxHTMLLinks[:0]
+	for _, link := range s.state.MailboxHTMLLinks {
+		if !link.ExpiresAt.IsZero() && !link.ExpiresAt.After(now) {
+			removed++
+			continue
+		}
+		filtered = append(filtered, link)
+	}
+	if removed > 0 {
+		s.state.MailboxHTMLLinks = filtered
+	}
+	return removed
+}
+
+func mailboxHTMLLinkValidAt(link MailboxHTMLLink, now time.Time) bool {
+	return link.Token != "" && (link.ExpiresAt.IsZero() || link.ExpiresAt.After(now))
+}
+
+func (s *FileStore) newMailboxHTMLLinkLocked(mailboxID, ownerID string, now time.Time) (MailboxHTMLLink, error) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	token, err := randomToken(32)
+	if err != nil {
+		return MailboxHTMLLink{}, err
+	}
+	return MailboxHTMLLink{Token: token, MailboxID: mailboxID, OwnerID: strings.TrimSpace(ownerID), CreatedAt: now}, nil
+}
+
+func (s *FileStore) ensureMailboxHTMLLinksLocked(now time.Time) (bool, error) {
+	changed := false
+	for _, mailbox := range s.state.Mailboxes {
+		found := false
+		for _, link := range s.state.MailboxHTMLLinks {
+			if link.MailboxID == mailbox.ID && mailboxHTMLLinkValidAt(link, now) {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		link, err := s.newMailboxHTMLLinkLocked(mailbox.ID, mailbox.OwnerID, now)
+		if err != nil {
+			return changed, err
+		}
+		s.state.MailboxHTMLLinks = append(s.state.MailboxHTMLLinks, link)
+		changed = true
+	}
+	return changed, nil
+}
+
+func (s *FileStore) migrateMailboxHTMLLinkActivationLocked() bool {
+	changed := false
+	for i := range s.state.MailboxHTMLLinks {
+		link := &s.state.MailboxHTMLLinks[i]
+		if link.ActivatedAt.IsZero() && !link.ExpiresAt.IsZero() {
+			link.ActivatedAt = firstNonZeroTime(link.CreatedAt, link.ExpiresAt)
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (s *FileStore) Snapshot() State {
@@ -219,6 +517,17 @@ func (s *FileStore) DeleteUser(id string) (DeleteUserResult, error) {
 		mailboxes = append(mailboxes, mailbox)
 	}
 	s.state.Mailboxes = mailboxes
+	links := s.state.MailboxHTMLLinks[:0]
+	for _, link := range s.state.MailboxHTMLLinks {
+		if constantTimeEqual(id, link.OwnerID) {
+			continue
+		}
+		if _, ok := deletedMailboxIDs[link.MailboxID]; ok {
+			continue
+		}
+		links = append(links, link)
+	}
+	s.state.MailboxHTMLLinks = links
 
 	messages := s.state.Messages[:0]
 	for _, msg := range s.state.Messages {
@@ -428,7 +737,12 @@ func (s *FileStore) AddMailboxForOwner(ownerID, accountID, label, email string) 
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
+	htmlLink, err := s.newMailboxHTMLLinkLocked(mailbox.ID, mailbox.OwnerID, now)
+	if err != nil {
+		return Mailbox{}, err
+	}
 	s.state.Mailboxes = append(s.state.Mailboxes, mailbox)
+	s.state.MailboxHTMLLinks = append(s.state.MailboxHTMLLinks, htmlLink)
 	return mailbox, s.saveLocked()
 }
 
@@ -465,6 +779,9 @@ func (s *FileStore) UpsertMailboxFromRemote(ownerID, accountID string, remote IC
 			s.state.Mailboxes[i].Note = note
 		}
 		s.state.Mailboxes[i].UpdatedAt = now
+		if _, err := s.ensureMailboxHTMLLinksLocked(now); err != nil {
+			return Mailbox{}, false, err
+		}
 		return s.state.Mailboxes[i], false, s.saveLocked()
 	}
 
@@ -498,7 +815,12 @@ func (s *FileStore) UpsertMailboxFromRemote(ownerID, accountID string, remote IC
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
+	htmlLink, err := s.newMailboxHTMLLinkLocked(mailbox.ID, mailbox.OwnerID, now)
+	if err != nil {
+		return Mailbox{}, false, err
+	}
 	s.state.Mailboxes = append(s.state.Mailboxes, mailbox)
+	s.state.MailboxHTMLLinks = append(s.state.MailboxHTMLLinks, htmlLink)
 	return mailbox, true, s.saveLocked()
 }
 
@@ -626,6 +948,10 @@ func (s *FileStore) FindAccountByID(id string) (Account, bool) {
 }
 
 func (s *FileStore) AddMessage(mailboxID, subject, from, body string, receivedAt time.Time) (Message, error) {
+	return s.AddMessageContent(mailboxID, subject, from, body, "", receivedAt)
+}
+
+func (s *FileStore) AddMessageContent(mailboxID, subject, from, body, htmlBody string, receivedAt time.Time) (Message, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -643,6 +969,7 @@ func (s *FileStore) AddMessage(mailboxID, subject, from, body string, receivedAt
 		Subject:    strings.TrimSpace(subject),
 		From:       strings.TrimSpace(from),
 		Body:       body,
+		HTMLBody:   htmlBody,
 		ReceivedAt: receivedAt,
 		CreatedAt:  time.Now(),
 	}
@@ -653,6 +980,10 @@ func (s *FileStore) AddMessage(mailboxID, subject, from, body string, receivedAt
 }
 
 func (s *FileStore) UpsertMessage(mailboxID, remoteID, source, subject, from, body string, receivedAt time.Time) (Message, bool, error) {
+	return s.UpsertMessageContent(mailboxID, remoteID, source, subject, from, body, "", receivedAt)
+}
+
+func (s *FileStore) UpsertMessageContent(mailboxID, remoteID, source, subject, from, body, htmlBody string, receivedAt time.Time) (Message, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -669,6 +1000,9 @@ func (s *FileStore) UpsertMessage(mailboxID, remoteID, source, subject, from, bo
 				s.state.Messages[i].Subject = strings.TrimSpace(subject)
 				s.state.Messages[i].From = strings.TrimSpace(from)
 				s.state.Messages[i].Body = body
+				if strings.TrimSpace(htmlBody) != "" || strings.TrimSpace(s.state.Messages[i].HTMLBody) == "" {
+					s.state.Messages[i].HTMLBody = htmlBody
+				}
 				if !receivedAt.IsZero() {
 					s.state.Messages[i].ReceivedAt = receivedAt
 				}
@@ -690,6 +1024,7 @@ func (s *FileStore) UpsertMessage(mailboxID, remoteID, source, subject, from, bo
 		Subject:    strings.TrimSpace(subject),
 		From:       strings.TrimSpace(from),
 		Body:       body,
+		HTMLBody:   htmlBody,
 		ReceivedAt: receivedAt,
 		CreatedAt:  time.Now(),
 	}
@@ -819,6 +1154,13 @@ func (s *FileStore) DeleteMailbox(id string) error {
 		return errCode("mailbox_not_found", "邮箱不存在", false)
 	}
 	s.state.Mailboxes = append(s.state.Mailboxes[:idx], s.state.Mailboxes[idx+1:]...)
+	links := s.state.MailboxHTMLLinks[:0]
+	for _, link := range s.state.MailboxHTMLLinks {
+		if link.MailboxID != id {
+			links = append(links, link)
+		}
+	}
+	s.state.MailboxHTMLLinks = links
 	filtered := s.state.Messages[:0]
 	for _, msg := range s.state.Messages {
 		if msg.MailboxID != id {
@@ -1154,6 +1496,7 @@ func cloneState(in State) State {
 	}
 	out.ICloudSessions = cloneICloudSessions(in.ICloudSessions)
 	out.CreateSettings = cloneCreateSettings(in.CreateSettings)
+	out.MailboxHTMLLinks = append([]MailboxHTMLLink(nil), in.MailboxHTMLLinks...)
 	return out
 }
 

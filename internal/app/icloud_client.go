@@ -40,6 +40,7 @@ type ICloudSyncedMessage struct {
 	Subject    string
 	From       string
 	Body       string
+	HTMLBody   string
 	ReceivedAt time.Time
 }
 
@@ -47,6 +48,15 @@ type ICloudMailCleanupResult struct {
 	MovedToTrash int `json:"moved_to_trash"`
 	Destroyed    int `json:"destroyed"`
 	Skipped      int `json:"skipped"`
+}
+
+type ICloudMailboxDeleteResult struct {
+	Email          string `json:"email"`
+	AnonymousID    string `json:"-"`
+	Found          bool   `json:"found"`
+	Deactivated    bool   `json:"deactivated"`
+	Deleted        bool   `json:"deleted"`
+	AlreadyMissing bool   `json:"already_missing"`
 }
 
 func NewICloudClient() *ICloudClient {
@@ -652,6 +662,49 @@ func (c *ICloudClient) ListPrivacyMailboxes(ctx context.Context, session ICloudS
 		})
 	}
 	return remotes, nil
+}
+
+func (c *ICloudClient) DeletePrivacyMailbox(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	result := ICloudMailboxDeleteResult{Email: email}
+	if email == "" {
+		return result, errCode("mailbox_email_missing", "邮箱地址为空", false)
+	}
+	if strings.TrimSpace(session.PremiumMailBaseURL) == "" || strings.TrimSpace(session.DSID) == "" || len(session.Cookies) == 0 {
+		return result, errCode("icloud_delete_session_missing", "永久删除邮箱需要该 Apple 账号的旧接口 iCloud 登录态，请先保存旧接口登录态", true)
+	}
+	remotes, err := c.ListPrivacyMailboxes(ctx, session)
+	if err != nil {
+		return result, err
+	}
+	var remote ICloudRemoteMailbox
+	for _, item := range remotes {
+		if strings.EqualFold(strings.TrimSpace(item.Email), email) {
+			remote = item
+			break
+		}
+	}
+	if strings.TrimSpace(remote.Email) == "" {
+		result.AlreadyMissing = true
+		return result, nil
+	}
+	result.Found = true
+	result.AnonymousID = strings.TrimSpace(remote.AnonymousID)
+	if result.AnonymousID == "" {
+		return result, errCode("icloud_mailbox_id_missing", "iCloud 未返回邮箱远端 ID，已保留本地邮箱", true)
+	}
+	payload := map[string]string{"anonymousId": result.AnonymousID}
+	if remote.IsActive {
+		if err := c.call(ctx, session, http.MethodPost, "/v1/hme/deactivate", payload, nil); err != nil {
+			return result, errCode("icloud_mailbox_deactivate_failed", "停用 iCloud 隐私邮箱失败："+err.Error(), true)
+		}
+		result.Deactivated = true
+	}
+	if err := c.call(ctx, session, http.MethodPost, "/v1/hme/delete", payload, nil); err != nil {
+		return result, errCode("icloud_mailbox_delete_failed", "永久删除 iCloud 隐私邮箱失败："+err.Error(), true)
+	}
+	result.Deleted = true
+	return result, nil
 }
 
 func (c *ICloudClient) generate(ctx context.Context, session ICloudSession) (string, error) {
@@ -1575,6 +1628,7 @@ func (c *ICloudClient) threadMessagesForAliases(ctx context.Context, session ICl
 		from := addressSummary(meta.From)
 		recipients := string(meta.To) + "\n" + string(meta.CC) + "\n" + string(meta.BCC)
 		bodyText := meta.Subject + "\n" + meta.Preview
+		htmlBody := ""
 		partIDs := textPartIDs(meta.Parts)
 		if len(partIDs) > 0 {
 			detail, err := c.messageBody(ctx, session, folderName, uid, partIDs)
@@ -1583,6 +1637,7 @@ func (c *ICloudClient) threadMessagesForAliases(ctx context.Context, session ICl
 			}
 			recipients += "\n" + detail.LongHeader
 			bodyText += "\n" + detail.Body
+			htmlBody = detail.HTMLBody
 		}
 		matchedMailboxIDs := matchingMailboxIDs(recipients, aliases)
 		if len(matchedMailboxIDs) == 0 {
@@ -1594,6 +1649,7 @@ func (c *ICloudClient) threadMessagesForAliases(ctx context.Context, session ICl
 			Subject:    meta.Subject,
 			From:       from,
 			Body:       normalizeMailBody(bodyText),
+			HTMLBody:   htmlBody,
 			ReceivedAt: receivedAt,
 		}
 		for _, mailboxID := range matchedMailboxIDs {
@@ -1627,6 +1683,7 @@ func matchingMailboxIDs(recipients string, aliases map[string]string) []string {
 type mailMessageDetail struct {
 	LongHeader string
 	Body       string
+	HTMLBody   string
 }
 
 func (c *ICloudClient) messageBody(ctx context.Context, session ICloudSession, folderName, uid string, partIDs []string) (mailMessageDetail, error) {
@@ -1647,10 +1704,20 @@ func (c *ICloudClient) messageBody(ctx context.Context, session ICloudSession, f
 		return mailMessageDetail{}, err
 	}
 	var parts []string
+	var htmlParts []string
 	for _, part := range out.Parts {
+		if looksLikeHTMLDocument(part.Content) {
+			htmlParts = append(htmlParts, part.Content)
+			continue
+		}
 		parts = append(parts, part.Content)
 	}
-	return mailMessageDetail{LongHeader: out.LongHeader, Body: strings.Join(parts, "\n")}, nil
+	htmlBody := strings.Join(htmlParts, "\n")
+	bodyText := strings.Join(parts, "\n")
+	if strings.TrimSpace(bodyText) == "" && strings.TrimSpace(htmlBody) != "" {
+		bodyText = normalizeMailBody(htmlBody)
+	}
+	return mailMessageDetail{LongHeader: out.LongHeader, Body: bodyText, HTMLBody: htmlBody}, nil
 }
 
 func (c *ICloudClient) MoveRemoteMessagesToTrash(ctx context.Context, session ICloudSession, remoteIDs []string) (ICloudMailCleanupResult, error) {
@@ -2199,10 +2266,33 @@ func containsFold(text, needle string) bool {
 	return strings.Contains(strings.ToLower(text), strings.ToLower(strings.TrimSpace(needle)))
 }
 
-var htmlTagRegex = regexp.MustCompile(`<[^>]+>`)
+var (
+	htmlTagRegex         = regexp.MustCompile(`<[^>]+>`)
+	htmlHeadBlockRegex   = regexp.MustCompile(`(?is)<head\b[^>]*>.*?</head\s*>`)
+	htmlStyleBlockRegex  = regexp.MustCompile(`(?is)<style\b[^>]*>.*?</style\s*>`)
+	htmlScriptBlockRegex = regexp.MustCompile(`(?is)<script\b[^>]*>.*?</script\s*>`)
+	htmlCommentRegex     = regexp.MustCompile(`(?is)<!--.*?-->`)
+)
+
+func looksLikeHTMLDocument(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return false
+	}
+	for _, marker := range []string{"<!doctype html", "<html", "<head", "<body", "<table", "<style", "<div", "<p ", "<p>", "<span"} {
+		if strings.Contains(value, marker) {
+			return true
+		}
+	}
+	return false
+}
 
 func normalizeMailBody(value string) string {
 	value = html.UnescapeString(value)
+	value = htmlCommentRegex.ReplaceAllString(value, " ")
+	value = htmlHeadBlockRegex.ReplaceAllString(value, " ")
+	value = htmlStyleBlockRegex.ReplaceAllString(value, " ")
+	value = htmlScriptBlockRegex.ReplaceAllString(value, " ")
 	value = htmlTagRegex.ReplaceAllString(value, " ")
 	value = strings.Join(strings.Fields(value), " ")
 	return value

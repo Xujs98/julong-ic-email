@@ -51,12 +51,12 @@ func TestFetchGitHubReleaseMissingFallsBackToDefaultBranchCommit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r.URL.Path)
 		switch r.URL.Path {
-		case "/repos/q1953258942/iCloud-Privacy-Mail/releases/latest":
+		case "/repos/Xujs98/julong-ic-email/releases/latest":
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"message":"Not Found","status":"404"}`))
-		case "/repos/q1953258942/iCloud-Privacy-Mail":
+		case "/repos/Xujs98/julong-ic-email":
 			_, _ = w.Write([]byte(`{"default_branch":"master"}`))
-		case "/repos/q1953258942/iCloud-Privacy-Mail/commits/master":
+		case "/repos/Xujs98/julong-ic-email/commits/master":
 			_, _ = w.Write([]byte(`{"sha":"` + latestSHA + `","commit":{"message":"最新提交","committer":{"date":"2026-07-02T03:00:00Z"}}}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -75,7 +75,7 @@ func TestFetchGitHubReleaseMissingFallsBackToDefaultBranchCommit(t *testing.T) {
 
 	s := &Server{cfg: Config{
 		UpdateEnabled:    true,
-		UpdateRepository: "q1953258942/iCloud-Privacy-Mail",
+		UpdateRepository: "Xujs98/julong-ic-email",
 	}}
 	candidate, err := s.fetchGitHubReleaseUpdateCandidate(context.Background(), publicUpdateStatus{
 		Enabled:   true,
@@ -95,9 +95,9 @@ func TestFetchGitHubReleaseMissingFallsBackToDefaultBranchCommit(t *testing.T) {
 		t.Fatalf("latest_name = %q, want short commit", candidate.Status.LatestName)
 	}
 	wantRequests := strings.Join([]string{
-		"/repos/q1953258942/iCloud-Privacy-Mail/releases/latest",
-		"/repos/q1953258942/iCloud-Privacy-Mail",
-		"/repos/q1953258942/iCloud-Privacy-Mail/commits/master",
+		"/repos/Xujs98/julong-ic-email/releases/latest",
+		"/repos/Xujs98/julong-ic-email",
+		"/repos/Xujs98/julong-ic-email/commits/master",
 	}, ",")
 	if got := strings.Join(requests, ","); got != wantRequests {
 		t.Fatalf("requests = %s, want %s", got, wantRequests)

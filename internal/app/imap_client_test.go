@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/binary"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -34,6 +35,30 @@ func TestICloudIMAPMessagesByMailboxMatchesRecipientAlias(t *testing.T) {
 	}
 	if len(got["mbx_other"]) != 0 {
 		t.Fatalf("wrong alias received messages: %+v", got["mbx_other"])
+	}
+}
+
+func TestICloudIMAPMessagePreservesHTMLBody(t *testing.T) {
+	receivedAt := time.Date(2026, 8, 15, 9, 36, 39, 0, time.UTC)
+	raw := "From: OpenAI <noreply@tm.openai.com>\r\n" +
+		"To: visual@icloud.com\r\n" +
+		"Subject: Your ChatGPT verification code\r\n" +
+		"Date: " + receivedAt.Format(time.RFC1123Z) + "\r\n" +
+		"Content-Type: multipart/alternative; boundary=visual-boundary\r\n\r\n" +
+		"--visual-boundary\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nYour code is 246810.\r\n" +
+		"--visual-boundary\r\nContent-Type: text/html; charset=utf-8\r\n\r\n" +
+		"<!doctype html><html><head><style>.code{color:#2563eb}</style></head><body><h1>Verification</h1><strong class=\"code\">246810</strong></body></html>\r\n" +
+		"--visual-boundary--\r\n"
+
+	message, _, ok := parseICloudIMAPMessage(iCloudIMAPFetchedMessage{UID: "88", Raw: []byte(raw)})
+	if !ok {
+		t.Fatal("parseICloudIMAPMessage() failed")
+	}
+	if !strings.Contains(message.HTMLBody, `<strong class="code">246810</strong>`) {
+		t.Fatalf("HTMLBody was not preserved: %q", message.HTMLBody)
+	}
+	if !strings.Contains(message.Body, "246810") || strings.Contains(message.Body, ".code{") {
+		t.Fatalf("plain Body = %q, want readable text without CSS", message.Body)
 	}
 }
 

@@ -88,6 +88,7 @@ type Server struct {
 	syncCodeMailboxBatchWithCursor func(ctx context.Context, state LoginState, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (iCloudIMAPSyncResult, error)
 	latestIMAPUID                  func(ctx context.Context, state LoginState) (string, error)
 	checkIMAPLogin                 func(ctx context.Context, email, appPassword string) error
+	deletePrivacyMailbox           func(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error)
 	updateMu                       sync.Mutex
 	updateApplyMu                  sync.Mutex
 	updateCache                    updateCandidate
@@ -253,6 +254,9 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 	s.keepAliveAppleAccountState = func(ctx context.Context, state LoginState) (LoginState, error) {
 		return NewICloudClient().keepAliveAppleAccountManageStateUnlocked(ctx, state)
 	}
+	s.deletePrivacyMailbox = func(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error) {
+		return NewICloudClient().DeletePrivacyMailbox(ctx, session, email)
+	}
 	s.syncMailboxMessages = func(ctx context.Context, session ICloudSession, mailbox Mailbox, after time.Time, keyword string, maxThreads int) ([]ICloudSyncedMessage, error) {
 		return NewICloudClient().SyncMailboxMessages(ctx, session, mailbox, after, keyword, maxThreads)
 	}
@@ -265,6 +269,10 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path == s.store.SystemSettings().AdminPath && r.URL.Path != "/manage" {
+		s.handleManagePage(w, r)
+		return
+	}
 	if s.requiresAdmin(r) &&
 		!s.authorizedAdminSession(r) &&
 		!(s.allowsUserSession(r) && s.authorizedUserSession(r)) {
@@ -336,10 +344,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /", s.handleHome)
 	s.mux.HandleFunc("GET /login", s.handleLoginPage)
 	s.mux.HandleFunc("GET /manage", s.handleManagePage)
+	s.mux.HandleFunc("GET /mailbox/{token}", s.handleMailboxHTMLPage)
+	s.mux.HandleFunc("GET /mailbox/{token}/data", s.handleMailboxHTMLData)
 	s.mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
+	s.mux.HandleFunc("GET /api/auth/register-status", s.handleAuthRegisterStatus)
 	s.mux.HandleFunc("POST /api/auth/register", s.handleAuthRegister)
 	s.mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
+	s.mux.HandleFunc("GET /api/system-settings", s.handleSystemSettings)
+	s.mux.HandleFunc("POST /api/system-settings", s.handleSaveSystemSettings)
 	s.mux.HandleFunc("DELETE /api/admin/users/{id}", s.handleAdminDeleteUser)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("GET /api/update/status", s.handleUpdateStatus)
@@ -373,6 +386,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/mailboxes", s.handleCreateMailbox)
 	s.mux.HandleFunc("POST /api/mailboxes/remote-clean", s.handleCleanRemoteMailboxes)
 	s.mux.HandleFunc("POST /api/mailboxes/{id}/verify", s.handleVerifyMailbox)
+	s.mux.HandleFunc("POST /api/mailboxes/{id}/enable", s.handleEnableMailbox)
 	s.mux.HandleFunc("POST /api/mailboxes/{id}/disable", s.handleDisableMailbox)
 	s.mux.HandleFunc("POST /api/mailboxes/{id}/status", s.handleSetMailboxStatus)
 	s.mux.HandleFunc("POST /api/mailboxes/{id}/sync", s.handleSyncMailbox)
@@ -380,6 +394,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/mailboxes/{id}", s.handleDeleteMailbox)
 	s.mux.HandleFunc("GET /api/mailboxes/{id}/messages", s.handleListMessages)
 	s.mux.HandleFunc("POST /api/mailboxes/{id}/messages", s.handleCreateMessage)
+	s.mux.HandleFunc("POST /api/mailboxes/{id}/html-link", s.handleCreateMailboxHTMLLink)
 	s.mux.HandleFunc("GET /api/mailboxes/{id}/code", s.handleMailboxCodeByID)
 	s.mux.HandleFunc("GET /api/v1/mailboxes/{email}/code", s.handleMailboxCodeByEmail)
 }
@@ -394,6 +409,169 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleManagePage(w http.ResponseWriter, _ *http.Request) {
 	s.writeTemplate(w, "templates/manage.html")
+}
+
+func publicSystemSettings(settings SystemSettings) map[string]any {
+	settings = normalizeSystemSettings(settings)
+	return map[string]any{
+		"registration_enabled": settings.RegistrationEnabled,
+		"admin_path":           settings.AdminPath,
+		"html_link_ttl_days":   settings.HTMLLinkTTLDays,
+		"updated_at":           formatTime(settings.UpdatedAt),
+	}
+}
+
+func validAdminPath(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" || path == "/" || strings.Contains(path, "..") ||
+		strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mailbox/") || path == "/login" {
+		return false
+	}
+	return regexp.MustCompile(`^/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$`).MatchString(path)
+}
+
+func (s *Server) handleSystemSettings(w http.ResponseWriter, r *http.Request) {
+	if !s.isAdminRequest(r) {
+		writeError(w, http.StatusUnauthorized, errCode("admin_required", "需要管理员账号", false))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "settings": publicSystemSettings(s.store.SystemSettings())})
+}
+
+func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request) {
+	if !s.isAdminRequest(r) {
+		writeError(w, http.StatusUnauthorized, errCode("admin_required", "需要管理员账号", false))
+		return
+	}
+	var payload struct {
+		RegistrationEnabled bool   `json:"registration_enabled"`
+		AdminPath           string `json:"admin_path"`
+		HTMLLinkTTLDays     int    `json:"html_link_ttl_days"`
+	}
+	if err := decodeJSON(r, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	path := strings.TrimSpace(payload.AdminPath)
+	if !validAdminPath(path) {
+		writeError(w, http.StatusBadRequest, errCode("invalid_admin_path", "后台入口只能使用字母、数字、下划线、短横线和斜杠", false))
+		return
+	}
+	if payload.HTMLLinkTTLDays < 1 || payload.HTMLLinkTTLDays > 3650 {
+		writeError(w, http.StatusBadRequest, errCode("invalid_html_link_ttl", "HTML 接码地址过期天数必须是 1-3650", false))
+		return
+	}
+	settings, err := s.store.SaveSystemSettings(SystemSettings{
+		RegistrationEnabled: payload.RegistrationEnabled,
+		AdminPath:           path,
+		HTMLLinkTTLDays:     payload.HTMLLinkTTLDays,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "settings": publicSystemSettings(settings)})
+}
+
+func (s *Server) handleCreateMailboxHTMLLink(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !s.canAccessMailboxID(r, id) {
+		writeError(w, http.StatusNotFound, errCode("mailbox_not_found", "邮箱不存在", false))
+		return
+	}
+	var payload struct {
+		Regenerate bool `json:"regenerate"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := decodeJSON(r, &payload); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	link, err := s.store.CreateMailboxHTMLLink(id, payload.Regenerate)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":      true,
+		"token":        link.Token,
+		"url":          s.mailboxHTMLURL(r, link.Token),
+		"activated_at": formatTime(link.ActivatedAt),
+		"expires_at":   formatTime(link.ExpiresAt),
+	})
+}
+
+func (s *Server) handleMailboxHTMLPage(w http.ResponseWriter, r *http.Request) {
+	link, ok, err := s.store.ActivateMailboxHTMLLink(r.PathValue("token"), time.Now())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !ok {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusGone)
+		s.writeTemplate(w, "templates/mailbox_expired.html")
+		return
+	}
+	if _, ok := s.store.FindMailboxByID(link.MailboxID); !ok {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		s.writeTemplate(w, "templates/mailbox_expired.html")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	s.writeTemplate(w, "templates/mailbox.html")
+}
+
+func (s *Server) handleMailboxHTMLData(w http.ResponseWriter, r *http.Request) {
+	link, ok, err := s.store.ActivateMailboxHTMLLink(r.PathValue("token"), time.Now())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusGone, errCode("html_link_expired", "HTML 接码地址已过期", false))
+		return
+	}
+	mailbox, ok := s.store.FindMailboxByID(link.MailboxID)
+	if !ok {
+		writeError(w, http.StatusNotFound, errCode("mailbox_not_found", "邮箱不存在", false))
+		return
+	}
+	messages := s.store.MessagesForMailbox(mailbox.ID)
+	sort.SliceStable(messages, func(i, j int) bool {
+		return firstNonZeroTime(messages[i].ReceivedAt, messages[i].CreatedAt).After(firstNonZeroTime(messages[j].ReceivedAt, messages[j].CreatedAt))
+	})
+	if len(messages) > 50 {
+		messages = messages[:50]
+	}
+	out := make([]publicMessage, 0, len(messages))
+	for _, msg := range messages {
+		out = append(out, publicMessage{ID: msg.ID, MailboxID: msg.MailboxID, Subject: msg.Subject, From: msg.From, Body: msg.Body, HTMLBody: msg.HTMLBody, ReceivedAt: formatTime(msg.ReceivedAt), CreatedAt: formatTime(msg.CreatedAt)})
+	}
+	latest := map[string]any{}
+	if msg, code, found := latestMailboxCode(append([]Message(nil), messages...), time.Now().Add(-30*24*time.Hour), "", time.Now()); found {
+		latest = map[string]any{"code": code, "subject": msg.Subject, "received_at": formatTime(msg.ReceivedAt)}
+	}
+	ttlSeconds := int(time.Until(link.ExpiresAt).Seconds())
+	if ttlSeconds < 0 {
+		ttlSeconds = 0
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":      true,
+		"mailbox":      map[string]any{"email": mailbox.Email, "label": mailbox.Label, "status": mailbox.Status, "receive_count": mailbox.ReceiveCount},
+		"latest":       latest,
+		"messages":     out,
+		"activated_at": formatTime(link.ActivatedAt),
+		"expires_at":   formatTime(link.ExpiresAt),
+		"ttl_seconds":  ttlSeconds,
+	})
+}
+
+func (s *Server) mailboxHTMLURL(r *http.Request, token string) string {
+	baseURL := firstNonEmpty(s.cfg.PublicBaseURL, requestBaseURL(r))
+	return fmt.Sprintf("%s/mailbox/%s", strings.TrimRight(baseURL, "/"), url.PathEscape(token))
 }
 
 func (s *Server) handleCreateSettings(w http.ResponseWriter, r *http.Request) {
@@ -471,6 +649,11 @@ func (s *Server) writeTemplate(w http.ResponseWriter, name string) {
 }
 
 func (s *Server) handleAuthRegister(w http.ResponseWriter, r *http.Request) {
+	settings := s.store.SystemSettings()
+	if !settings.RegistrationEnabled && len(s.store.Users()) > 0 {
+		writeError(w, http.StatusForbidden, errCode("registration_disabled", "当前未开放注册", false))
+		return
+	}
 	var payload struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -495,6 +678,10 @@ func (s *Server) handleAuthRegister(w http.ResponseWriter, r *http.Request) {
 		"user":    publicUserFromUser(user),
 		"message": firstNonEmpty(map[bool]string{true: "注册成功，当前账号是管理员", false: "注册成功"}[user.IsAdmin]),
 	})
+}
+
+func (s *Server) handleAuthRegisterStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "registration_enabled": s.store.SystemSettings().RegistrationEnabled})
 }
 
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
@@ -584,7 +771,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":            true,
-		"service":            "icloud-privacy-mail",
+		"service":            "julong-ic-email",
 		"api_key_configured": strings.TrimSpace(s.cfg.APIKey) != "",
 		"base_url":           requestBaseURL(r),
 		"account_scoped":     scopedOwnerID(r, s.store) != "",
@@ -647,7 +834,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":       true,
-		"service":       "icloud-privacy-mail",
+		"service":       "julong-ic-email",
 		"api_active":    strings.TrimSpace(s.cfg.APIKey) != "",
 		"icloud_active": icloudActive,
 		"time":          formatTime(time.Now()),
@@ -776,7 +963,7 @@ func (s *Server) handleExportRuntimeData(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	filename := "icloud-privacy-mail-state-" + time.Now().Format("20060102-150405") + ".json"
+	filename := "julong-ic-email-state-" + time.Now().Format("20060102-150405") + ".json"
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -2019,6 +2206,26 @@ func (s *Server) handleDisableMailbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "mailbox": s.publicMailbox(r, mailbox)})
 }
 
+func (s *Server) handleEnableMailbox(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	mailbox, ok := s.store.FindMailboxByID(id)
+	if !ok || !s.canAccessMailbox(r, mailbox) {
+		writeError(w, http.StatusNotFound, errCode("mailbox_not_found", "邮箱不存在", false))
+		return
+	}
+	active := true
+	status := mailbox.Status
+	if status == StatusDisabled || strings.TrimSpace(status) == "" {
+		status = StatusAvailable
+	}
+	mailbox, err := s.store.SetMailboxStatus(id, &active, nil, status, "API 已启用")
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "mailbox": s.publicMailbox(r, mailbox)})
+}
+
 func (s *Server) handleSetMailboxStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !s.canAccessMailboxID(r, id) {
@@ -2194,15 +2401,45 @@ func (s *Server) handleCleanRemoteMailboxes(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) handleDeleteMailbox(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !s.canAccessMailboxID(r, id) {
+	mailbox, ok := s.store.FindMailboxByID(id)
+	if !ok || !s.canAccessMailbox(r, mailbox) {
 		writeError(w, http.StatusNotFound, errCode("mailbox_not_found", "邮箱不存在", false))
+		return
+	}
+	session, ok := s.sessionForMailbox(mailbox.OwnerID, mailbox.AccountID)
+	if !ok {
+		writeError(w, http.StatusConflict, errCode("icloud_delete_session_missing", "未找到该邮箱对应的 Apple 账号登录态，已保留邮箱", true))
+		return
+	}
+	release, err := s.acquireMailboxSyncSlot(r.Context(), mailbox.OwnerID)
+	if err != nil {
+		writeError(w, http.StatusRequestTimeout, err)
+		return
+	}
+	deleteRemote := s.deletePrivacyMailbox
+	if deleteRemote == nil {
+		deleteRemote = NewICloudClient().DeletePrivacyMailbox
+	}
+	deletion, err := deleteRemote(r.Context(), session, mailbox.Email)
+	release()
+	if err != nil {
+		status := http.StatusBadGateway
+		if isCodedError(err, "icloud_delete_session_missing") {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err)
 		return
 	}
 	if err := s.store.DeleteMailbox(id); err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":       true,
+		"email":         mailbox.Email,
+		"remote":        deletion,
+		"local_deleted": true,
+	})
 }
 
 func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
@@ -2223,6 +2460,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 			Subject:    msg.Subject,
 			From:       msg.From,
 			Body:       msg.Body,
+			HTMLBody:   msg.HTMLBody,
 			ReceivedAt: formatTime(msg.ReceivedAt),
 			CreatedAt:  formatTime(msg.CreatedAt),
 		})
@@ -2255,7 +2493,13 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		}
 		receivedAt = parsed
 	}
-	msg, err := s.store.AddMessage(id, payload.Subject, payload.From, payload.Body, receivedAt)
+	body := payload.Body
+	htmlBody := ""
+	if looksLikeHTMLDocument(payload.Body) {
+		htmlBody = payload.Body
+		body = normalizeMailBody(payload.Subject + "\n" + payload.Body)
+	}
+	msg, err := s.store.AddMessageContent(id, payload.Subject, payload.From, body, htmlBody, receivedAt)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
@@ -3215,7 +3459,7 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 				if remoteID == "" && strings.TrimSpace(msg.UID) != "" {
 					remoteID = "imap:" + strings.TrimSpace(msg.UID)
 				}
-				_, created, err := s.store.UpsertMessage(mailbox.ID, remoteID, "imap", msg.Subject, msg.From, msg.Body, msg.ReceivedAt)
+				_, created, err := s.store.UpsertMessageContent(mailbox.ID, remoteID, "imap", msg.Subject, msg.From, msg.Body, msg.HTMLBody, msg.ReceivedAt)
 				if err != nil {
 					return synced, err
 				}
@@ -3323,7 +3567,7 @@ func (s *Server) syncMailboxBatchForOwnerWithLimit(ctx context.Context, ownerID 
 				if extractOTP(msg.Subject+"\n"+msg.Body) == "" {
 					continue
 				}
-				_, _, err := s.store.UpsertMessage(mailbox.ID, msg.RemoteID, "icloud", msg.Subject, msg.From, msg.Body, msg.ReceivedAt)
+				_, _, err := s.store.UpsertMessageContent(mailbox.ID, msg.RemoteID, "icloud", msg.Subject, msg.From, msg.Body, msg.HTMLBody, msg.ReceivedAt)
 				if err != nil {
 					return err
 				}
@@ -4386,26 +4630,38 @@ func (s *Server) publicMailbox(r *http.Request, mailbox Mailbox) publicMailbox {
 			accountAppleID = strings.TrimSpace(account.AppleID)
 		}
 	}
+	linkURL := ""
+	linkActivated := ""
+	linkExpires := ""
+	if link, ok := s.store.MailboxHTMLLinkForMailbox(mailbox.ID); ok {
+		linkURL = s.mailboxHTMLURL(r, link.Token)
+		linkActivated = formatTime(link.ActivatedAt)
+		linkExpires = formatTime(link.ExpiresAt)
+	}
 	return publicMailbox{
-		ID:             mailbox.ID,
-		OwnerID:        mailbox.OwnerID,
-		Owner:          s.ownerName(mailbox.OwnerID),
-		AccountID:      mailbox.AccountID,
-		AccountLabel:   accountLabel,
-		AccountAppleID: accountAppleID,
-		Label:          mailbox.Label,
-		Email:          mailbox.Email,
-		APITokenMask:   maskSecret(mailbox.APIToken, 6),
-		APIURL:         s.mailboxAPIURL(r, mailbox),
-		APIActive:      mailbox.APIActive,
-		ICloudActive:   mailbox.ICloudActive,
-		ReceiveCount:   mailbox.ReceiveCount,
-		Status:         mailbox.Status,
-		Note:           mailbox.Note,
-		LastSyncAt:     formatTime(mailbox.LastSyncAt),
-		LastSyncUID:    mailbox.LastSyncUID,
-		CreatedAt:      formatTime(mailbox.CreatedAt),
-		UpdatedAt:      formatTime(mailbox.UpdatedAt),
+		ID:                mailbox.ID,
+		OwnerID:           mailbox.OwnerID,
+		Owner:             s.ownerName(mailbox.OwnerID),
+		AccountID:         mailbox.AccountID,
+		AccountLabel:      accountLabel,
+		AccountAppleID:    accountAppleID,
+		Label:             mailbox.Label,
+		Email:             mailbox.Email,
+		APITokenMask:      maskSecret(mailbox.APIToken, 6),
+		APIURL:            s.mailboxAPIURL(r, mailbox),
+		HTMLLinkURL:       linkURL,
+		HTMLLinkActivated: linkActivated,
+		HTMLLinkExpires:   linkExpires,
+		HTMLLinkTTLDays:   s.store.SystemSettings().HTMLLinkTTLDays,
+		APIActive:         mailbox.APIActive,
+		ICloudActive:      mailbox.ICloudActive,
+		ReceiveCount:      mailbox.ReceiveCount,
+		Status:            mailbox.Status,
+		Note:              mailbox.Note,
+		LastSyncAt:        formatTime(mailbox.LastSyncAt),
+		LastSyncUID:       mailbox.LastSyncUID,
+		CreatedAt:         formatTime(mailbox.CreatedAt),
+		UpdatedAt:         formatTime(mailbox.UpdatedAt),
 	}
 }
 
