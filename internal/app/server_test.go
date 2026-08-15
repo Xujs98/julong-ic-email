@@ -153,6 +153,28 @@ func TestMailboxTableMessageColumnUsesDialog(t *testing.T) {
 	}
 }
 
+func TestMailboxTableSupportsOutboundWorkflow(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`data-view="outbound"`,
+		`id="navOutboundCount"`,
+		`id="mailboxBatchOutboundButton"`,
+		`batchOutboundMailboxes()`,
+		`batchReturnMailboxes()`,
+		`params.set('status', 'outbound')`,
+		`params.set('exclude_status', 'outbound')`,
+		`outbound:'出库'`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("mailbox outbound workflow source missing %q", want)
+		}
+	}
+}
+
 func testIMAPSession(ownerID, accountID, email string) ICloudSession {
 	email = normalizeICloudIMAPEmail(email)
 	if email == "" {
@@ -4558,6 +4580,116 @@ func TestMailboxAPICanBeEnabledAfterDisable(t *testing.T) {
 	enabled, ok := store.FindMailboxByID(mailbox.ID)
 	if !ok || !enabled.APIActive || enabled.Status != StatusAvailable || enabled.Note != "API 已启用" {
 		t.Fatalf("enabled mailbox = %+v ok=%v", enabled, ok)
+	}
+}
+
+func TestMailboxOutboundStatusAndListFilters(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	adminCookie, _ := registerTestUser(t, handler, "outbound-admin", "admin123")
+	foreign := createTestMailboxWithCookie(t, handler, adminCookie, "foreign", "foreign@icloud.com")
+	ownerCookie, _ := registerTestUser(t, handler, "outbound-owner", "owner123")
+	inventory := createTestMailboxWithCookie(t, handler, ownerCookie, "inventory", "inventory@icloud.com")
+	outbound := createTestMailboxWithCookie(t, handler, ownerCookie, "outbound", "outbound@icloud.com")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/mailboxes/"+url.PathEscape(outbound.ID)+"/status", strings.NewReader(`{"status":"outbound","note":"test outbound"}`))
+	req.AddCookie(ownerCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set outbound status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	updated, ok := store.FindMailboxByID(outbound.ID)
+	if !ok || updated.Status != StatusOutbound || updated.Note != "test outbound" {
+		t.Fatalf("outbound mailbox = %+v ok=%v", updated, ok)
+	}
+	if !validMailboxStatus(StatusOutbound) {
+		t.Fatal("outbound status should be valid")
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/mailboxes/"+url.PathEscape(outbound.ID)+"/disable", strings.NewReader(`{}`))
+	req.AddCookie(ownerCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("disable outbound mailbox API = %d body=%s", rr.Code, rr.Body.String())
+	}
+	disabledOutbound, ok := store.FindMailboxByID(outbound.ID)
+	if !ok || disabledOutbound.APIActive || disabledOutbound.Status != StatusOutbound {
+		t.Fatalf("disabled outbound mailbox = %+v ok=%v", disabledOutbound, ok)
+	}
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/mailboxes/"+url.PathEscape(outbound.ID)+"/enable", strings.NewReader(`{}`))
+	req.AddCookie(ownerCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("enable outbound mailbox API = %d body=%s", rr.Code, rr.Body.String())
+	}
+	enabledOutbound, ok := store.FindMailboxByID(outbound.ID)
+	if !ok || !enabledOutbound.APIActive || enabledOutbound.Status != StatusOutbound {
+		t.Fatalf("enabled outbound mailbox = %+v ok=%v", enabledOutbound, ok)
+	}
+
+	list := func(query string) []publicMailbox {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/mailboxes?"+query, nil)
+		req.AddCookie(ownerCookie)
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("list mailboxes %q = %d body=%s", query, rr.Code, rr.Body.String())
+		}
+		var body struct {
+			Mailboxes  []publicMailbox  `json:"mailboxes"`
+			Pagination publicPagination `json:"pagination"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Pagination.TotalAll != 1 {
+			t.Fatalf("list mailboxes %q total_all = %d, want 1", query, body.Pagination.TotalAll)
+		}
+		return body.Mailboxes
+	}
+	outboundRows := list("status=outbound")
+	if len(outboundRows) != 1 || outboundRows[0].ID != outbound.ID || outboundRows[0].Status != StatusOutbound {
+		t.Fatalf("outbound rows = %+v, want %s", outboundRows, outbound.ID)
+	}
+	inventoryRows := list("exclude_status=outbound")
+	if len(inventoryRows) != 1 || inventoryRows[0].ID != inventory.ID {
+		t.Fatalf("inventory rows = %+v, want %s", inventoryRows, inventory.ID)
+	}
+	for _, row := range append(outboundRows, inventoryRows...) {
+		if row.ID == foreign.ID {
+			t.Fatalf("foreign mailbox leaked into owner list: %+v", row)
+		}
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req.AddCookie(ownerCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("owner status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var statusBody struct {
+		Mailboxes          int `json:"mailboxes"`
+		InventoryMailboxes int `json:"inventory_mailboxes"`
+		OutboundMailboxes  int `json:"outbound_mailboxes"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &statusBody); err != nil {
+		t.Fatal(err)
+	}
+	if statusBody.Mailboxes != 2 || statusBody.InventoryMailboxes != 1 || statusBody.OutboundMailboxes != 1 {
+		t.Fatalf("status mailbox counts = %+v, want total=2 inventory=1 outbound=1", statusBody)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/mailboxes/"+url.PathEscape(foreign.ID)+"/status", strings.NewReader(`{"status":"outbound"}`))
+	req.AddCookie(ownerCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("set foreign mailbox outbound = %d body=%s, want 404", rr.Code, rr.Body.String())
 	}
 }
 

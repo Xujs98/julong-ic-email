@@ -12,6 +12,7 @@ const (
 	StatusUsed      = "used"
 	StatusFailed    = "failed"
 	StatusDisabled  = "disabled"
+	StatusOutbound  = "outbound"
 
 	ICloudStatusActive       = "active"
 	ICloudStatusNeedLogin    = "need_login"

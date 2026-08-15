@@ -783,6 +783,15 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	state := s.scopedState(r)
+	inventoryMailboxes := 0
+	outboundMailboxes := 0
+	for _, mailbox := range state.Mailboxes {
+		if mailbox.Status == StatusOutbound {
+			outboundMailboxes++
+			continue
+		}
+		inventoryMailboxes++
+	}
 	currentUser := publicUser{}
 	authenticated := false
 	if session, user, ok := s.currentWebSession(r); ok {
@@ -791,19 +800,21 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		currentUser.IsAdmin = session.IsAdmin || user.IsAdmin
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"success":            true,
-		"service":            "julong-ic-email",
-		"api_key_configured": strings.TrimSpace(s.cfg.APIKey) != "",
-		"base_url":           requestBaseURL(r),
-		"account_scoped":     scopedOwnerID(r, s.store) != "",
-		"authenticated":      authenticated,
-		"current_user":       currentUser,
-		"accounts":           len(state.Accounts),
-		"mailboxes":          len(state.Mailboxes),
-		"messages":           len(state.Messages),
-		"icloud_session":     s.publicSessionForRequest(r),
-		"icloud_sessions":    s.publicSessionsForRequest(r),
-		"version":            currentVersionInfo(),
+		"success":             true,
+		"service":             "julong-ic-email",
+		"api_key_configured":  strings.TrimSpace(s.cfg.APIKey) != "",
+		"base_url":            requestBaseURL(r),
+		"account_scoped":      scopedOwnerID(r, s.store) != "",
+		"authenticated":       authenticated,
+		"current_user":        currentUser,
+		"accounts":            len(state.Accounts),
+		"mailboxes":           len(state.Mailboxes),
+		"inventory_mailboxes": inventoryMailboxes,
+		"outbound_mailboxes":  outboundMailboxes,
+		"messages":            len(state.Messages),
+		"icloud_session":      s.publicSessionForRequest(r),
+		"icloud_sessions":     s.publicSessionsForRequest(r),
+		"version":             currentVersionInfo(),
 	})
 }
 
@@ -1988,8 +1999,9 @@ func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 	state := s.scopedState(r)
 	accountsByID := mailboxAccountMap(state.Accounts)
 	base := filterMailboxesByOwner(state.Mailboxes, strings.TrimSpace(r.URL.Query().Get("owner_id")), scopedOwnerID(r, s.store), s.isAdminRequest(r))
-	groups := publicMailboxGroups(base, accountsByID)
-	filtered := filterMailboxesForList(base, accountsByID, r.URL.Query())
+	scopedBase := filterMailboxesByStatusScope(base, r.URL.Query())
+	groups := publicMailboxGroups(scopedBase, accountsByID)
+	filtered := filterMailboxesForList(scopedBase, accountsByID, r.URL.Query())
 	sortMailboxesForList(filtered, accountsByID)
 
 	page, pageSize, paged := mailboxListPagination(r)
@@ -2009,7 +2021,7 @@ func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 			Page:       page,
 			PageSize:   pageSize,
 			Total:      len(filtered),
-			TotalAll:   len(base),
+			TotalAll:   len(scopedBase),
 			TotalPages: totalPages(len(filtered), pageSize),
 		},
 	}
@@ -2039,12 +2051,41 @@ func filterMailboxesByOwner(mailboxes []Mailbox, ownerFilter, scopedOwner string
 func filterMailboxesForList(mailboxes []Mailbox, accountsByID map[string]Account, values url.Values) []Mailbox {
 	accountKey := strings.TrimSpace(firstNonEmpty(values.Get("account_key"), values.Get("account_id")))
 	keyword := strings.ToLower(strings.TrimSpace(firstNonEmpty(values.Get("search"), values.Get("q"))))
+	status := strings.ToLower(strings.TrimSpace(values.Get("status")))
+	excludeStatus := strings.ToLower(strings.TrimSpace(values.Get("exclude_status")))
 	out := make([]Mailbox, 0, len(mailboxes))
 	for _, mailbox := range mailboxes {
+		mailboxStatus := strings.ToLower(strings.TrimSpace(mailbox.Status))
+		if status != "" && mailboxStatus != status {
+			continue
+		}
+		if excludeStatus != "" && mailboxStatus == excludeStatus {
+			continue
+		}
 		if keyword == "" && accountKey != "" && accountKey != "all" && !constantTimeEqual(mailboxListAccountKey(mailbox, accountsByID), accountKey) {
 			continue
 		}
 		if keyword != "" && !mailboxListMatchesSearch(mailbox, accountsByID, keyword) {
+			continue
+		}
+		out = append(out, mailbox)
+	}
+	return out
+}
+
+func filterMailboxesByStatusScope(mailboxes []Mailbox, values url.Values) []Mailbox {
+	status := strings.ToLower(strings.TrimSpace(values.Get("status")))
+	excludeStatus := strings.ToLower(strings.TrimSpace(values.Get("exclude_status")))
+	if status == "" && excludeStatus == "" {
+		return append([]Mailbox(nil), mailboxes...)
+	}
+	out := make([]Mailbox, 0, len(mailboxes))
+	for _, mailbox := range mailboxes {
+		mailboxStatus := strings.ToLower(strings.TrimSpace(mailbox.Status))
+		if status != "" && mailboxStatus != status {
+			continue
+		}
+		if excludeStatus != "" && mailboxStatus == excludeStatus {
 			continue
 		}
 		out = append(out, mailbox)
@@ -2098,7 +2139,7 @@ func paginateMailboxes(mailboxes []Mailbox, page, pageSize int) []Mailbox {
 
 func mailboxListPagination(r *http.Request) (int, int, bool) {
 	values := r.URL.Query()
-	paged := values.Has("page") || values.Has("page_size") || values.Has("search") || values.Has("q") || values.Has("account_key") || values.Has("account_id") || values.Has("owner_id")
+	paged := values.Has("page") || values.Has("page_size") || values.Has("search") || values.Has("q") || values.Has("account_key") || values.Has("account_id") || values.Has("owner_id") || values.Has("status") || values.Has("exclude_status")
 	page := parseBoundedPositiveInt(values.Get("page"), 1, 1, 1_000_000)
 	pageSize := parseBoundedPositiveInt(values.Get("page_size"), mailboxListDefaultPageSize, 1, mailboxListMaxPageSize)
 	return page, pageSize, paged
@@ -2214,12 +2255,17 @@ func (s *Server) handleVerifyMailbox(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDisableMailbox(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !s.canAccessMailboxID(r, id) {
+	mailbox, ok := s.store.FindMailboxByID(id)
+	if !ok || !s.canAccessMailbox(r, mailbox) {
 		writeError(w, http.StatusNotFound, errCode("mailbox_not_found", "邮箱不存在", false))
 		return
 	}
 	inactive := false
-	mailbox, err := s.store.SetMailboxStatus(id, &inactive, nil, StatusDisabled, "API 已停用")
+	status := StatusDisabled
+	if mailbox.Status == StatusOutbound {
+		status = StatusOutbound
+	}
+	mailbox, err := s.store.SetMailboxStatus(id, &inactive, nil, status, "API 已停用")
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
@@ -2265,7 +2311,7 @@ func (s *Server) handleSetMailboxStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	status := strings.ToLower(strings.TrimSpace(payload.Status))
 	if status != "" && !validMailboxStatus(status) {
-		writeError(w, http.StatusBadRequest, errCode("invalid_status", "状态只能是 available、used、failed、active、disabled", false))
+		writeError(w, http.StatusBadRequest, errCode("invalid_status", "状态只能是 available、used、failed、active、disabled、outbound", false))
 		return
 	}
 	mailbox, err := s.store.SetMailboxStatus(id, payload.APIActive, payload.ICloudActive, status, payload.Note)
@@ -5001,7 +5047,7 @@ func validOTP(code string) bool {
 
 func validMailboxStatus(status string) bool {
 	switch status {
-	case StatusActive, StatusAvailable, StatusUsed, StatusFailed, StatusDisabled:
+	case StatusActive, StatusAvailable, StatusUsed, StatusFailed, StatusDisabled, StatusOutbound:
 		return true
 	default:
 		return false

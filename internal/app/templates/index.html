@@ -595,6 +595,8 @@
       border-color: var(--warn-line);
       background: var(--warn-soft);
       color: var(--warn);
+      font-size:10px;
+      text-align: center;
     }
     .code-value {
       display: block;
@@ -1300,7 +1302,7 @@
     button { border-color: var(--line); border-radius: 12px; color: var(--green-2); background: var(--dragon-accent-soft); }
     button.primary { color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: var(--dragon-accent-shadow); }
     button.danger { color: var(--bad); border-color: var(--bad-line); background: var(--bad-soft); }
-    .account-tabs, .session-tabs { border-color: var(--line); background: color-mix(in srgb, var(--panel-2) 84%, transparent); }
+    .account-tabs, .session-tabs { border-color: var(--line); }
     .account-tabs button.active, .session-tabs button.active { color: var(--green-2); background: var(--dragon-accent-soft-2); }
     .table-wrap { margin: 0 30px 28px; border: 1px solid var(--line); border-radius: 20px; overflow: auto; }
     table { min-width: 1040px; color: var(--text); }
@@ -1331,7 +1333,7 @@
     .mailbox-batch-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .mailbox-batch-actions button, .mailbox-batch-actions select { min-height: 36px; padding: 7px 11px; border-radius: 10px; font-size: 12px; }
     .mailbox-batch-actions select { width: auto; min-width: 132px; }
-    .mailbox-table-wrap { border-radius: 16px; }
+    .mailbox-table-wrap { border-radius: 16px; margin-top: 30px;}
     .mailbox-table { min-width: 1560px; table-layout: auto; }
     .mailbox-table th {
       height: 58px;
@@ -1424,7 +1426,7 @@
       white-space: nowrap;
     }
     .mailbox-message-count-button:hover { color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); transform: translateY(-1px); }
-    .mailbox-updated-cell { font-variant-numeric: tabular-nums; }
+    .mailbox-updated-cell { font-variant-numeric: tabular-nums; font-size: 12px; }
     .mailbox-html-expiry-cell { min-width: 158px; }
     .html-expiry { display: grid; gap: 2px; line-height: 1.25; }
     .html-expiry strong { color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -1575,14 +1577,14 @@
         <button class="nav-item" data-view="create" onclick="setActiveView('create', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg></span><span>新建邮箱</span></button>
         <button class="nav-item nav-alias" data-view="session" onclick="setActiveView('session', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h9.5a3.5 3.5 0 0 1 0 7H8"/><path d="m9 5-3 3 3 3"/></svg></span><span>转发邮箱</span></button>
         <button class="nav-item nav-alias" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v10h-15z"/><path d="m5.5 8.5 6.5 5 6.5-5"/></svg></span><span>统一收件箱</span></button>
-        <button class="nav-item nav-alias" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 7.5h10M8.5 11.5h7M10 15.5h4"/><path d="M5 3.8h14v16.4H5z"/></svg></span><span>取件码与发货</span></button>
+        <button class="nav-item" data-view="outbound" onclick="setActiveView('outbound', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 7.5h10M8.5 11.5h7M10 15.5h4"/><path d="M5 3.8h14v16.4H5z"/></svg></span><span>取件码与发货</span><span class="count-dot" id="navOutboundCount">0</span></button>
         <button class="nav-item" data-view="session" onclick="setActiveView('session', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/></svg></span><span>iCloud 账号</span><span class="count-dot" id="navSessionCount">0</span></button>
         <button class="nav-item" data-view="settings" onclick="setActiveView('settings', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3.8v2.1M12 18.1v2.1M3.8 12h2.1M18.1 12h2.1M6.2 6.2l1.5 1.5M16.3 16.3l1.5 1.5M17.8 6.2l-1.5 1.5M7.7 16.3l-1.5 1.5"/><circle cx="12" cy="12" r="3.4"/></svg></span><span>系统设置</span></button>
       </nav>
-      <aside class="sidebar-note">
+      <!-- <aside class="sidebar-note">
         <strong>安全提醒</strong>
         <span>系统不会保存明文取件码。再次发货时，请重新获取最新邮件。</span>
-      </aside>
+      </aside> -->
     </aside>
 
     <section class="content">
@@ -1747,8 +1749,8 @@
 
         <section class="view-section panel" data-view="mailboxes">
           <div class="panel-head">
-            <h2>全部邮箱</h2>
-            <p>每个邮箱同时属于库存、统一收件箱和取件任务。</p>
+            <h2 id="mailboxPanelTitle">全部邮箱</h2>
+            <p id="mailboxPanelSubtitle">查看尚未出库的邮箱库存，勾选后可批量出库。</p>
           </div>
           <div class="toolbar list-toolbar">
             <label class="search-field">全局搜索邮箱
@@ -1785,12 +1787,15 @@
               <button type="button" onclick="batchCopyMailboxes('api')">复制 API</button>
               <button type="button" onclick="batchCreateHTMLLinks()">复制 HTML 地址</button>
               <button type="button" onclick="batchSyncMailboxes()">同步邮件</button>
+              <button id="mailboxBatchOutboundButton" type="button" class="primary" onclick="batchOutboundMailboxes()">出库</button>
+              <button id="mailboxBatchReturnButton" type="button" onclick="batchReturnMailboxes()" hidden>退回库存</button>
               <select id="mailboxBatchStatus" onchange="batchSetMailboxStatus(this.value)">
                 <option value="">批量改状态</option>
                 <option value="available">设为可用</option>
                 <option value="used">设为已使用</option>
                 <option value="failed">设为失败</option>
                 <option value="disabled">设为停用</option>
+                <option value="outbound">设为出库</option>
               </select>
               <button type="button" onclick="batchDisableMailboxes()">停用 API</button>
               <button type="button" class="danger" onclick="batchDeleteMailboxes()">批量永久删除</button>
@@ -1917,6 +1922,7 @@
     let lastMailboxes = [];
     let lastMailboxGroups = [];
     let lastMailboxPagination = {page: 1, page_size: 10, total: 0, total_all: 0, total_pages: 1};
+    let lastStatusSummary = {};
     let lastICloudSessions = [];
     let mailboxPage = 1;
     let mailboxPageSize = 10;
@@ -1957,7 +1963,8 @@
       overview: ['管理总览', '查看矩龙邮箱的账号、库存和收件状态。'],
       session: ['iCloud 账号', '管理创建邮箱与取码所需的 iCloud 登录状态。'],
       create: ['新建邮箱', '按已保存账号创建新的 iCloud 隐私邮箱。'],
-      mailboxes: ['全部邮箱', '查看所有 iCloud 隐私邮箱及其库存和取件状态。'],
+      mailboxes: ['全部邮箱', '查看所有尚未出库的 iCloud 隐私邮箱。'],
+      outbound: ['取件码与发货', '查看已出库邮箱、邮件和取件码。'],
       settings: ['系统设置', '配置注册开关、后台入口和 HTML 接码地址生命周期。']
     };
 
@@ -2023,11 +2030,13 @@
     function setActiveView(view, sourceButton = null) {
       const normalized = viewMeta[view] ? view : 'overview';
       const meta = viewMeta[normalized];
+      const previousView = activeView;
+      const sectionView = normalized === 'outbound' ? 'mailboxes' : normalized;
       for (const button of document.querySelectorAll('.nav-item[data-view]')) {
         button.classList.toggle('active', sourceButton ? button === sourceButton : (button.dataset.view === normalized && !button.classList.contains('nav-alias')));
       }
       for (const section of document.querySelectorAll('.view-section[data-view]')) {
-        section.classList.toggle('active', section.dataset.view === normalized);
+        section.classList.toggle('active', section.dataset.view === sectionView);
       }
       if ($('activeViewTitle')) $('activeViewTitle').textContent = meta[0];
       if ($('activeViewSubtitle')) $('activeViewSubtitle').textContent = meta[1];
@@ -2035,9 +2044,32 @@
         localStorage.setItem(viewStorageKey, normalized);
       } catch (_) {}
       activeView = normalized;
-      if (normalized === 'mailboxes') renderMailboxes();
+      if (normalized === 'mailboxes' || normalized === 'outbound') {
+        renderMailboxViewMode();
+        if (previousView !== normalized) {
+          mailboxPage = 1;
+          activeMailboxAccountKey = 'all';
+          selectedMailboxIDs.clear();
+          selectedMailboxRows.clear();
+          loadMailboxPage().catch(err => log('切换邮箱列表失败：' + err.message));
+        } else {
+          renderMailboxes();
+        }
+      }
       if (normalized === 'settings' && currentUser && currentUser.is_admin) loadSystemSettings().catch(err => log('读取系统设置失败：' + err.message));
       renderGlobalLogs();
+    }
+
+    function renderMailboxViewMode() {
+      const outbound = activeView === 'outbound';
+      if ($('mailboxPanelTitle')) $('mailboxPanelTitle').textContent = outbound ? '取件码与发货' : '全部邮箱';
+      if ($('mailboxPanelSubtitle')) {
+        $('mailboxPanelSubtitle').textContent = outbound
+          ? '这里集中显示已出库邮箱，可继续查询邮件、验证码并处理发货。'
+          : '查看尚未出库的邮箱库存，勾选后可批量出库。';
+      }
+      if ($('mailboxBatchOutboundButton')) $('mailboxBatchOutboundButton').hidden = outbound;
+      if ($('mailboxBatchReturnButton')) $('mailboxBatchReturnButton').hidden = !outbound;
     }
 
     function initViewNavigation() {
@@ -2086,16 +2118,20 @@
     }
 
     function updateNavCounts(status = {}) {
+      if (status && Object.keys(status).length > 0) lastStatusSummary = status;
+      const summary = lastStatusSummary || {};
       const visibleSessionTotal = visibleICloudSessions(lastICloudSessions).length;
-      const accountTotal = Math.max(Number(status.accounts || 0), visibleSessionTotal);
-      const mailboxTotal = Number(lastMailboxPagination.total_all || status.mailboxes || lastMailboxes.length || 0);
+      const accountTotal = Math.max(Number(summary.accounts || 0), visibleSessionTotal);
+      const inventoryTotal = Number(summary.inventory_mailboxes ?? summary.mailboxes ?? 0);
+      const outboundTotal = Number(summary.outbound_mailboxes || 0);
       const set = (id, value) => {
         const el = $(id);
         if (el) el.textContent = String(value);
       };
       set('navOverviewCount', accountTotal);
       set('navSessionCount', visibleSessionTotal);
-      set('navMailboxCount', mailboxTotal);
+      set('navMailboxCount', inventoryTotal);
+      set('navOutboundCount', outboundTotal);
     }
 
     async function api(path, options = {}) {
@@ -3135,6 +3171,11 @@
         page: String(Math.max(1, mailboxPage)),
         page_size: String(Math.max(1, mailboxPageSize))
       });
+      if (activeView === 'outbound') {
+        params.set('status', 'outbound');
+      } else {
+        params.set('exclude_status', 'outbound');
+      }
       const keyword = ($('mailboxSearch') ? $('mailboxSearch').value : '').trim();
       if (keyword) params.set('search', keyword);
       if (!keyword && activeMailboxAccountKey && activeMailboxAccountKey !== 'all') {
@@ -3165,6 +3206,7 @@
     }
 
     function renderMailboxes() {
+      renderMailboxViewMode();
       renderMailboxAccountTabs();
       const rows = lastMailboxes || [];
       for (const row of rows) {
@@ -3183,7 +3225,7 @@
       if ($('mailboxPrevPage')) $('mailboxPrevPage').disabled = page <= 1;
       if ($('mailboxNextPage')) $('mailboxNextPage').disabled = page >= totalPages;
       if (rows.length === 0) {
-        $('mailboxes').innerHTML = '<tr><td colspan="11" class="muted empty">没有匹配的邮箱</td></tr>';
+        $('mailboxes').innerHTML = `<tr><td colspan="11" class="muted empty">${activeView === 'outbound' ? '暂无已出库邮箱' : '没有匹配的库存邮箱'}</td></tr>`;
         renderMailboxBatchBar();
         return;
       }
@@ -3214,6 +3256,7 @@
                   <button type="button" onclick="setMailboxStatus('${row.id}', 'available')">设为可用</button>
                   <button type="button" onclick="setMailboxStatus('${row.id}', 'used')">设为已使用</button>
                   <button type="button" onclick="setMailboxStatus('${row.id}', 'failed')">设为失败</button>
+                  ${renderMailboxInventoryAction(row)}
                   ${renderMailboxAPIToggleAction(row)}
                 </div>
               </details>
@@ -3388,6 +3431,7 @@
     }
 
     function mailboxTableStatus(row) {
+      if (row.status === 'outbound') return {text: '出库', kind: 'warn'};
       if (!row.api_active) return {text: 'API 停用', kind: 'off'};
       if (!row.icloud_active) return {text: 'iCloud 停用', kind: 'bad'};
       return ({
@@ -3395,8 +3439,16 @@
         used: {text: '已使用', kind: 'warn'},
         failed: {text: '失败', kind: 'bad'},
         disabled: {text: '停用', kind: 'off'},
+        outbound: {text: '出库', kind: 'warn'},
         active: {text: '正常', kind: 'ok'}
       })[row.status] || {text: statusText(row.status), kind: 'off'};
+    }
+
+    function renderMailboxInventoryAction(row) {
+      if (row.status === 'outbound') {
+        return `<button type="button" onclick="setMailboxStatus('${row.id}', 'available')">退回库存</button>`;
+      }
+      return `<button type="button" onclick="setMailboxStatus('${row.id}', 'outbound')">设为出库</button>`;
     }
 
     function renderMailboxAPIToggleAction(row) {
@@ -3550,6 +3602,59 @@
       await refresh();
     }
 
+    async function batchOutboundMailboxes() {
+      const rows = selectedMailboxList();
+      if (rows.length === 0) return;
+      if (!await askConfirm({
+        title: '批量出库邮箱',
+        message: `将选中的 ${rows.length} 个邮箱移到“取件码与发货”。`,
+        detail: '邮箱状态会改为“出库”，API、HTML 地址和邮件记录保持不变。',
+        confirmText: `出库 ${rows.length} 个`,
+        tone: 'warning'
+      })) return;
+      const result = await executeMailboxBatch(rows, async row => {
+        await api(`/api/mailboxes/${encodeURIComponent(row.id)}/status`, {
+          method:'POST',
+          body: JSON.stringify({status:'outbound', note:'面板批量出库'})
+        });
+        return row.id;
+      });
+      const successCount = rows.length - result.errors.length;
+      clearMailboxSelection();
+      log(`批量出库完成：成功 ${successCount}，失败 ${result.errors.length}`);
+      showToast(result.errors.length
+        ? `出库完成：成功 ${successCount}，失败 ${result.errors.length}`
+        : `已出库 ${successCount} 个邮箱`);
+      if (successCount > 0) setActiveView('outbound');
+      await refresh();
+    }
+
+    async function batchReturnMailboxes() {
+      const rows = selectedMailboxList();
+      if (rows.length === 0) return;
+      if (!await askConfirm({
+        title: '批量退回库存',
+        message: `将选中的 ${rows.length} 个邮箱退回“全部邮箱”。`,
+        detail: '邮箱状态会恢复为“可用”。',
+        confirmText: `退回 ${rows.length} 个`
+      })) return;
+      const result = await executeMailboxBatch(rows, async row => {
+        await api(`/api/mailboxes/${encodeURIComponent(row.id)}/status`, {
+          method:'POST',
+          body: JSON.stringify({status:'available', note:'面板批量退回库存'})
+        });
+        return row.id;
+      });
+      const successCount = rows.length - result.errors.length;
+      clearMailboxSelection();
+      log(`批量退回库存完成：成功 ${successCount}，失败 ${result.errors.length}`);
+      showToast(result.errors.length
+        ? `退回完成：成功 ${successCount}，失败 ${result.errors.length}`
+        : `已退回库存 ${successCount} 个邮箱`);
+      if (successCount > 0) setActiveView('mailboxes');
+      await refresh();
+    }
+
     async function batchDisableMailboxes() {
       const rows = selectedMailboxList();
       if (rows.length === 0) return;
@@ -3684,7 +3789,7 @@
     }
 
     function statusText(status) {
-      return ({available:'可用', used:'已使用', failed:'失败', disabled:'停用', active:'active'}[status] || status || '-');
+      return ({available:'可用', used:'已使用', failed:'失败', disabled:'停用', outbound:'出库', active:'active'}[status] || status || '-');
     }
 
     function statusClass(status) {
