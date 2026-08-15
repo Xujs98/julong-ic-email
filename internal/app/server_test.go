@@ -84,6 +84,75 @@ func TestBrandAssetsAreServed(t *testing.T) {
 	}
 }
 
+func TestMailboxMessagesAreScopedAndSorted(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	cookie, user := registerTestUser(t, handler, "mailbox-message-viewer", "multi123")
+	target, err := store.AddMailboxForOwner(user.ID, "", "target", "target@example.icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := store.AddMailboxForOwner(user.ID, "", "other", "other@example.icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	older := time.Now().Add(-time.Hour)
+	newer := time.Now()
+	if _, err := store.AddMessage(target.ID, "older message", "old@example.com", "old body", older); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AddMessage(target.ID, "newer message", "new@example.com", "new body", newer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AddMessage(other.ID, "other mailbox", "other@example.com", "other body", newer.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/mailboxes/"+target.ID+"/messages", nil)
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list messages status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Messages []publicMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Messages) != 2 {
+		t.Fatalf("messages len = %d, want 2", len(body.Messages))
+	}
+	if body.Messages[0].Subject != "newer message" || body.Messages[1].Subject != "older message" {
+		t.Fatalf("message order = %+v, want newest first", body.Messages)
+	}
+	for _, message := range body.Messages {
+		if message.MailboxID != target.ID {
+			t.Fatalf("message mailbox = %q, want %q", message.MailboxID, target.ID)
+		}
+	}
+}
+
+func TestMailboxTableMessageColumnUsesDialog(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`class="mailbox-message-count-button"`,
+		`openMailboxMessages('${row.id}')`,
+		`id="mailboxMessagesModal"`,
+		`/api/mailboxes/${encodeURIComponent(id)}/messages`,
+		`buildMailboxMessageDocument`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("mailbox message dialog source missing %q", want)
+		}
+	}
+}
+
 func testIMAPSession(ownerID, accountID, email string) ICloudSession {
 	email = normalizeICloudIMAPEmail(email)
 	if email == "" {

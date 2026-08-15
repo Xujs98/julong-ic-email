@@ -925,6 +925,42 @@
       box-shadow: 0 36px 120px rgba(6, 22, 55, .28);
       overflow: hidden;
     }
+    body.mailbox-messages-open { overflow: hidden; }
+    .mailbox-messages-modal { width: min(920px, 100%); max-height: min(820px, calc(100vh - 40px)); display: flex; flex-direction: column; border-radius: 26px; }
+    .mailbox-messages-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 25px 26px 20px; border-bottom: 1px solid var(--line); background: linear-gradient(135deg, color-mix(in srgb, var(--panel) 90%, var(--green) 10%), var(--panel)); }
+    .mailbox-messages-head h2 { margin: 0; color: var(--text); font-size: 23px; }
+    .mailbox-messages-head p { margin: 7px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+    .mailbox-messages-actions { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+    .mailbox-messages-actions button { min-height: 40px; padding: 8px 13px; border-radius: 11px; }
+    .mailbox-messages-list { min-height: 220px; padding: 20px 22px 24px; overflow: auto; display: grid; align-content: start; gap: 12px; background: color-mix(in srgb, var(--bg-soft) 70%, var(--panel)); }
+    .mailbox-messages-loading, .mailbox-messages-empty { padding: 58px 24px; border: 1px dashed var(--line); border-radius: 18px; color: var(--faint); background: var(--panel); text-align: center; }
+    .mailbox-message-card { overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); box-shadow: var(--shadow); }
+    .mailbox-message-card > summary { padding: 16px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; cursor: pointer; list-style: none; }
+    .mailbox-message-card > summary::-webkit-details-marker { display: none; }
+    .mailbox-message-subject { display: block; overflow: hidden; color: var(--text); font-size: 15px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+    .mailbox-message-summary-meta { display: flex; gap: 10px; margin-top: 5px; color: var(--faint); font-size: 12px; }
+    .mailbox-message-summary-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mailbox-message-time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .mailbox-message-detail { padding: 0 18px 18px; border-top: 1px solid var(--line); }
+    .mailbox-message-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 15px 0; }
+    .mailbox-message-meta-item { min-width: 0; padding: 10px 12px; border-radius: 11px; color: var(--muted); background: var(--th-bg); font-size: 12px; overflow-wrap: anywhere; }
+    .mailbox-message-meta-item strong { display: block; margin-bottom: 3px; color: var(--text); font-size: 11px; }
+    .mailbox-message-code { display: inline-flex; align-items: center; gap: 9px; margin-bottom: 13px; padding: 9px 12px; border: 1px solid var(--ok-line); border-radius: 11px; color: var(--ok); background: var(--ok-soft); font-weight: 900; }
+    .mailbox-message-body { margin: 0; max-height: 360px; padding: 15px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: color-mix(in srgb, var(--panel) 94%, var(--bg-soft)); font: 13px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+    .mailbox-message-html { margin-top: 13px; }
+    .mailbox-message-html > summary { padding: 10px 12px; border-radius: 10px; color: var(--green-2); background: var(--dragon-accent-soft); cursor: pointer; font-size: 12px; font-weight: 900; list-style: none; }
+    .mailbox-message-html > summary::-webkit-details-marker { display: none; }
+    .mailbox-message-frame { display: block; width: 100%; height: 430px; margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+    @media (max-width: 640px) {
+      .mailbox-messages-modal { max-height: calc(100vh - 22px); border-radius: 24px 24px 16px 16px; }
+      .mailbox-messages-backdrop { align-items: flex-end; padding: 11px; }
+      .mailbox-messages-head { display: block; padding: 20px 18px 16px; }
+      .mailbox-messages-actions { margin-top: 14px; justify-content: flex-start; }
+      .mailbox-messages-list { padding: 14px; }
+      .mailbox-message-card > summary { grid-template-columns: 1fr; gap: 8px; }
+      .mailbox-message-meta-grid { grid-template-columns: 1fr; }
+      .mailbox-message-frame { height: 360px; }
+    }
     body.app-confirm-open { overflow: hidden; }
     .app-confirm-backdrop {
       position: fixed;
@@ -1374,6 +1410,20 @@
     .copy-email-button::after { content: "复制"; margin-left: 8px; color: var(--faint); font-size: 10px; font-weight: 800; opacity: 0; transition: opacity .15s ease; }
     .copy-email-button:hover::after { opacity: 1; }
     .mailbox-account-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+    .mailbox-message-count-button {
+      min-width: 54px;
+      min-height: 34px;
+      padding: 6px 10px;
+      border: 1px solid color-mix(in srgb, var(--green) 22%, var(--line));
+      border-radius: 10px;
+      color: var(--green-2);
+      background: var(--dragon-accent-soft);
+      box-shadow: none;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .mailbox-message-count-button:hover { color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); transform: translateY(-1px); }
     .mailbox-updated-cell { font-variant-numeric: tabular-nums; }
     .mailbox-html-expiry-cell { min-width: 158px; }
     .html-expiry { display: grid; gap: 2px; line-height: 1.25; }
@@ -1799,6 +1849,22 @@
       </section>
     </section>
   </div>
+  <div id="mailboxMessagesModal" class="modal-backdrop mailbox-messages-backdrop" aria-hidden="true" onclick="closeMailboxMessages(event)">
+    <section class="modal mailbox-messages-modal" role="dialog" aria-modal="true" aria-labelledby="mailboxMessagesTitle" onclick="event.stopPropagation()">
+      <header class="mailbox-messages-head">
+        <div>
+          <h2 id="mailboxMessagesTitle">邮箱邮件</h2>
+          <p id="mailboxMessagesEmail">正在读取邮箱…</p>
+        </div>
+        <div class="mailbox-messages-actions">
+          <button type="button" class="primary" onclick="syncAndReloadMailboxMessages()">同步邮件</button>
+          <button type="button" onclick="loadMailboxMessages()">刷新列表</button>
+          <button id="mailboxMessagesClose" type="button" class="ghost" onclick="closeMailboxMessages()">关闭</button>
+        </div>
+      </header>
+      <div id="mailboxMessagesList" class="mailbox-messages-list"><div class="mailbox-messages-loading">正在读取邮件…</div></div>
+    </section>
+  </div>
   <div id="runConfigModal" class="modal-backdrop" onclick="closeRunConfig(event)">
     <section class="modal" onclick="event.stopPropagation()">
       <div class="panel-head">
@@ -1873,6 +1939,9 @@
     let createAccountSelectionTouched = false;
     let appConfirmResolver = null;
     let appConfirmPreviousFocus = null;
+    let activeMailboxMessagesID = '';
+    let mailboxMessagesRequestID = 0;
+    let mailboxMessagesPreviousFocus = null;
     let selectedCreateAccountIDs = new Set();
     let currentUser = null;
     const viewStorageKey = 'julong_mail_active_view';
@@ -1935,13 +2004,19 @@
     }
 
     document.addEventListener('keydown', event => {
-      if (!appConfirmResolver) return;
-      if (event.key === 'Escape') {
+      if (appConfirmResolver) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          resolveAppConfirm(false);
+        } else if (event.key === 'Enter') {
+          event.preventDefault();
+          resolveAppConfirm(true);
+        }
+        return;
+      }
+      if (event.key === 'Escape' && $('mailboxMessagesModal').classList.contains('show')) {
         event.preventDefault();
-        resolveAppConfirm(false);
-      } else if (event.key === 'Enter') {
-        event.preventDefault();
-        resolveAppConfirm(true);
+        closeMailboxMessages();
       }
     });
 
@@ -3122,7 +3197,7 @@
             <td><span class="mailbox-status-badge ${status.kind}" title="API ${row.api_active ? '正常' : '停用'} / iCloud ${row.icloud_active ? '正常' : '停用'}">${esc(status.text)}</span></td>
             <td><button type="button" class="copy-email-button" onclick="copyMailboxEmail('${row.id}')" title="点击复制邮箱地址">${esc(row.email)}</button></td>
             <td class="mailbox-account-cell" title="${esc(mailboxAccountTitle(row))}">${esc(mailboxAccountTitle(row))}</td>
-            <td>${row.receive_count || 0}</td>
+            <td><button type="button" class="mailbox-message-count-button" onclick="openMailboxMessages('${row.id}')" title="查看 ${esc(row.email)} 的邮件" aria-label="查看 ${esc(row.email)} 的邮件">${row.receive_count || 0} 封</button></td>
             <td class="mailbox-updated-cell">${esc(formatMailboxDate(row.updated_at || row.created_at))}</td>
             <td class="mailbox-html-expiry-cell">${renderMailboxHTMLExpiry(row)}</td>
             <td class="mailbox-code-cell">${renderMailboxCodeCell(row.id)}</td>
@@ -3161,6 +3236,138 @@
       if (Number.isNaN(date.getTime())) return String(value);
       const pad = number => String(number).padStart(2, '0');
       return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function mailboxRowByID(id) {
+      return lastMailboxes.find(row => row.id === id) || selectedMailboxRows.get(id) || null;
+    }
+
+    async function openMailboxMessages(id) {
+      const row = mailboxRowByID(id);
+      activeMailboxMessagesID = id;
+      mailboxMessagesPreviousFocus = document.activeElement;
+      $('mailboxMessagesTitle').textContent = '邮箱邮件';
+      $('mailboxMessagesEmail').textContent = row && row.email ? row.email : id;
+      $('mailboxMessagesList').innerHTML = '<div class="mailbox-messages-loading">正在读取邮件…</div>';
+      $('mailboxMessagesModal').classList.add('show');
+      $('mailboxMessagesModal').setAttribute('aria-hidden', 'false');
+      document.body.classList.add('mailbox-messages-open');
+      requestAnimationFrame(() => $('mailboxMessagesClose').focus());
+      await loadMailboxMessages(id);
+    }
+
+    function closeMailboxMessages(event) {
+      if (event && event.target !== $('mailboxMessagesModal')) return;
+      activeMailboxMessagesID = '';
+      mailboxMessagesRequestID += 1;
+      $('mailboxMessagesModal').classList.remove('show');
+      $('mailboxMessagesModal').setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('mailbox-messages-open');
+      if (mailboxMessagesPreviousFocus && typeof mailboxMessagesPreviousFocus.focus === 'function') {
+        mailboxMessagesPreviousFocus.focus({preventScroll: true});
+      }
+      mailboxMessagesPreviousFocus = null;
+    }
+
+    function mailboxMessageCode(message) {
+      const text = `${message.subject || ''} ${message.body || ''}`;
+      const labeled = text.match(/(?:验证码|verification\s*code|security\s*code|one[- ]time\s*(?:code|password)|\bcode\b)[^0-9]{0,24}([0-9]{4,8})/i);
+      if (labeled) return labeled[1];
+      const fallback = text.match(/(?:^|\D)([0-9]{6})(?:\D|$)/);
+      return fallback ? fallback[1] : '';
+    }
+
+    function buildMailboxMessageDocument(source) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(String(source || ''), 'text/html');
+      doc.querySelectorAll('script,noscript,iframe,frame,frameset,object,embed,applet,form,input,button,textarea,select,option,base,link,meta,video,audio,source,foreignObject').forEach(node => node.remove());
+      doc.querySelectorAll('*').forEach(node => {
+        for (const attr of [...node.attributes]) {
+          const name = attr.name.toLowerCase();
+          const value = attr.value.trim().toLowerCase();
+          if (name.startsWith('on') || ['srcdoc','ping','action','formaction'].includes(name)) node.removeAttribute(attr.name);
+          if (['href','xlink:href'].includes(name) && !value.startsWith('#')) node.removeAttribute(attr.name);
+          if (['src','background','poster'].includes(name) && !value.startsWith('data:image/')) node.removeAttribute(attr.name);
+        }
+      });
+      const csp = doc.createElement('meta');
+      csp.setAttribute('http-equiv', 'Content-Security-Policy');
+      csp.setAttribute('content', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'");
+      doc.head.prepend(csp);
+      const style = doc.createElement('style');
+      style.textContent = 'html,body{margin:0;min-height:100%;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;overflow-wrap:anywhere}body{padding:18px}img,table{max-width:100%!important}img{height:auto!important}pre{white-space:pre-wrap}';
+      doc.head.appendChild(style);
+      return '<!doctype html>' + doc.documentElement.outerHTML;
+    }
+
+    function renderMailboxMessages(messages) {
+      const list = $('mailboxMessagesList');
+      if (!messages.length) {
+        list.innerHTML = '<div class="mailbox-messages-empty">当前邮箱还没有同步到邮件，可点击“同步邮件”后重新查询。</div>';
+        return;
+      }
+      list.innerHTML = messages.map((message, index) => {
+        const subject = message.subject || '无主题邮件';
+        const sender = message.from || '未知发件人';
+        const receivedAt = message.received_at || message.created_at || '';
+        const code = mailboxMessageCode(message);
+        return `<details class="mailbox-message-card" ${index === 0 ? 'open' : ''}>
+          <summary>
+            <span><span class="mailbox-message-subject" title="${esc(subject)}">${esc(subject)}</span><span class="mailbox-message-summary-meta"><span>${esc(sender)}</span>${code ? `<span>验证码 ${esc(code)}</span>` : ''}</span></span>
+            <time class="mailbox-message-time">${esc(formatMailboxDate(receivedAt))}</time>
+          </summary>
+          <div class="mailbox-message-detail">
+            <div class="mailbox-message-meta-grid"><div class="mailbox-message-meta-item"><strong>发件人</strong>${esc(sender)}</div><div class="mailbox-message-meta-item"><strong>收件时间</strong>${esc(formatMailboxDate(receivedAt))}</div></div>
+            ${code ? `<button type="button" class="mailbox-message-code" onclick="copyMailboxMessageCode('${esc(code)}')">验证码 ${esc(code)} · 点击复制</button>` : ''}
+            <pre class="mailbox-message-body">${esc(message.body || '邮件正文为空')}</pre>
+            ${message.html_body ? `<details class="mailbox-message-html" ontoggle="loadMailboxMessageFrame(this, ${index})"><summary>可视化查看 HTML 邮件</summary><iframe id="mailboxMessageFrame-${index}" class="mailbox-message-frame" sandbox="" title="${esc(subject)} HTML 邮件预览"></iframe></details>` : ''}
+          </div>
+        </details>`;
+      }).join('');
+      window.currentMailboxMessageHTML = messages.map(message => message.html_body || '');
+    }
+
+    function loadMailboxMessageFrame(details, index) {
+      if (!details.open) return;
+      const frame = $(`mailboxMessageFrame-${index}`);
+      if (!frame || frame.dataset.loaded === '1') return;
+      frame.setAttribute('sandbox', '');
+      frame.srcdoc = buildMailboxMessageDocument((window.currentMailboxMessageHTML || [])[index] || '');
+      frame.dataset.loaded = '1';
+    }
+
+    async function loadMailboxMessages(id = activeMailboxMessagesID) {
+      if (!id) return;
+      const requestID = ++mailboxMessagesRequestID;
+      $('mailboxMessagesList').innerHTML = '<div class="mailbox-messages-loading">正在查询当前邮箱的邮件…</div>';
+      try {
+        const data = await api(`/api/mailboxes/${encodeURIComponent(id)}/messages`);
+        if (requestID !== mailboxMessagesRequestID || id !== activeMailboxMessagesID) return;
+        const messages = data.messages || [];
+        renderMailboxMessages(messages);
+        const row = mailboxRowByID(id);
+        $('mailboxMessagesTitle').textContent = `邮箱邮件 · ${messages.length} 封`;
+        log(`已查询邮箱邮件：${row && row.email ? row.email : id}，共 ${messages.length} 封`);
+      } catch (err) {
+        if (requestID !== mailboxMessagesRequestID) return;
+        $('mailboxMessagesList').innerHTML = `<div class="mailbox-messages-empty">查询邮件失败：${esc(err.message)}</div>`;
+      }
+    }
+
+    async function syncAndReloadMailboxMessages() {
+      const id = activeMailboxMessagesID;
+      if (!id) return;
+      await syncMailbox(id);
+      if (id === activeMailboxMessagesID) await loadMailboxMessages(id);
+    }
+
+    async function copyMailboxMessageCode(code) {
+      try {
+        await writeClipboard(code);
+        showToast(`已复制验证码：${code}`);
+      } catch (err) {
+        showToast(`复制失败：${err.message}`);
+      }
     }
 
     function renderMailboxHTMLExpiry(row) {

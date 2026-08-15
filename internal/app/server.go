@@ -2471,6 +2471,11 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	messages := s.store.MessagesForMailbox(id)
+	sort.SliceStable(messages, func(i, j int) bool {
+		left := firstNonZeroTime(messages[i].ReceivedAt, messages[i].CreatedAt)
+		right := firstNonZeroTime(messages[j].ReceivedAt, messages[j].CreatedAt)
+		return left.After(right)
+	})
 	out := make([]publicMessage, 0, len(messages))
 	for _, msg := range messages {
 		out = append(out, publicMessage{
