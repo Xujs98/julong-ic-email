@@ -182,6 +182,52 @@ func TestMailboxTableSupportsOutboundWorkflow(t *testing.T) {
 	}
 }
 
+func TestMailboxTableUsesCreationTime(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`<th>创建时间</th>`,
+		`class="mailbox-created-cell"`,
+		`formatMailboxDate(row.created_at)`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("mailbox creation time source missing %q", want)
+		}
+	}
+	if strings.Contains(source, `formatMailboxDate(row.updated_at || row.created_at)`) {
+		t.Fatal("mailbox table should not display the mutable updated_at value")
+	}
+}
+
+func TestMailboxListSortsNewestCreationFirstAndKeepsCreatedAt(t *testing.T) {
+	base := time.Date(2026, 8, 15, 12, 0, 0, 0, time.Local)
+	mailboxes := []Mailbox{
+		{ID: "mbx_000001", Email: "older@icloud.com", CreatedAt: base, UpdatedAt: base.Add(2 * time.Hour)},
+		{ID: "mbx_000002", Email: "newer@icloud.com", CreatedAt: base.Add(time.Hour), UpdatedAt: base.Add(time.Hour)},
+	}
+	sortMailboxesForList(mailboxes)
+	if mailboxes[0].ID != "mbx_000002" || mailboxes[1].ID != "mbx_000001" {
+		t.Fatalf("mailbox order = [%s %s], want newest creation first", mailboxes[0].ID, mailboxes[1].ID)
+	}
+
+	store := newTestStore(t)
+	created, err := store.AddMailbox("", "created", "created-once@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalCreatedAt := created.CreatedAt
+	updated, err := store.SetMailboxStatus(created.ID, nil, nil, StatusUsed, "later operation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.CreatedAt.Equal(originalCreatedAt) {
+		t.Fatalf("created_at changed after status update: got %s want %s", updated.CreatedAt, originalCreatedAt)
+	}
+}
+
 func testIMAPSession(ownerID, accountID, email string) ICloudSession {
 	email = normalizeICloudIMAPEmail(email)
 	if email == "" {

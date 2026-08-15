@@ -1450,7 +1450,7 @@
       white-space: nowrap;
     }
     .mailbox-message-count-button:hover { color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); transform: translateY(-1px); }
-    .mailbox-updated-cell { font-variant-numeric: tabular-nums; font-size: 12px; }
+    .mailbox-created-cell { font-variant-numeric: tabular-nums; font-size: 12px; }
     .mailbox-html-expiry-cell { min-width: 158px; }
     .html-expiry { display: grid; gap: 2px; line-height: 1.25; }
     .html-expiry strong { color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -1832,7 +1832,7 @@
             <table class="mailbox-table">
               <thead><tr>
                 <th class="mailbox-check-column"><input id="mailboxSelectAll" class="mailbox-check" type="checkbox" onchange="toggleSelectAllMailboxes(this.checked)" aria-label="选择当前页全部邮箱"></th>
-                <th>ID</th><th>标签</th><th>状态</th><th>邮箱</th><th>Apple 账号</th><th>邮件</th><th>更新时间</th><th>HTML 过期时间</th><th>取件码</th><th>操作</th>
+                <th>ID</th><th>标签</th><th>状态</th><th>邮箱</th><th>Apple 账号</th><th>邮件</th><th>创建时间</th><th>HTML 过期时间</th><th>取件码</th><th>操作</th>
               </tr></thead>
               <tbody id="mailboxes"></tbody>
             </table>
@@ -3463,7 +3463,7 @@
             <td><button type="button" class="copy-email-button" onclick="copyMailboxEmail('${row.id}')" title="点击复制邮箱地址">${esc(row.email)}</button></td>
             <td class="mailbox-account-cell" title="${esc(mailboxAccountTitle(row))}">${esc(mailboxAccountTitle(row))}</td>
             <td><button type="button" class="mailbox-message-count-button" onclick="openMailboxMessages('${row.id}')" title="查看 ${esc(row.email)} 的邮件" aria-label="查看 ${esc(row.email)} 的邮件">${row.receive_count || 0} 封</button></td>
-            <td class="mailbox-updated-cell">${esc(formatMailboxDate(row.updated_at || row.created_at))}</td>
+            <td class="mailbox-created-cell">${esc(formatMailboxDate(row.created_at))}</td>
             <td class="mailbox-html-expiry-cell">${renderMailboxHTMLExpiry(row)}</td>
             <td class="mailbox-code-cell">${renderMailboxCodeCell(row.id)}</td>
             <td><div class="row-actions">

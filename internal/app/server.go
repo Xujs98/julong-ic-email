@@ -2002,7 +2002,7 @@ func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 	scopedBase := filterMailboxesByStatusScope(base, r.URL.Query())
 	groups := publicMailboxGroups(scopedBase, accountsByID)
 	filtered := filterMailboxesForList(scopedBase, accountsByID, r.URL.Query())
-	sortMailboxesForList(filtered, accountsByID)
+	sortMailboxesForList(filtered)
 
 	page, pageSize, paged := mailboxListPagination(r)
 	pageRows := filtered
@@ -2108,12 +2108,13 @@ func mailboxListMatchesSearch(mailbox Mailbox, accountsByID map[string]Account, 
 	return strings.Contains(haystack, keyword)
 }
 
-func sortMailboxesForList(mailboxes []Mailbox, accountsByID map[string]Account) {
+func sortMailboxesForList(mailboxes []Mailbox) {
 	sort.Slice(mailboxes, func(i, j int) bool {
-		leftTitle := strings.ToLower(mailboxListAccountTitle(mailboxes[i], accountsByID))
-		rightTitle := strings.ToLower(mailboxListAccountTitle(mailboxes[j], accountsByID))
-		if leftTitle != rightTitle {
-			return leftTitle < rightTitle
+		if !mailboxes[i].CreatedAt.Equal(mailboxes[j].CreatedAt) {
+			return mailboxes[i].CreatedAt.After(mailboxes[j].CreatedAt)
+		}
+		if mailboxes[i].ID != mailboxes[j].ID {
+			return mailboxes[i].ID > mailboxes[j].ID
 		}
 		return strings.ToLower(mailboxes[i].Email) < strings.ToLower(mailboxes[j].Email)
 	})
