@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>账号数据管理 - 矩龙邮箱</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <script>
     (() => {
       const themes = ['mint','sky','graphite','sunset','violet','rose','forest','midnight','obsidian','aurora'];
@@ -64,6 +65,7 @@
       height: 34px;
       display: grid;
       place-items: center;
+      overflow: hidden;
       border-radius: 12px;
       color: #fff;
       background: linear-gradient(135deg, #13b8a6, #17c9ae);
@@ -481,7 +483,8 @@
     .shell { grid-template-columns:clamp(270px,15vw,320px) minmax(0,1fr); }
     .sidebar { padding:30px 26px 24px; border-right-color:var(--line); background:color-mix(in srgb,var(--panel) 95%,transparent); box-shadow:var(--shadow); }
     .brand { gap:14px; padding:8px 14px 28px; border:0; margin:0; color:var(--text); font-size:27px; }
-    .brand-mark { width:52px;height:52px;border-radius:16px;color:var(--on-accent);background:linear-gradient(135deg,var(--green),var(--green-2));box-shadow:0 14px 30px color-mix(in srgb,var(--green) 24%,transparent); }
+    .brand-mark { width:52px;height:52px;border-radius:16px;color:var(--on-accent);background:#fff;box-shadow:0 14px 30px color-mix(in srgb,var(--green) 24%,transparent); }
+    .brand-mark img { width:100%;height:100%;object-fit:cover;border-radius:inherit; }
     .nav { gap:9px; padding-top:4px; border:0; }
     .nav button { min-height:70px; gap:14px; padding:10px 12px; border:1px solid transparent; border-radius:18px; color:var(--muted); background:color-mix(in srgb,var(--card) 76%,transparent); font-size:16px; }
     .nav button:hover { color:var(--text); background:color-mix(in srgb,var(--green) 11%,var(--panel)); }
@@ -561,7 +564,7 @@
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">✦</div>
+        <div class="brand-mark"><img src="/logo.png" alt=""></div>
         <div>矩龙邮箱</div>
       </div>
       <nav class="nav">

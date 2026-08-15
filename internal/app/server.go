@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-//go:embed templates/*.html
+//go:embed templates/*
 var webFS embed.FS
 
 const mailboxCodeFreshWindow = 5 * time.Minute
@@ -341,6 +341,8 @@ func (s *Server) StopAppleAccountKeepAlive() {
 }
 
 func (s *Server) routes() {
+	s.mux.HandleFunc("GET /favicon.ico", s.handleFavicon)
+	s.mux.HandleFunc("GET /logo.png", s.handleLogo)
 	s.mux.HandleFunc("GET /", s.handleHome)
 	s.mux.HandleFunc("GET /login", s.handleLoginPage)
 	s.mux.HandleFunc("GET /manage", s.handleManagePage)
@@ -397,6 +399,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/mailboxes/{id}/html-link", s.handleCreateMailboxHTMLLink)
 	s.mux.HandleFunc("GET /api/mailboxes/{id}/code", s.handleMailboxCodeByID)
 	s.mux.HandleFunc("GET /api/v1/mailboxes/{email}/code", s.handleMailboxCodeByEmail)
+}
+
+func (s *Server) handleFavicon(w http.ResponseWriter, _ *http.Request) {
+	s.writeAsset(w, "templates/favicon.ico", "image/x-icon")
+}
+
+func (s *Server) handleLogo(w http.ResponseWriter, _ *http.Request) {
+	s.writeAsset(w, "templates/logo.png", "image/png")
 }
 
 func (s *Server) handleHome(w http.ResponseWriter, _ *http.Request) {
@@ -645,6 +655,17 @@ func (s *Server) writeTemplate(w http.ResponseWriter, name string) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(data)
+}
+
+func (s *Server) writeAsset(w http.ResponseWriter, name, contentType string) {
+	data, err := webFS.ReadFile(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, errCode("asset_missing", "项目资源缺失", false))
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=86400")
 	_, _ = w.Write(data)
 }
 

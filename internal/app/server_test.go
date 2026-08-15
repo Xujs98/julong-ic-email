@@ -47,6 +47,43 @@ func TestExtractOTP(t *testing.T) {
 	}
 }
 
+func TestBrandAssetsAreServed(t *testing.T) {
+	handler := NewServer(Config{}, newTestStore(t), discardLogger())
+	for _, tt := range []struct {
+		path        string
+		contentType string
+		prefix      string
+	}{
+		{path: "/favicon.ico", contentType: "image/x-icon", prefix: "\x00\x00\x01\x00"},
+		{path: "/logo.png", contentType: "image/png", prefix: "\x89PNG\r\n\x1a\n"},
+	} {
+		t.Run(tt.path, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			handler.ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want %d", tt.path, rr.Code, http.StatusOK)
+			}
+			if got := rr.Header().Get("Content-Type"); got != tt.contentType {
+				t.Fatalf("GET %s content type = %q, want %q", tt.path, got, tt.contentType)
+			}
+			if !strings.HasPrefix(rr.Body.String(), tt.prefix) {
+				t.Fatalf("GET %s body does not start with expected signature", tt.path)
+			}
+		})
+	}
+
+	for _, name := range []string{"templates/index.html", "templates/login.html", "templates/manage.html", "templates/mailbox.html", "templates/mailbox_expired.html"} {
+		data, err := webFS.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if !strings.Contains(string(data), `rel="icon"`) {
+			t.Fatalf("%s does not reference favicon", name)
+		}
+	}
+}
+
 func testIMAPSession(ownerID, accountID, email string) ICloudSession {
 	email = normalizeICloudIMAPEmail(email)
 	if email == "" {

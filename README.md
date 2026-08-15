@@ -1,5 +1,9 @@
 # 矩龙邮箱（julong-ic-email）
 
+<p align="center">
+  <img src="internal/app/templates/logo.png" alt="矩龙邮箱 Logo" width="180">
+</p>
+
 > **二开说明**：本项目由 Xujs98 基于原项目 [q1953258942/iCloud-Privacy-Mail](https://github.com/q1953258942/iCloud-Privacy-Mail) 二次开发，当前维护仓库为 [Xujs98/julong-ic-email](https://github.com/Xujs98/julong-ic-email)。原项目版权与许可继续归原作者及其许可文件约定所有。
 
 独立 Go 服务，用来登录 iCloud、创建 Hide My Email 隐私邮箱、同步验证码邮件，并给外部注册项目提供取码 API。
@@ -27,6 +31,7 @@
 - 登录态检测：可手动检测 iCloud Mail 是否还能同步，也可在前端开启定时检测。
 - 数据导出：当前登录用户可导出自己有权访问的数据；管理员导出全量数据；邮箱/API 导出支持按 Apple 登录态筛选。
 - 瞬断重试：iCloud 登录后续步骤和 Hide My Email 列表同步遇到 EOF/timeout 等临时网络错误会短重试；2FA/OTP 校验不会重复提交。
+- 品牌资源：全站使用项目 Logo 图片，`/favicon.ico` 由同一图片生成并通过 Go 服务内嵌提供，登录、管理后台、全部邮箱和公开接码页统一显示。
 
 ## 目录结构
 
@@ -34,6 +39,8 @@
 cmd/panel/                 Go 服务入口
 internal/app/              后端业务、协议客户端、状态存储和模板
 internal/app/templates/    前端页面模板
+internal/app/templates/logo.png 项目 Logo 图片
+internal/app/templates/favicon.ico 网站 favicon
 config.example.json        配置模板
 README.md                  使用与部署说明
 更新日志.md                 公开版功能更新记录

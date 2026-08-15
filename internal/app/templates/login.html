@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>登录 - 矩龙邮箱</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <script>
     (() => {
       const themes = ['mint','sky','graphite','sunset','violet','rose','forest','midnight','obsidian','aurora'];
@@ -213,7 +214,8 @@
     .hero { min-height:500px; padding:52px; background:linear-gradient(145deg,color-mix(in srgb,var(--bg-soft) 90%,var(--green) 10%),var(--panel)); }
     .card { padding:52px 46px; display:flex; flex-direction:column; justify-content:center; }
     .login-brand { display:flex; align-items:center; gap:14px; color:var(--text); font-size:26px; font-weight:950; }
-    .brand-logo { width:50px; height:50px; display:grid; place-items:center; border-radius:15px; color:var(--on-accent); background:linear-gradient(135deg,var(--green),var(--green-2)); box-shadow:0 12px 26px color-mix(in srgb,var(--green) 24%,transparent); }
+    .brand-logo { width:50px; height:50px; display:grid; place-items:center; overflow:hidden; border-radius:15px; color:var(--on-accent); background:#fff; box-shadow:0 12px 26px color-mix(in srgb,var(--green) 24%,transparent); }
+    .brand-logo img { width:100%; height:100%; object-fit:cover; border-radius:inherit; }
     .eyebrow { color:var(--green-2); letter-spacing:.18em; margin-bottom:18px; }
     h1 { color:var(--text); font-size:42px; margin-top:38px; }
     p,label { color:var(--muted); }
@@ -234,7 +236,7 @@
   <main class="wrap">
     <section class="hero">
       <div class="eyebrow">JULONG MAIL</div>
-      <div class="login-brand"><span class="brand-logo">✦</span><span>矩龙邮箱</span></div>
+      <div class="login-brand"><span class="brand-logo"><img src="/logo.png" alt=""></span><span>矩龙邮箱</span></div>
       <h1>欢迎回来</h1>
       <p>登录后统一管理 iCloud 隐私邮箱、收件与取件码。</p>
     </section>
