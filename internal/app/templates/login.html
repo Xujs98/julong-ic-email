@@ -254,6 +254,7 @@
     </section>
   </main>
   <script>
+    const entryPath = location.pathname.replace(/\/+$/, '');
     let mode = 'login';
     const $ = id => document.getElementById(id);
     function switchMode(next) {
@@ -285,7 +286,7 @@
       }
       $('submitButton').disabled = true;
       try {
-        const res = await fetch(mode === 'login' ? '/api/auth/login' : '/api/auth/register', {
+        const res = await fetch(`${entryPath}/${mode === 'login' ? 'login' : 'register'}`, {
           method: 'POST',
           credentials: 'same-origin',
           headers: {'content-type':'application/json'},
@@ -301,7 +302,7 @@
         $('submitButton').disabled = false;
       }
     }
-    fetch('/api/auth/register-status', {credentials:'same-origin'})
+    fetch(`${entryPath}/register-status`, {credentials:'same-origin'})
       .then(r => r.json())
       .then(data => {
         registrationEnabled = data.registration_enabled !== false;

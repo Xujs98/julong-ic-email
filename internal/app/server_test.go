@@ -105,6 +105,89 @@ func TestMailboxHTMLPageShowsDayHourMinuteSecondCountdown(t *testing.T) {
 	}
 }
 
+func TestConfiguredAdminPathIsOnlyLoginAndRegistrationEntry(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/manage" {
+		t.Fatalf("unauthenticated home = %d location=%q, want redirect to /manage", rr.Code, rr.Header().Get("Location"))
+	}
+
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/manage", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "注册并登录") {
+		t.Fatalf("default entry page = %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	for _, path := range []string{"/login", "/api/auth/login", "/api/auth/register", "/api/auth/register-status"} {
+		rr = httptest.NewRecorder()
+		method := http.MethodGet
+		if path == "/api/auth/login" || path == "/api/auth/register" {
+			method = http.MethodPost
+		}
+		handler.ServeHTTP(rr, httptest.NewRequest(method, path, strings.NewReader(`{}`)))
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("legacy auth path %s = %d body=%s, want 404", path, rr.Code, rr.Body.String())
+		}
+	}
+
+	adminCookie, _ := registerTestUser(t, handler, "entry-admin", "admin123")
+	settings := store.SystemSettings()
+	settings.AdminPath = "/julongyx"
+	if _, err := store.SaveSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/julongyx", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "注册并登录") {
+		t.Fatalf("custom entry page = %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/julongyx/register-status", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"registration_enabled":true`) {
+		t.Fatalf("custom registration status = %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	for _, path := range []string{"/manage", "/manage/login", "/manage/register"} {
+		rr = httptest.NewRecorder()
+		method := http.MethodGet
+		if strings.HasSuffix(path, "/login") || strings.HasSuffix(path, "/register") {
+			method = http.MethodPost
+		}
+		handler.ServeHTTP(rr, httptest.NewRequest(method, path, strings.NewReader(`{}`)))
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("old entry path %s = %d body=%s, want 404", path, rr.Code, rr.Body.String())
+		}
+	}
+
+	rr = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/julongyx/login", strings.NewReader(`{"username":"entry-admin","password":"admin123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("custom entry login = %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/julongyx/register", strings.NewReader(`{"username":"entry-user","password":"user123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("custom entry registration = %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/julongyx", nil)
+	req.AddCookie(adminCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "账号数据管理") {
+		t.Fatalf("authenticated custom entry = %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestMailboxMessagesAreScopedAndSorted(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
@@ -5113,11 +5196,18 @@ func TestMailboxHTMLLinkAndSystemSettings(t *testing.T) {
 
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/control-panel", nil))
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "账号数据管理") {
-		t.Fatalf("custom admin page = %d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "注册并登录") {
+		t.Fatalf("custom login entry = %d body=%s", rr.Code, rr.Body.String())
 	}
 	rr = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(`{"username":"new-user","password":"newpass"}`))
+	req = httptest.NewRequest(http.MethodGet, "/control-panel", nil)
+	req.AddCookie(adminCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "账号数据管理") {
+		t.Fatalf("authenticated custom admin page = %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/control-panel/register", strings.NewReader(`{"username":"new-user","password":"newpass"}`))
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("registration disabled status = %d body=%s", rr.Code, rr.Body.String())
@@ -6867,7 +6957,7 @@ func newTestStore(t *testing.T) *FileStore {
 func registerTestUser(t *testing.T, handler http.Handler, username, password string) (*http.Cookie, publicUser) {
 	t.Helper()
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(`{"username":"`+username+`","password":"`+password+`"}`))
+	req := httptest.NewRequest(http.MethodPost, "/manage/register", strings.NewReader(`{"username":"`+username+`","password":"`+password+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusCreated {

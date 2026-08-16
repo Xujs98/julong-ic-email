@@ -29,7 +29,7 @@
 - 主题询问框：更新、停用、远端清理、永久删除和账号删除等操作统一使用矩龙邮箱自绘弹层，适配全部明暗主题与移动端，不再调用浏览器原生询问框。
 - 邮箱永久删除：删除按钮会先停用活跃的 Hide My Email 地址，再调用 iCloud 永久删除；远端成功或确认已不存在后，才清理本地邮箱、邮件、API token 和 HTML 地址。
 - HTML 接码页：邮箱入库时自动生成 `/mailbox/{token}` 公开地址，首次打开页面或数据接口时才激活有效期；页面自动刷新最新验证码和最近邮件，HTML 邮件会在隔离预览区按原始排版可视化展示。
-- 系统设置：管理员可关闭注册、修改后台入口路径、按秒设置 HTML 接码地址首次访问后的有效期、设置公开 HTML 页面展示最近 1-500 封邮件，并配置 5-3600 秒的邮件自动刷新间隔（默认 20 秒），同时控制是否只保留验证码邮件。有效期秒数输入框会实时预览对应的天、时、分、秒。HTML 过期自动删邮箱开关关闭时，过期链接会清理并补发新的未激活地址；开启时会先永久删除 iCloud 隐私邮箱，远端成功后再清理本地邮箱、邮件、API token 和 HTML 地址，失败时保留并重试。邮箱 API 本身不按时间过期。
+- 系统设置：管理员可关闭注册、设置唯一登录/注册入口路径、按秒设置 HTML 接码地址首次访问后的有效期、设置公开 HTML 页面展示最近 1-500 封邮件，并配置 5-3600 秒的邮件自动刷新间隔（默认 20 秒），同时控制是否只保留验证码邮件。入口保存后旧入口与通用登录/注册 API 立即失效；有效期秒数输入框会实时预览对应的天、时、分、秒。HTML 过期自动删邮箱开关关闭时，过期链接会清理并补发新的未激活地址；开启时会先永久删除 iCloud 隐私邮箱，远端成功后再清理本地邮箱、邮件、API token 和 HTML 地址，失败时保留并重试。邮箱 API 本身不按时间过期。
 - 自动取号 API：外部项目可用全局 `api_key` 领取可用邮箱，领取后自动标记为已使用。
 - 登录态检测：可手动检测 iCloud Mail 是否还能同步，也可在前端开启定时检测。
 - 数据导出：当前登录用户可导出自己有权访问的数据；管理员导出全量数据；邮箱/API 导出支持按 Apple 登录态筛选。
@@ -166,7 +166,7 @@ go run ./cmd/panel --config .\config.json
 打开：
 
 ```text
-http://127.0.0.1:8787/login
+http://127.0.0.1:8787/manage
 ```
 
 首次注册的账号自动成为管理员。
@@ -174,7 +174,7 @@ http://127.0.0.1:8787/login
 管理员登录后可在侧边栏进入“系统设置”：
 
 - 开启或关闭新用户注册；首次部署尚无用户时仍允许创建首个管理员。
-- 设置后台数据管理入口，例如 `/julong-control`，保存后立即生效；`/manage` 保留兼容入口。
+- 设置唯一登录/注册入口，例如 `/julong-control`。保存后只有该页面及其路径下的登录、注册接口有效，旧入口、`/login` 和通用 `/api/auth/login`、`/api/auth/register` 均不再接受登录或注册请求。
 - 设置 HTML 接码地址从首次访问开始计算的有效秒数（1-315360000 秒），输入时实时预览天、时、分、秒。过期时的处理方式由“过期后自动删除邮箱”开关决定。
 - 设置 HTML 接码页面的邮件自动刷新间隔（5-3600 秒），默认每 20 秒刷新一次。
 
@@ -214,7 +214,7 @@ https://mail.example.com/mailbox/TOKEN
 
 ### 1. 保存旧接口登录态
 
-1. 进入 `/login` 注册或登录平台账号。
+1. 进入管理员设置的登录/注册入口（首次部署默认为 `/manage`）注册或登录平台账号。
 2. 进入首页，在 `保存 Apple 登录态` 输入 Apple ID 和密码。
 3. 点击 `保存旧接口登录态`。
 4. 如果 Apple 要求 2FA，在受信任设备允许后，把 6 位验证码填入面板。
@@ -437,7 +437,7 @@ GET /api/runtime/export-mailbox-emails?format=txt&account_id=<account_id>
 ```bash
 docker login -u qq1371446705
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t qq1371446705/julong-ic-email:2026.08.16.7 \
+  -t qq1371446705/julong-ic-email:2026.08.16.8 \
   -t qq1371446705/julong-ic-email:latest \
   --push .
 ```
@@ -547,8 +547,8 @@ go build -trimpath -o .\bin\julong-ic-email.exe .\cmd\panel
 
 ```bash
 systemctl is-active julong-ic-email
-curl -fsS http://127.0.0.1:8787/login >/dev/null
-curl -fsSI https://www.example.com/login
+curl -fsS http://127.0.0.1:8787/ >/dev/null
+curl -fsSI https://www.example.com/你的后台入口
 ```
 
 ## 安全注意

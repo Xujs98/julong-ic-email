@@ -275,8 +275,30 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet && r.URL.Path == s.store.SystemSettings().AdminPath && r.URL.Path != "/manage" {
-		s.handleManagePage(w, r)
+	entryPath := s.store.SystemSettings().AdminPath
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == entryPath:
+		if _, _, ok := s.currentWebSession(r); ok {
+			s.handleManagePage(w, r)
+		} else {
+			s.handleLoginPage(w, r)
+		}
+		return
+	case r.Method == http.MethodGet && r.URL.Path == entryPath+"/register-status":
+		s.handleAuthRegisterStatus(w, r)
+		return
+	case r.Method == http.MethodPost && r.URL.Path == entryPath+"/login":
+		s.handleAuthLogin(w, r)
+		return
+	case r.Method == http.MethodPost && r.URL.Path == entryPath+"/register":
+		s.handleAuthRegister(w, r)
+		return
+	}
+	legacyAuthPath := r.URL.Path == "/login" || r.URL.Path == "/api/auth/login" || r.URL.Path == "/api/auth/register" || r.URL.Path == "/api/auth/register-status"
+	staleEntryPath := (r.Method == http.MethodPost && (strings.HasSuffix(r.URL.Path, "/login") || strings.HasSuffix(r.URL.Path, "/register"))) ||
+		(r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/register-status"))
+	if legacyAuthPath || staleEntryPath {
+		http.NotFound(w, r)
 		return
 	}
 	if s.requiresAdmin(r) &&
@@ -448,14 +470,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /favicon.ico", s.handleFavicon)
 	s.mux.HandleFunc("GET /logo.png", s.handleLogo)
 	s.mux.HandleFunc("GET /", s.handleHome)
-	s.mux.HandleFunc("GET /login", s.handleLoginPage)
 	s.mux.HandleFunc("GET /manage", s.handleManagePage)
 	s.mux.HandleFunc("GET /mailbox/{token}", s.handleMailboxHTMLPage)
 	s.mux.HandleFunc("GET /mailbox/{token}/data", s.handleMailboxHTMLData)
 	s.mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
-	s.mux.HandleFunc("GET /api/auth/register-status", s.handleAuthRegisterStatus)
-	s.mux.HandleFunc("POST /api/auth/register", s.handleAuthRegister)
-	s.mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	s.mux.HandleFunc("GET /api/system-settings", s.handleSystemSettings)
 	s.mux.HandleFunc("POST /api/system-settings", s.handleSaveSystemSettings)
@@ -513,7 +531,15 @@ func (s *Server) handleLogo(w http.ResponseWriter, _ *http.Request) {
 	s.writeAsset(w, "templates/logo.png", "image/png")
 }
 
-func (s *Server) handleHome(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	if _, _, ok := s.currentWebSession(r); !ok {
+		http.Redirect(w, r, s.store.SystemSettings().AdminPath, http.StatusFound)
+		return
+	}
 	s.writeTemplate(w, "templates/index.html")
 }
 
@@ -521,7 +547,11 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, _ *http.Request) {
 	s.writeTemplate(w, "templates/login.html")
 }
 
-func (s *Server) handleManagePage(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleManagePage(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := s.currentWebSession(r); !ok {
+		http.NotFound(w, r)
+		return
+	}
 	s.writeTemplate(w, "templates/manage.html")
 }
 

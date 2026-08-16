@@ -1850,18 +1850,18 @@
         <section class="view-section panel" data-view="settings">
           <div class="panel-head">
             <h2>系统设置</h2>
-            <p>管理员可以控制注册、邮件保留范围、后台入口和公开 HTML 接码地址的生命周期。</p>
+            <p>管理员可以控制注册、邮件保留范围、唯一登录/注册入口和公开 HTML 接码地址的生命周期。</p>
           </div>
           <div class="notice" id="systemSettingsNotice">读取设置中…</div>
           <div class="field-grid">
             <label class="checkline"><input id="registrationEnabled" type="checkbox"> 开放新用户注册</label>
             <label class="checkline"><input id="verificationOnly" type="checkbox"> 只保留验证码邮件</label>
             <label class="checkline"><input id="htmlExpiryDeleteMailbox" type="checkbox"> HTML 接码地址过期后自动删除邮箱</label>
-            <label>后台入口路径<input id="adminPath" placeholder="/manage" pattern="/[A-Za-z0-9_/-]+"></label>
+            <label>后台登录/注册入口路径<input id="adminPath" placeholder="/manage" pattern="/[A-Za-z0-9_/-]+"></label>
             <label>HTML 接码地址过期秒数<input id="htmlLinkTTLSeconds" type="number" min="1" max="315360000" value="604800" oninput="updateHTMLTTLPreview()"><span id="htmlLinkTTLPreview" class="duration-preview" aria-live="polite">预览：7天 0时 0分 0秒</span></label>
             <label>HTML 页面邮件展示数量<input id="htmlPageMessageLimit" type="number" min="1" max="500" value="50"></label>
             <label>HTML 接码邮件自动刷新秒数<input id="htmlPageRefreshSeconds" type="number" min="5" max="3600" value="20"></label>
-            <div class="full hint">关闭“只保留验证码邮件”后会保存收到的全部邮件，最新验证码和取码 API 仍只提取验证码。开启过期自动删除后，会先永久删除 iCloud 隐私邮箱，成功后再清理本地邮箱、邮件、API 和 HTML 地址；远端失败会保留并重试。</div>
+            <div class="full hint">入口路径保存后立即成为唯一登录和注册地址，旧入口及通用登录 API 同时失效。关闭“只保留验证码邮件”后会保存收到的全部邮件，最新验证码和取码 API 仍只提取验证码。开启过期自动删除后，会先永久删除 iCloud 隐私邮箱，成功后再清理本地邮箱、邮件、API 和 HTML 地址；远端失败会保留并重试。</div>
           </div>
           <div class="toolbar">
             <button class="primary" onclick="saveSystemSettings()">保存系统设置</button>
@@ -2036,7 +2036,7 @@
       create: ['新建邮箱', '按已保存账号创建新的 iCloud 隐私邮箱。'],
       mailboxes: ['全部邮箱', '查看所有尚未出库的 iCloud 隐私邮箱。'],
       outbound: ['取件码与发货', '查看已出库邮箱、邮件和取件码。'],
-      settings: ['系统设置', '配置注册开关、后台入口和 HTML 接码地址生命周期。']
+      settings: ['系统设置', '配置注册开关、唯一登录/注册入口和 HTML 接码地址生命周期。']
     };
 
     function askConfirm(options = {}) {
@@ -2226,7 +2226,7 @@
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
       if (res.status === 401) {
-        location.href = '/login';
+        location.href = '/';
         throw new Error('请先登录');
       }
       if (!data.success) {
@@ -2268,7 +2268,7 @@
       updateHTMLTTLPreview();
       if ($('htmlPageMessageLimit')) $('htmlPageMessageLimit').value = String(settings.html_page_message_limit || 50);
       if ($('htmlPageRefreshSeconds')) $('htmlPageRefreshSeconds').value = String(settings.html_page_refresh_seconds || 20);
-      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `当前后台入口：${settings.admin_path || '/manage'}；邮件${settings.verification_only !== false ? '仅保留验证码' : '全部保留'}；HTML 页面展示最近 ${settings.html_page_message_limit || 50} 封、每 ${settings.html_page_refresh_seconds || 20} 秒刷新；地址首次访问后 ${formatTTLDuration(settings.html_link_ttl_seconds || 604800)} 过期${settings.html_expiry_delete_mailbox ? '，过期后自动删除邮箱' : '，过期后补发新地址'}。`;
+      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `当前唯一登录/注册入口：${settings.admin_path || '/manage'}；邮件${settings.verification_only !== false ? '仅保留验证码' : '全部保留'}；HTML 页面展示最近 ${settings.html_page_message_limit || 50} 封、每 ${settings.html_page_refresh_seconds || 20} 秒刷新；地址首次访问后 ${formatTTLDuration(settings.html_link_ttl_seconds || 604800)} 过期${settings.html_expiry_delete_mailbox ? '，过期后自动删除邮箱' : '，过期后补发新地址'}。`;
       return settings;
     }
 
@@ -2285,7 +2285,7 @@
       const data = await api('/api/system-settings', {method:'POST', body: JSON.stringify(payload)});
       const settings = data.settings || payload;
       if ($('systemSettingsStatus')) $('systemSettingsStatus').textContent = '系统设置已保存';
-      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `已保存：注册${settings.registration_enabled ? '开放' : '关闭'}；邮件${settings.verification_only ? '仅保留验证码' : '全部保留'}；后台入口 ${settings.admin_path}；HTML 页面展示最近 ${settings.html_page_message_limit} 封、每 ${settings.html_page_refresh_seconds} 秒刷新；地址首次访问后 ${formatTTLDuration(settings.html_link_ttl_seconds)} 过期${settings.html_expiry_delete_mailbox ? '并自动删除邮箱' : '后补发新地址'}。`;
+      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `已保存：注册${settings.registration_enabled ? '开放' : '关闭'}；邮件${settings.verification_only ? '仅保留验证码' : '全部保留'}；唯一登录/注册入口 ${settings.admin_path}；HTML 页面展示最近 ${settings.html_page_message_limit} 封、每 ${settings.html_page_refresh_seconds} 秒刷新；地址首次访问后 ${formatTTLDuration(settings.html_link_ttl_seconds)} 过期${settings.html_expiry_delete_mailbox ? '并自动删除邮箱' : '后补发新地址'}。`;
       log('系统设置已保存');
     }
 
@@ -2301,7 +2301,7 @@
     async function ensureAuth() {
       const data = await api('/api/auth/me');
       if (!data.authenticated) {
-        location.href = '/login';
+        location.href = '/';
         throw new Error('未登录');
       }
       currentUser = data.user;
@@ -2418,7 +2418,7 @@
 
     async function logout() {
       await api('/api/auth/logout', {method:'POST', body:'{}'});
-      location.href = '/login';
+      location.href = '/';
     }
 
     function setLogCategory(category) {
@@ -3022,7 +3022,7 @@
       const res = await fetch('/api/runtime/export', {credentials: 'same-origin'});
       if (!res.ok) {
         if (res.status === 401) {
-          location.href = '/login';
+          location.href = '/';
           return;
         }
         let message = `HTTP ${res.status}`;
@@ -3112,7 +3112,7 @@
       const res = await fetch(path, {credentials: 'same-origin'});
       if (!res.ok) {
         if (res.status === 401) {
-          location.href = '/login';
+          location.href = '/';
           return;
         }
         let message = `HTTP ${res.status}`;

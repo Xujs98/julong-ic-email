@@ -914,13 +914,13 @@
       const res = await fetch(path, {credentials:'same-origin', headers:{'content-type':'application/json', ...(options.headers || {})}, ...options});
       let data;
       try { data = await res.json(); } catch (_) { throw new Error(`HTTP ${res.status}`); }
-      if (res.status === 401) { location.href = '/login'; throw new Error('请先登录'); }
+      if (res.status === 401) { location.href = '/'; throw new Error('请先登录'); }
       if (!data.success) throw new Error(data.message || data.code || `HTTP ${res.status}`);
       return data;
     }
     async function ensureAuth() {
       const data = await api('/api/auth/me');
-      if (!data.authenticated) { location.href = '/login'; throw new Error('未登录'); }
+      if (!data.authenticated) { location.href = '/'; throw new Error('未登录'); }
       currentUser = data.user;
       $('whoami').textContent = `当前账号：${currentUser.username}${currentUser.is_admin ? ' / 管理员，可查看全部数据' : ' / 普通用户，仅查看自己数据'}`;
     }
@@ -1068,7 +1068,7 @@
     async function exportData() {
       const res = await fetch('/api/runtime/export', {credentials:'same-origin'});
       if (!res.ok) {
-        if (res.status === 401) location.href='/login';
+        if (res.status === 401) location.href='/';
         log('导出失败：HTTP ' + res.status);
         return;
       }
@@ -1153,7 +1153,7 @@
       const res = await fetch(path, {credentials:'same-origin'});
       if (!res.ok) {
         if (res.status === 401) {
-          location.href='/login';
+          location.href='/';
           return;
         }
         log(failText + '：HTTP ' + res.status);
@@ -1219,7 +1219,7 @@
     }
     async function logout() {
       await api('/api/auth/logout', {method:'POST', body:'{}'});
-      location.href = '/login';
+      location.href = '/';
     }
 
     initViewNavigation();
