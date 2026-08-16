@@ -2799,10 +2799,11 @@
       const refreshAt = session.apple_account_next_refresh_at || '';
       const expiresAt = session.apple_account_manage_expires_at || '';
       const retrying = !!(session.apple_account_login_checked && !session.apple_account_login_ok);
+      const failureCount = Number(session.apple_account_keep_alive_failures || 0);
       const loginOK = session.apple_account_login_checked && session.apple_account_login_ok ? '1' : '0';
       const status = session.apple_account_login_status || '新接口登录态异常';
       const title = retrying
-        ? `${status}；系统${refreshAt ? `将在 ${exactTimeText(refreshAt)} 自动重试` : '会继续自动重试'}`
+        ? `${status}${failureCount > 0 ? `；连续失败 ${failureCount} 次` : ''}；系统${refreshAt ? `将在 ${exactTimeText(refreshAt)} 自动重试` : '会继续自动重试'}`
         : refreshAt
           ? `下次保活：${exactTimeText(refreshAt)}${expiresAt ? `；管理 token 到期：${exactTimeText(expiresAt)}` : ''}`
           : '新接口已登录，等待下次检测后显示保活时间';

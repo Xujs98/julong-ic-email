@@ -46,7 +46,7 @@ func LoadConfig(path string) (Config, error) {
 		ICloudClientID:               defaultAppleOAuthClientID,
 		AppleAccountAPIKey:           strings.TrimSpace(os.Getenv("IPM_APPLE_ACCOUNT_API_KEY")),
 		AppleAccountKeepAliveEnabled: envBool("APPLE_ACCOUNT_KEEP_ALIVE_ENABLED", true),
-		AppleAccountKeepAliveMS:      envPositiveInt("APPLE_ACCOUNT_KEEP_ALIVE_MS", 240000),
+		AppleAccountKeepAliveMS:      envPositiveInt("APPLE_ACCOUNT_KEEP_ALIVE_MS", 120000),
 		MailWatcherEnabled:           envBool("MAIL_WATCHER_ENABLED", true),
 		MailWatcherPollMS:            envPositiveInt("MAIL_WATCHER_POLL_MS", 3000),
 		MailWatcherFetchLimit:        envPositiveInt("MAIL_WATCHER_FETCH_LIMIT", 8),

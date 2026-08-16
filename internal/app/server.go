@@ -3632,9 +3632,17 @@ func (s *Server) keepAliveAppleAccountRound(ctx context.Context) {
 			if len(next.Cookies) == 0 {
 				next.Cookies = append([]SessionCookie(nil), state.Cookies...)
 			}
-			next.LastCheckedAt = time.Now()
+			failedAt := time.Now()
+			failures := state.KeepAliveFailures + 1
+			if next.KeepAliveFailures >= failures {
+				failures = next.KeepAliveFailures + 1
+			}
+			retryDelay := appleAccountKeepAliveRetryDelay(failures)
+			next.KeepAliveFailures = failures
+			next.KeepAliveRetryAt = failedAt.Add(retryDelay)
+			next.LastCheckedAt = failedAt
 			next.LastCheckOK = false
-			next.LastStatusMessage = "新接口保活失败，系统将自动重试：" + err.Error()
+			next.LastStatusMessage = fmt.Sprintf("新接口保活连续失败 %d 次，%s后自动重试：%s", failures, appleAccountKeepAliveRetryText(retryDelay), err.Error())
 			session = withAppleAccountLoginState(session, next)
 			if saveErr := s.store.SaveICloudSessionForOwner(session.OwnerID, session); saveErr != nil && s.logger != nil {
 				s.logger.Warn("apple account keepalive save failed", "owner", s.ownerName(session.OwnerID), "account_id", session.AccountID, "err", saveErr)
@@ -3677,6 +3685,24 @@ func appleAccountKeepAliveEligible(session ICloudSession) bool {
 	return ok && strings.TrimSpace(state.APIKey) != ""
 }
 
+func appleAccountKeepAliveRetryDelay(failures int) time.Duration {
+	if failures <= 1 {
+		return 30 * time.Second
+	}
+	delay := 30 * time.Second * time.Duration(1<<min(failures-1, 4))
+	if delay > 5*time.Minute {
+		return 5 * time.Minute
+	}
+	return delay
+}
+
+func appleAccountKeepAliveRetryText(delay time.Duration) string {
+	if delay >= time.Minute && delay%time.Minute == 0 {
+		return fmt.Sprintf("%d分钟", delay/time.Minute)
+	}
+	return fmt.Sprintf("%d秒", delay/time.Second)
+}
+
 func appleAccountKeepAliveIntervalForSession(session ICloudSession, base time.Duration) time.Duration {
 	if base <= 0 {
 		base = appleAccountKeepAliveDefaultInterval
@@ -3685,17 +3711,23 @@ func appleAccountKeepAliveIntervalForSession(session ICloudSession, base time.Du
 	if jitter > time.Minute {
 		jitter = time.Minute
 	}
-	if jitter < time.Second {
-		return base
+	next := base
+	if jitter >= time.Second {
+		steps := int64(jitter / time.Second)
+		h := fnv.New32a()
+		_, _ = io.WriteString(h, strings.TrimSpace(session.OwnerID)+"|"+strings.TrimSpace(session.AccountID)+"|"+strings.ToLower(strings.TrimSpace(session.AppleID)))
+		offsetSteps := int64(h.Sum32()%uint32(steps*2+1)) - steps
+		next = base + time.Duration(offsetSteps)*time.Second
 	}
-	steps := int64(jitter / time.Second)
-	if steps <= 0 {
-		return base
+	if state, ok := appleAccountLoginState(session); ok && !state.LastCheckedAt.IsZero() && !state.ManageExpiresAt.IsZero() {
+		adaptive := state.ManageExpiresAt.Sub(state.LastCheckedAt) - 2*time.Minute
+		if adaptive < 30*time.Second {
+			adaptive = 30 * time.Second
+		}
+		if adaptive < next {
+			next = adaptive
+		}
 	}
-	h := fnv.New32a()
-	_, _ = io.WriteString(h, strings.TrimSpace(session.OwnerID)+"|"+strings.TrimSpace(session.AccountID)+"|"+strings.ToLower(strings.TrimSpace(session.AppleID)))
-	offsetSteps := int64(h.Sum32()%uint32(steps*2+1)) - steps
-	next := base + time.Duration(offsetSteps)*time.Second
 	if base >= time.Minute && next < 30*time.Second {
 		return 30 * time.Second
 	}
@@ -5314,46 +5346,49 @@ func publicSessionWithKeepAliveInterval(session *ICloudSession, keepAliveInterva
 	appleAccountState, _ := appleAccountLoginState(*session)
 	icloudIMAPState, _ := iCloudIMAPLoginState(*session)
 	appleAccountNextRefreshAt := time.Time{}
-	if appleAccountKeepAliveEligible(*session) && !appleAccountState.LastCheckedAt.IsZero() {
+	if !appleAccountState.KeepAliveRetryAt.IsZero() {
+		appleAccountNextRefreshAt = appleAccountState.KeepAliveRetryAt
+	} else if appleAccountKeepAliveEligible(*session) && !appleAccountState.LastCheckedAt.IsZero() {
 		appleAccountNextRefreshAt = appleAccountState.LastCheckedAt.Add(appleAccountKeepAliveIntervalForSession(*session, keepAliveInterval))
 	}
 	return publicICloudSession{
-		Saved:                       true,
-		AccountID:                   session.AccountID,
-		SavedAt:                     formatTime(session.SavedAt),
-		AppleID:                     strings.TrimSpace(session.AppleID),
-		DSIDMask:                    maskSecret(session.DSID, 4),
-		ClientBuildNumber:           session.ClientBuildNumber,
-		MasteringNumber:             session.MasteringNumber,
-		PremiumMailBaseURL:          session.PremiumMailBaseURL,
-		MailGatewayBaseURL:          session.MailGatewayBaseURL,
-		MailBaseURL:                 session.MailBaseURL,
-		Host:                        session.Host,
-		IsICloudPlus:                session.IsICloudPlus,
-		CanCreateHME:                session.CanCreateHME,
-		CookieCount:                 len(session.Cookies),
-		ICloudWebLoginSaved:         icloudWebLoginSaved,
-		ICloudWebLoginChecked:       !icloudWebState.LastCheckedAt.IsZero(),
-		ICloudWebLoginOK:            icloudWebState.LastCheckOK,
-		ICloudWebLoginStatus:        loginStatePublicStatus(icloudWebLoginSaved, icloudWebState),
-		AppleAccountLoginSaved:      appleAccountLoginSaved,
-		AppleAccountLoginChecked:    !appleAccountState.LastCheckedAt.IsZero(),
-		AppleAccountLoginOK:         appleAccountState.LastCheckOK,
-		AppleAccountLoginStatus:     loginStatePublicStatus(appleAccountLoginSaved, appleAccountState),
-		AppleAccountNextRefreshAt:   formatTime(appleAccountNextRefreshAt),
-		AppleAccountManageExpiresAt: formatTime(appleAccountState.ManageExpiresAt),
-		AppleAccountManageReady:     appleAccountManageReady(*session),
-		ICloudIMAPLoginSaved:        icloudIMAPLoginSaved,
-		ICloudIMAPLoginChecked:      !icloudIMAPState.LastCheckedAt.IsZero(),
-		ICloudIMAPLoginOK:           icloudIMAPState.LastCheckOK,
-		ICloudIMAPLoginStatus:       loginStatePublicStatus(icloudIMAPLoginSaved, icloudIMAPState),
-		ICloudIMAPEmail:             normalizeICloudIMAPEmail(icloudIMAPState.IMAPEmail),
-		ICloudIMAPHost:              firstNonEmpty(strings.TrimSpace(icloudIMAPState.IMAPHost), strings.TrimSpace(icloudIMAPState.Host)),
-		ProviderConfigured:          session.IsICloudPlus && session.CanCreateHME && icloudWebLoginSaved,
-		NeedsManualLogin:            !icloudWebLoginSaved && !appleAccountLoginSaved && !icloudIMAPLoginSaved,
-		LastCheckedAt:               formatTime(session.LastCheckedAt),
-		LastCheckOK:                 session.LastCheckOK,
-		LastStatusMessage:           message,
+		Saved:                         true,
+		AccountID:                     session.AccountID,
+		SavedAt:                       formatTime(session.SavedAt),
+		AppleID:                       strings.TrimSpace(session.AppleID),
+		DSIDMask:                      maskSecret(session.DSID, 4),
+		ClientBuildNumber:             session.ClientBuildNumber,
+		MasteringNumber:               session.MasteringNumber,
+		PremiumMailBaseURL:            session.PremiumMailBaseURL,
+		MailGatewayBaseURL:            session.MailGatewayBaseURL,
+		MailBaseURL:                   session.MailBaseURL,
+		Host:                          session.Host,
+		IsICloudPlus:                  session.IsICloudPlus,
+		CanCreateHME:                  session.CanCreateHME,
+		CookieCount:                   len(session.Cookies),
+		ICloudWebLoginSaved:           icloudWebLoginSaved,
+		ICloudWebLoginChecked:         !icloudWebState.LastCheckedAt.IsZero(),
+		ICloudWebLoginOK:              icloudWebState.LastCheckOK,
+		ICloudWebLoginStatus:          loginStatePublicStatus(icloudWebLoginSaved, icloudWebState),
+		AppleAccountLoginSaved:        appleAccountLoginSaved,
+		AppleAccountLoginChecked:      !appleAccountState.LastCheckedAt.IsZero(),
+		AppleAccountLoginOK:           appleAccountState.LastCheckOK,
+		AppleAccountLoginStatus:       loginStatePublicStatus(appleAccountLoginSaved, appleAccountState),
+		AppleAccountNextRefreshAt:     formatTime(appleAccountNextRefreshAt),
+		AppleAccountManageExpiresAt:   formatTime(appleAccountState.ManageExpiresAt),
+		AppleAccountKeepAliveFailures: appleAccountState.KeepAliveFailures,
+		AppleAccountManageReady:       appleAccountManageReady(*session),
+		ICloudIMAPLoginSaved:          icloudIMAPLoginSaved,
+		ICloudIMAPLoginChecked:        !icloudIMAPState.LastCheckedAt.IsZero(),
+		ICloudIMAPLoginOK:             icloudIMAPState.LastCheckOK,
+		ICloudIMAPLoginStatus:         loginStatePublicStatus(icloudIMAPLoginSaved, icloudIMAPState),
+		ICloudIMAPEmail:               normalizeICloudIMAPEmail(icloudIMAPState.IMAPEmail),
+		ICloudIMAPHost:                firstNonEmpty(strings.TrimSpace(icloudIMAPState.IMAPHost), strings.TrimSpace(icloudIMAPState.Host)),
+		ProviderConfigured:            session.IsICloudPlus && session.CanCreateHME && icloudWebLoginSaved,
+		NeedsManualLogin:              !icloudWebLoginSaved && !appleAccountLoginSaved && !icloudIMAPLoginSaved,
+		LastCheckedAt:                 formatTime(session.LastCheckedAt),
+		LastCheckOK:                   session.LastCheckOK,
+		LastStatusMessage:             message,
 	}
 }
 

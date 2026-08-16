@@ -138,6 +138,8 @@ func TestAppleAccountKeepAliveTemplateShowsAutomaticRetry(t *testing.T) {
 		`.manage-refresh-clock.retrying`,
 		`data-retrying=`,
 		`新接口重试`,
+		`apple_account_keep_alive_failures`,
+		`连续失败 ${failureCount} 次`,
 		`系统${refreshAt ? `,
 		`自动重试`,
 	} {
@@ -925,6 +927,7 @@ func TestPublicSessionExposesPerLoginStateCheckStatus(t *testing.T) {
 
 func TestPublicSessionExposesAppleKeepAliveRetryTimeWhenLoginStateFailed(t *testing.T) {
 	checkedAt := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
+	retryAt := checkedAt.Add(30 * time.Second)
 	session := ICloudSession{
 		SavedAt: time.Now(),
 		AppleID: "failed@example.com",
@@ -935,15 +938,16 @@ func TestPublicSessionExposesAppleKeepAliveRetryTimeWhenLoginStateFailed(t *test
 			LastCheckedAt:     checkedAt,
 			LastCheckOK:       false,
 			LastStatusMessage: "新接口登录态异常",
+			KeepAliveFailures: 1,
+			KeepAliveRetryAt:  retryAt,
 		}},
 	}
 	got := publicSession(&session)
 	if !got.AppleAccountLoginSaved || !got.AppleAccountLoginChecked || got.AppleAccountLoginOK {
 		t.Fatalf("apple account failed state not exposed correctly: %+v", got)
 	}
-	wantNext := checkedAt.Add(appleAccountKeepAliveIntervalForSession(session, appleAccountKeepAliveDefaultInterval))
-	if got.AppleAccountNextRefreshAt != formatTime(wantNext) {
-		t.Fatalf("failed apple account retry time = %q, want %q", got.AppleAccountNextRefreshAt, formatTime(wantNext))
+	if got.AppleAccountNextRefreshAt != formatTime(retryAt) || got.AppleAccountKeepAliveFailures != 1 {
+		t.Fatalf("failed apple account retry = time:%q failures:%d, want %q/1", got.AppleAccountNextRefreshAt, got.AppleAccountKeepAliveFailures, formatTime(retryAt))
 	}
 }
 
@@ -960,11 +964,13 @@ func TestAppleAccountKeepAliveRoundSavesUpdatedState(t *testing.T) {
 		AppleID:   "keepalive@example.com",
 		SavedAt:   time.Now(),
 		LoginStates: []LoginState{{
-			Kind:          LoginStateAppleAccount,
-			Scnt:          "old-scnt",
-			APIKey:        "old-key",
-			LastCheckedAt: time.Now().Add(-time.Hour),
-			LastCheckOK:   true,
+			Kind:              LoginStateAppleAccount,
+			Scnt:              "old-scnt",
+			APIKey:            "old-key",
+			LastCheckedAt:     time.Now().Add(-time.Hour),
+			LastCheckOK:       false,
+			KeepAliveFailures: 2,
+			KeepAliveRetryAt:  time.Now().Add(-time.Minute),
 		}},
 	}
 	if err := store.SaveICloudSessionForOwner(ownerID, session); err != nil {
@@ -994,7 +1000,7 @@ func TestAppleAccountKeepAliveRoundSavesUpdatedState(t *testing.T) {
 		t.Fatal("updated session not found")
 	}
 	state, ok := appleAccountLoginState(got)
-	if !ok || state.Scnt != "kept-scnt" || state.APIKey != "kept-key" || !state.LastCheckOK {
+	if !ok || state.Scnt != "kept-scnt" || state.APIKey != "kept-key" || !state.LastCheckOK || state.KeepAliveFailures != 0 || !state.KeepAliveRetryAt.IsZero() {
 		t.Fatalf("saved apple account state = %+v ok=%v, want updated keepalive state", state, ok)
 	}
 }
@@ -1095,7 +1101,10 @@ func TestAppleAccountKeepAliveRoundSavesTransientFailureForRetry(t *testing.T) {
 	if state.Scnt != "rotated-scnt" || state.APIKey != "old-key" || len(state.Cookies) != 1 {
 		t.Fatalf("failed keepalive credentials were not preserved: %+v", state)
 	}
-	if !strings.Contains(state.LastStatusMessage, "系统将自动重试") || !strings.Contains(state.LastStatusMessage, "temporary network timeout") {
+	if state.KeepAliveFailures != 1 || state.KeepAliveRetryAt.IsZero() || time.Until(state.KeepAliveRetryAt) < 20*time.Second {
+		t.Fatalf("failed keepalive retry schedule = failures:%d retry:%s", state.KeepAliveFailures, state.KeepAliveRetryAt)
+	}
+	if !strings.Contains(state.LastStatusMessage, "30秒后自动重试") || !strings.Contains(state.LastStatusMessage, "temporary network timeout") {
 		t.Fatalf("failed keepalive status = %q", state.LastStatusMessage)
 	}
 }
@@ -1106,6 +1115,54 @@ func TestAppleAccountKeepAliveScanIntervalPollsBeforeBaseInterval(t *testing.T) 
 	}
 	if got := appleAccountKeepAliveScanInterval(12 * time.Second); got != 5*time.Second {
 		t.Fatalf("scan interval for 12s = %s, want 5s floor", got)
+	}
+}
+
+func TestAppleAccountKeepAliveRetryDelayUsesFastBackoff(t *testing.T) {
+	tests := []struct {
+		failures int
+		want     time.Duration
+	}{
+		{failures: 1, want: 30 * time.Second},
+		{failures: 2, want: time.Minute},
+		{failures: 3, want: 2 * time.Minute},
+		{failures: 4, want: 4 * time.Minute},
+		{failures: 5, want: 5 * time.Minute},
+		{failures: 9, want: 5 * time.Minute},
+	}
+	for _, tt := range tests {
+		if got := appleAccountKeepAliveRetryDelay(tt.failures); got != tt.want {
+			t.Fatalf("retry delay for %d failures = %s, want %s", tt.failures, got, tt.want)
+		}
+	}
+}
+
+func TestAppleAccountKeepAliveDueUsesExplicitRetryTime(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	state := LoginState{
+		LastCheckedAt:     now.Add(-time.Hour),
+		KeepAliveFailures: 1,
+		KeepAliveRetryAt:  now.Add(30 * time.Second),
+	}
+	if appleAccountKeepAliveDue(state, now, time.Second) {
+		t.Fatal("keepalive should wait for explicit retry time")
+	}
+	if !appleAccountKeepAliveDue(state, now.Add(30*time.Second), time.Hour) {
+		t.Fatal("keepalive should run when explicit retry time arrives")
+	}
+}
+
+func TestAppleAccountKeepAliveIntervalRefreshesBeforeShortTokenTTL(t *testing.T) {
+	checkedAt := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	session := ICloudSession{LoginStates: []LoginState{{
+		Kind:            LoginStateAppleAccount,
+		Scnt:            "scnt",
+		APIKey:          "key",
+		LastCheckedAt:   checkedAt,
+		ManageExpiresAt: checkedAt.Add(3 * time.Minute),
+	}}}
+	if got := appleAccountKeepAliveIntervalForSession(session, 4*time.Minute); got != time.Minute {
+		t.Fatalf("adaptive keepalive interval = %s, want 1m", got)
 	}
 }
 
@@ -1697,6 +1754,117 @@ func TestICloudClientRefreshAppleAccountManageStateUsesBootstrapTTLWhenInitialTo
 	}
 }
 
+func TestICloudClientRefreshAppleAccountManageStateRecoversAfterExpiredToken(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	var paths []string
+	tokenCalls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		switch r.Method + " " + r.URL.Path {
+		case "GET /account/manage/gs/ws/token":
+			tokenCalls++
+			if tokenCalls == 1 {
+				if r.Header.Get("scnt") != "expired-scnt" {
+					t.Fatalf("first token scnt = %q, want expired-scnt", r.Header.Get("scnt"))
+				}
+				w.Header().Set("Set-Cookie", "token_recovery=1; Path=/")
+				w.Header().Set("scnt", "failed-response-scnt")
+				w.WriteHeader(appleAccountHTTPStatusSessionTimeout)
+				_, _ = w.Write([]byte(`{"error":"session expired"}`))
+				return
+			}
+			if r.Header.Get("scnt") != "" {
+				t.Fatalf("recovery token scnt = %q, want empty", r.Header.Get("scnt"))
+			}
+			if cookie := r.Header.Get("Cookie"); !strings.Contains(cookie, "token_recovery=1") || !strings.Contains(cookie, "portal_recovery=1") {
+				t.Fatalf("recovery token cookie = %q", cookie)
+			}
+			w.Header().Set("scnt", "recovered-token-scnt")
+			_, _ = w.Write([]byte(`{"timeOutInterval":15}`))
+		case "GET /account/manage/section/privacy":
+			if !strings.Contains(r.Header.Get("Cookie"), "token_recovery=1") {
+				t.Fatalf("privacy cookie = %q, want failed response cookie", r.Header.Get("Cookie"))
+			}
+			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("Set-Cookie", "portal_recovery=1; Path=/")
+			_, _ = w.Write([]byte(`<html></html>`))
+		case "GET /bootstrap/portal":
+			_, _ = w.Write([]byte(`{"timeOutInterval":15}`))
+		case "GET /account/manage":
+			if r.Header.Get("scnt") != "recovered-token-scnt" {
+				t.Fatalf("manage scnt = %q, want recovered-token-scnt", r.Header.Get("scnt"))
+			}
+			w.Header().Set("scnt", "recovered-manage-scnt")
+			_, _ = w.Write([]byte(`{"apiKey":"recovered-key"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+
+	client := &ICloudClient{client: ts.Client()}
+	state, err := client.RefreshAppleAccountManageState(t.Context(), LoginState{
+		Kind:   LoginStateAppleAccount,
+		Origin: ts.URL,
+		Scnt:   "expired-scnt",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPaths := []string{
+		"GET /account/manage/gs/ws/token",
+		"GET /account/manage/section/privacy",
+		"GET /bootstrap/portal",
+		"GET /account/manage/gs/ws/token",
+		"GET /account/manage",
+	}
+	if strings.Join(paths, "\n") != strings.Join(wantPaths, "\n") {
+		t.Fatalf("paths = %#v, want %#v", paths, wantPaths)
+	}
+	if state.Scnt != "recovered-manage-scnt" || state.APIKey != "recovered-key" || !state.LastCheckOK || len(state.Cookies) != 2 {
+		t.Fatalf("recovered state = %+v", state)
+	}
+}
+
+func TestAppleAccountErrorResponsesPreserveRotatedSessionState(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Set-Cookie", "rotated_cookie="+strings.Trim(strings.ReplaceAll(r.URL.Path, "/", "_"), "_")+"; Path=/")
+		w.Header().Set("scnt", "rotated-scnt")
+		w.Header().Set("X-Apple-ID-Session-Id", "rotated-session")
+		w.WriteHeader(appleAccountHTTPStatusSessionTimeout)
+		_, _ = w.Write([]byte(`{"error":"session expired"}`))
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+	client := &ICloudClient{client: ts.Client()}
+
+	t.Run("manage api", func(t *testing.T) {
+		state := LoginState{Kind: LoginStateAppleAccount, Origin: ts.URL, Scnt: "old-scnt"}
+		if _, err := client.callAppleAccountRawOnce(t.Context(), &state, "", http.MethodGet, "/account/manage", nil, nil); err == nil {
+			t.Fatal("manage API error = nil, want session error")
+		}
+		if state.Scnt != "rotated-scnt" || state.SessionID != "rotated-session" || len(state.Cookies) != 1 {
+			t.Fatalf("manage API error state = %+v", state)
+		}
+	})
+
+	t.Run("portal", func(t *testing.T) {
+		state := LoginState{Kind: LoginStateAppleAccount, Origin: ts.URL, Scnt: "old-scnt"}
+		if _, err := client.callAppleAccountPortalOnce(t.Context(), &state, "/bootstrap/portal", "application/json", true, "empty", "cors"); err == nil {
+			t.Fatal("portal error = nil, want session error")
+		}
+		if state.Scnt != "rotated-scnt" || state.SessionID != "rotated-session" || len(state.Cookies) != 1 {
+			t.Fatalf("portal error state = %+v", state)
+		}
+	})
+}
+
 func TestICloudClientKeepAliveAppleAccountManageStateTouchesRealManageAPI(t *testing.T) {
 	oldBaseURL := appleAccountManageBaseURL
 	defer func() { appleAccountManageBaseURL = oldBaseURL }()
@@ -1706,9 +1874,23 @@ func TestICloudClientKeepAliveAppleAccountManageStateTouchesRealManageAPI(t *tes
 		paths = append(paths, r.Method+" "+r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
+		case "GET /account/manage/section/privacy":
+			if r.Header.Get("scnt") != "" {
+				t.Fatalf("privacy page scnt header = %q, want empty", r.Header.Get("scnt"))
+			}
+			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("Set-Cookie", "portal_warm=1; Path=/")
+			w.Header().Set("scnt", "portal-scnt")
+			_, _ = w.Write([]byte(`<html></html>`))
+		case "GET /bootstrap/portal":
+			if !strings.Contains(r.Header.Get("Cookie"), "portal_warm=1") {
+				t.Fatalf("bootstrap cookie = %q, want portal_warm", r.Header.Get("Cookie"))
+			}
+			w.Header().Set("scnt", "bootstrap-scnt")
+			_, _ = w.Write([]byte(`{"timeOutInterval":15}`))
 		case "GET /account/manage/gs/ws/token":
-			if r.Header.Get("scnt") != "start-scnt" {
-				t.Fatalf("token scnt header = %q, want start-scnt", r.Header.Get("scnt"))
+			if r.Header.Get("scnt") != "bootstrap-scnt" {
+				t.Fatalf("token scnt header = %q, want bootstrap-scnt", r.Header.Get("scnt"))
 			}
 			w.Header().Set("scnt", "token-scnt")
 			_, _ = w.Write([]byte(`{"timeOutInterval":15}`))
@@ -1756,6 +1938,8 @@ func TestICloudClientKeepAliveAppleAccountManageStateTouchesRealManageAPI(t *tes
 		t.Fatal(err)
 	}
 	wantPaths := []string{
+		"GET /account/manage/section/privacy",
+		"GET /bootstrap/portal",
 		"GET /account/manage/gs/ws/token",
 		"GET /account/manage",
 		"GET /account/manage/forwardemail",
@@ -1764,7 +1948,7 @@ func TestICloudClientKeepAliveAppleAccountManageStateTouchesRealManageAPI(t *tes
 	if strings.Join(paths, "\n") != strings.Join(wantPaths, "\n") {
 		t.Fatalf("paths = %#v, want %#v", paths, wantPaths)
 	}
-	if state.APIKey != "fresh-key" || state.Scnt != "touch-scnt" || state.SessionID != "jslog-session" || !state.LastCheckOK || state.LastCheckedAt.Before(now) {
+	if state.APIKey != "fresh-key" || state.Scnt != "touch-scnt" || state.SessionID != "jslog-session" || !state.LastCheckOK || state.LastCheckedAt.Before(now) || len(state.Cookies) == 0 {
 		t.Fatalf("state = %+v, want touched real manage API state", state)
 	}
 }
@@ -2039,6 +2223,11 @@ func TestCheckSavedLoginStatesChecksAppleAccountState(t *testing.T) {
 		paths = append(paths, r.Method+" "+r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
+		case "GET /account/manage/section/privacy":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<html></html>`))
+		case "GET /bootstrap/portal":
+			_, _ = w.Write([]byte(`{"timeOutInterval":15}`))
 		case "GET /account/manage/gs/ws/token":
 			if r.Header.Get("scnt") != "scnt-token" {
 				t.Fatalf("token scnt header = %q, want scnt-token", r.Header.Get("scnt"))
@@ -2095,6 +2284,8 @@ func TestCheckSavedLoginStatesChecksAppleAccountState(t *testing.T) {
 		t.Fatalf("session check status = ok:%t message:%q", session.LastCheckOK, session.LastStatusMessage)
 	}
 	wantPaths := []string{
+		"GET /account/manage/section/privacy",
+		"GET /bootstrap/portal",
 		"GET /account/manage/gs/ws/token",
 		"GET /account/manage",
 		"GET /account/manage/forwardemail",
@@ -6817,12 +7008,12 @@ func TestCreateAppleAccountMailboxKeepsRefreshedStateWhenCreateFails(t *testing.
 	}
 	got := store.ICloudSessionsForOwner(ownerID)[0]
 	state, ok := appleAccountLoginState(got)
-	if !ok || state.Scnt != "fresh-manage-scnt" || state.APIKey != "fresh-key" {
-		t.Fatalf("saved apple account state = %+v ok=%v, want last successful refreshed state after failed create", state, ok)
+	if !ok || state.Scnt != "fresh-failed-scnt" || state.APIKey != "fresh-key" {
+		t.Fatalf("saved apple account state = %+v ok=%v, want rotated state from failed create response", state, ok)
 	}
 	cookie := cookieHeader(state.Cookies, ts.URL+"/account/manage/email/private/add")
-	if strings.Contains(cookie, "fail-cookie=ok") {
-		t.Fatalf("saved cookie header = %q, want failed response cookie ignored", cookie)
+	if !strings.Contains(cookie, "fail-cookie=ok") {
+		t.Fatalf("saved cookie header = %q, want failed response cookie preserved", cookie)
 	}
 	if !strings.Contains(cookie, "manage-cookie=ok") {
 		t.Fatalf("saved cookie header = %q, want last successful manage cookie", cookie)

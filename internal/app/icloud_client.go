@@ -66,8 +66,8 @@ func NewICloudClient() *ICloudClient {
 const mailboxSyncCursorOverlap = 2 * time.Minute
 const allMailboxMessagesKeyword = "__all_mailbox_messages__"
 const appleAccountManageRefreshSkew = 0 * time.Second
-const appleAccountKeepAliveDefaultInterval = 4 * time.Minute
-const appleAccountKeepAliveTimeout = 25 * time.Second
+const appleAccountKeepAliveDefaultInterval = 2 * time.Minute
+const appleAccountKeepAliveTimeout = 60 * time.Second
 
 var appleAccountManageBaseURL = "https://appleid.apple.com"
 var appleAccountOperationMu sync.Mutex
@@ -180,6 +180,8 @@ func markAppleAccountManageOK(loginState *LoginState) {
 	loginState.LastCheckedAt = time.Now()
 	loginState.LastCheckOK = true
 	loginState.LastStatusMessage = "新接口登录态正常"
+	loginState.KeepAliveFailures = 0
+	loginState.KeepAliveRetryAt = time.Time{}
 }
 
 func markAppleAccountManageTokenTTL(loginState *LoginState, timeoutMinutes int, now time.Time) {
@@ -384,6 +386,9 @@ func (c *ICloudClient) keepAliveAppleAccountManageStateUnlocked(ctx context.Cont
 	if strings.TrimSpace(loginState.Scnt) == "" {
 		return loginState, errCode("apple_account_session_missing", "当前登录态缺少 Apple Account 管理态，请重新协议登录", true)
 	}
+	if err := c.warmAppleAccountPortal(ctx, &loginState); err != nil {
+		return loginState, err
+	}
 	loginState, err := c.refreshAppleAccountManageStateUnlocked(ctx, loginState)
 	if err != nil {
 		return loginState, err
@@ -426,6 +431,9 @@ func appleAccountKeepAliveDue(loginState LoginState, now time.Time, interval tim
 	if interval <= 0 {
 		interval = appleAccountKeepAliveDefaultInterval
 	}
+	if !loginState.KeepAliveRetryAt.IsZero() {
+		return !now.Before(loginState.KeepAliveRetryAt)
+	}
 	if loginState.LastCheckedAt.IsZero() {
 		return true
 	}
@@ -439,8 +447,28 @@ func (c *ICloudClient) refreshAppleAccountManageStateUnlocked(ctx context.Contex
 	var token struct {
 		TimeOutInterval int `json:"timeOutInterval"`
 	}
+	originalScnt := strings.TrimSpace(loginState.Scnt)
 	if err := c.callAppleAccount(ctx, &loginState, "", http.MethodGet, "/account/manage/gs/ws/token", nil, &token); err != nil {
-		return loginState, err
+		initialErr := err
+		if warmErr := c.warmAppleAccountPortal(ctx, &loginState); warmErr != nil {
+			return loginState, fmt.Errorf("%w；Portal 会话刷新失败：%v", initialErr, warmErr)
+		}
+		withoutScnt := loginState
+		withoutScnt.Scnt = ""
+		if retryErr := c.callAppleAccount(ctx, &withoutScnt, "", http.MethodGet, "/account/manage/gs/ws/token", nil, &token); retryErr == nil {
+			loginState = withoutScnt
+		} else {
+			loginState = withoutScnt
+			withOriginalScnt := withoutScnt
+			withOriginalScnt.Scnt = originalScnt
+			if originalScnt == "" {
+				return loginState, retryErr
+			}
+			if fallbackErr := c.callAppleAccount(ctx, &withOriginalScnt, "", http.MethodGet, "/account/manage/gs/ws/token", nil, &token); fallbackErr != nil {
+				return withOriginalScnt, fallbackErr
+			}
+			loginState = withOriginalScnt
+		}
 	}
 	markAppleAccountManageTokenTTL(&loginState, token.TimeOutInterval, time.Now())
 	if token.TimeOutInterval <= 0 {
@@ -620,11 +648,11 @@ func (c *ICloudClient) callAppleAccountPortalOnce(ctx context.Context, loginStat
 			appleDebugBody(data),
 		)
 	}
+	mergeSessionCookies(&loginState.Cookies, resp.Request.URL, resp.Cookies())
+	updateAppleAccountLoginStateFromHeaders(loginState, resp.Header)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return data, appleAccountAPIError(resp.StatusCode, data, appleAccountRequestStage(http.MethodGet, path))
 	}
-	mergeSessionCookies(&loginState.Cookies, resp.Request.URL, resp.Cookies())
-	updateAppleAccountLoginStateFromHeaders(loginState, resp.Header)
 	return data, nil
 }
 
@@ -915,14 +943,14 @@ func (c *ICloudClient) callAppleAccountRawOnce(ctx context.Context, loginState *
 			appleDebugBody(data),
 		)
 	}
+	mergeSessionCookies(&loginState.Cookies, resp.Request.URL, resp.Cookies())
+	updateAppleAccountLoginStateFromHeaders(loginState, resp.Header)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if os.Getenv("IPM_DEBUG_APPLE_ACCOUNT") == "1" {
 			fmt.Fprintf(os.Stderr, "APPLE_ACCOUNT_DEBUG method=%s path=%s status=%d body=%q\n", method, path, resp.StatusCode, appleDebugBody(data))
 		}
 		return raw, appleAccountAPIError(resp.StatusCode, data, appleAccountRequestStage(method, path))
 	}
-	mergeSessionCookies(&loginState.Cookies, resp.Request.URL, resp.Cookies())
-	updateAppleAccountLoginStateFromHeaders(loginState, resp.Header)
 	if result != nil && len(bytes.TrimSpace(data)) > 0 {
 		if err := json.Unmarshal(data, result); err != nil {
 			return raw, errCode("apple_account_bad_response", "Apple Account 返回无法解析；"+appleAccountRawResponseDetail(appleAccountRequestStage(method, path), raw), true)
