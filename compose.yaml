@@ -2,7 +2,7 @@ name: julong-ic-email
 
 services:
   app:
-    image: "${JULONG_IMAGE:-ghcr.io/xujs98/julong-ic-email:latest}"
+    image: "${JULONG_IMAGE:-docker.io/qq1371446705/julong-ic-email:latest}"
     pull_policy: always
     container_name: julong-ic-email
     restart: unless-stopped

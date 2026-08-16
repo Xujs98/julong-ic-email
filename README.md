@@ -429,19 +429,19 @@ GET /api/runtime/export-mailbox-emails?format=txt&account_id=<account_id>
 
 ## Docker Compose 部署（服务器不构建）
 
-项目采用“本地构建并推送镜像，服务器只拉取镜像”的方式。默认镜像地址为 `ghcr.io/xujs98/julong-ic-email:latest`。
+项目采用“本地构建并推送 Docker Hub，服务器只拉取镜像”的方式。默认镜像地址为 `docker.io/qq1371446705/julong-ic-email:latest`。
 
-本地登录 GHCR，并构建 amd64/arm64 双架构镜像：
+本地登录 Docker Hub，并构建 amd64/arm64 双架构镜像：
 
 ```bash
-echo "$GHCR_TOKEN" | docker login ghcr.io -u Xujs98 --password-stdin
+docker login -u qq1371446705
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/xujs98/julong-ic-email:2026.08.16.1 \
-  -t ghcr.io/xujs98/julong-ic-email:latest \
+  -t qq1371446705/julong-ic-email:2026.08.16.2 \
+  -t qq1371446705/julong-ic-email:latest \
   --push .
 ```
 
-`GHCR_TOKEN` 需要 GitHub Packages 写入权限。服务器拉取公开镜像时不需要登录；私有镜像需先执行 `docker login ghcr.io`。
+Docker Hub 仓库设置为 Public 后，服务器拉取镜像无需登录；Private 仓库需先执行 `docker login -u qq1371446705`。
 
 服务器只需拉取仓库并启动：
 
@@ -454,7 +454,7 @@ docker compose up -d
 docker compose ps
 ```
 
-默认只发布到宿主机 `127.0.0.1:8787`，适合 Nginx/Caddy 反向代理。直接通过服务器 IP 访问时，将 `.env` 中的 `JULONG_BIND_IP` 设置为 `0.0.0.0`。运行数据保存在 Docker 命名卷 `julong-ic-email-data`，更新容器不会覆盖。
+Compose 已内置 Docker Hub 默认镜像，服务器即使不创建 `.env` 也会拉取 `qq1371446705/julong-ic-email:latest`。默认只发布到宿主机 `127.0.0.1:8787`，适合 Nginx/Caddy 反向代理。直接通过服务器 IP 访问时，将 `.env` 中的 `JULONG_BIND_IP` 设置为 `0.0.0.0`。运行数据保存在 Docker 命名卷 `julong-ic-email-data`，更新容器不会覆盖。
 
 后续更新：本地重新构建并推送 `latest`，服务器执行：
 
