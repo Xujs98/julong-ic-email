@@ -438,7 +438,7 @@ GET /api/runtime/export-mailbox-emails?format=txt&account_id=<account_id>
 ```bash
 docker login -u qq1371446705
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t qq1371446705/julong-ic-email:2026.08.16.9 \
+  -t qq1371446705/julong-ic-email:2026.08.16.10 \
   -t qq1371446705/julong-ic-email:latest \
   --push .
 ```

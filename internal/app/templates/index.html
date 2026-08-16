@@ -1365,15 +1365,20 @@
     .mailbox-batch-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .mailbox-batch-actions button, .mailbox-batch-actions select { min-height: 36px; padding: 7px 11px; border-radius: 10px; font-size: 12px; }
     .mailbox-batch-actions select { width: auto; min-width: 132px; }
-    .mailbox-table-wrap { border-radius: 16px; margin-top: 30px;height: 500px;}
+    .mailbox-table-wrap { border-radius: 16px; margin-top: 30px; height: 500px; isolation: isolate; }
     .mailbox-table { min-width: 1560px; table-layout: auto; }
+    .mailbox-table thead { position: relative; z-index: 2; }
     .mailbox-table th {
+      position: sticky;
+      top: 0;
+      z-index: 3;
       height: 58px;
       padding: 14px 16px;
       color: var(--muted);
       font-size: 13px;
       font-weight: 900;
       white-space: nowrap;
+      background-color: var(--th-bg);
       background: color-mix(in srgb, var(--th-bg) 92%, var(--panel));
     }
     .mailbox-table td { height: 76px; padding: 14px 16px; color: var(--muted); white-space: nowrap; }

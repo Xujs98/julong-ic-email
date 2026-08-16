@@ -105,6 +105,27 @@ func TestMailboxHTMLPageShowsDayHourMinuteSecondCountdown(t *testing.T) {
 	}
 }
 
+func TestMailboxTableHeaderStaysAboveRows(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`.mailbox-table-wrap {`,
+		`isolation: isolate;`,
+		`.mailbox-table thead { position: relative; z-index: 2; }`,
+		`.mailbox-table th {`,
+		`position: sticky;`,
+		`z-index: 3;`,
+		`background-color: var(--th-bg);`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("mailbox table header CSS missing %q", want)
+		}
+	}
+}
+
 func TestConfiguredAdminPathIsOnlyLoginAndRegistrationEntry(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
