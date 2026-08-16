@@ -162,7 +162,9 @@ func TestSystemSettingsTemplateIncludesMailRetentionAndExpiryDeleteSwitches(t *t
 	for _, want := range []string{
 		`id="verificationOnly"`,
 		`id="htmlExpiryDeleteMailbox"`,
+		`id="htmlPageMessageLimit"`,
 		`verification_only:`,
+		`html_page_message_limit:`,
 		`html_expiry_delete_mailbox:`,
 	} {
 		if !strings.Contains(source, want) {
@@ -5111,31 +5113,79 @@ func TestSystemSettingsMessageRetentionAndExpiryDeleteSwitches(t *testing.T) {
 		Settings struct {
 			VerificationOnly        bool `json:"verification_only"`
 			HTMLExpiryDeleteMailbox bool `json:"html_expiry_delete_mailbox"`
+			HTMLPageMessageLimit    int  `json:"html_page_message_limit"`
 		} `json:"settings"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.Settings.VerificationOnly || body.Settings.HTMLExpiryDeleteMailbox {
-		t.Fatalf("default settings = %+v, want verification-only on and expiry-delete off", body.Settings)
+	if !body.Settings.VerificationOnly || body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 50 {
+		t.Fatalf("default settings = %+v, want verification-only on, expiry-delete off and limit 50", body.Settings)
 	}
 
 	rr = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":true,"verification_only":false,"admin_path":"/manage","html_link_ttl_days":7,"html_expiry_delete_mailbox":true}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":true,"verification_only":false,"admin_path":"/manage","html_link_ttl_days":7,"html_page_message_limit":120,"html_expiry_delete_mailbox":true}`))
 	req.AddCookie(adminCookie)
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("save settings switches = %d body=%s", rr.Code, rr.Body.String())
 	}
 	settings := store.SystemSettings()
-	if !settings.StoreAllMessages || !settings.HTMLExpiryDeleteMailbox {
-		t.Fatalf("stored settings = %+v, want all messages and expiry deletion", settings)
+	if !settings.StoreAllMessages || !settings.HTMLExpiryDeleteMailbox || settings.HTMLPageMessageLimit != 120 {
+		t.Fatalf("stored settings = %+v, want all messages, expiry deletion and limit 120", settings)
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Settings.VerificationOnly || !body.Settings.HTMLExpiryDeleteMailbox {
+	if body.Settings.VerificationOnly || !body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 120 {
 		t.Fatalf("saved public settings = %+v", body.Settings)
+	}
+}
+
+func TestMailboxHTMLDataUsesConfiguredMessageLimit(t *testing.T) {
+	store := newTestStore(t)
+	settings := store.SystemSettings()
+	settings.HTMLPageMessageLimit = 1
+	if _, err := store.SaveSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := store.AddMailbox("", "limited", "limited@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, ok := store.MailboxHTMLLinkForMailbox(mailbox.ID)
+	if !ok {
+		t.Fatal("mailbox HTML link missing")
+	}
+	now := time.Now()
+	if _, err := store.AddMessage(mailbox.ID, "Verification code", "codes@example.test", "Use 246810 to continue.", now.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AddMessage(mailbox.ID, "Newest notification", "alerts@example.test", "Your settings were updated.", now); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := NewServer(Config{}, store, discardLogger())
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/mailbox/"+link.Token+"/data", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("mailbox HTML data = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Messages     []publicMessage `json:"messages"`
+		MessageLimit int             `json:"message_limit"`
+		Latest       struct {
+			Code string `json:"code"`
+		} `json:"latest"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.MessageLimit != 1 || len(body.Messages) != 1 || body.Messages[0].Subject != "Newest notification" {
+		t.Fatalf("limited HTML messages = %+v limit=%d", body.Messages, body.MessageLimit)
+	}
+	if body.Latest.Code != "246810" {
+		t.Fatalf("latest verification code = %q, want 246810 from messages outside display limit", body.Latest.Code)
 	}
 }
 

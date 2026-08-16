@@ -1858,6 +1858,7 @@
             <label class="checkline"><input id="htmlExpiryDeleteMailbox" type="checkbox"> HTML 接码地址过期后自动删除邮箱</label>
             <label>后台入口路径<input id="adminPath" placeholder="/manage" pattern="/[A-Za-z0-9_/-]+"></label>
             <label>HTML 接码地址过期天数<input id="htmlLinkTTLDays" type="number" min="1" max="3650" value="7"></label>
+            <label>HTML 页面邮件展示数量<input id="htmlPageMessageLimit" type="number" min="1" max="500" value="50"></label>
             <div class="full hint">关闭“只保留验证码邮件”后会保存收到的全部邮件，最新验证码和取码 API 仍只提取验证码。开启过期自动删除后，会先永久删除 iCloud 隐私邮箱，成功后再清理本地邮箱、邮件、API 和 HTML 地址；远端失败会保留并重试。</div>
           </div>
           <div class="toolbar">
@@ -2243,7 +2244,8 @@
       if ($('htmlExpiryDeleteMailbox')) $('htmlExpiryDeleteMailbox').checked = !!settings.html_expiry_delete_mailbox;
       if ($('adminPath')) $('adminPath').value = settings.admin_path || '/manage';
       if ($('htmlLinkTTLDays')) $('htmlLinkTTLDays').value = String(settings.html_link_ttl_days || 7);
-      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `当前后台入口：${settings.admin_path || '/manage'}；邮件${settings.verification_only !== false ? '仅保留验证码' : '全部保留'}；HTML 接码地址首次访问后 ${settings.html_link_ttl_days || 7} 天过期${settings.html_expiry_delete_mailbox ? '，过期后自动删除邮箱' : '，过期后补发新地址'}。`;
+      if ($('htmlPageMessageLimit')) $('htmlPageMessageLimit').value = String(settings.html_page_message_limit || 50);
+      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `当前后台入口：${settings.admin_path || '/manage'}；邮件${settings.verification_only !== false ? '仅保留验证码' : '全部保留'}；HTML 页面展示最近 ${settings.html_page_message_limit || 50} 封；地址首次访问后 ${settings.html_link_ttl_days || 7} 天过期${settings.html_expiry_delete_mailbox ? '，过期后自动删除邮箱' : '，过期后补发新地址'}。`;
       return settings;
     }
 
@@ -2253,12 +2255,13 @@
         verification_only: !!($('verificationOnly') && $('verificationOnly').checked),
         admin_path: ($('adminPath') ? $('adminPath').value : '/manage').trim(),
         html_link_ttl_days: boundedInt('htmlLinkTTLDays', 7, 1, 3650),
+        html_page_message_limit: boundedInt('htmlPageMessageLimit', 50, 1, 500),
         html_expiry_delete_mailbox: !!($('htmlExpiryDeleteMailbox') && $('htmlExpiryDeleteMailbox').checked)
       };
       const data = await api('/api/system-settings', {method:'POST', body: JSON.stringify(payload)});
       const settings = data.settings || payload;
       if ($('systemSettingsStatus')) $('systemSettingsStatus').textContent = '系统设置已保存';
-      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `已保存：注册${settings.registration_enabled ? '开放' : '关闭'}；邮件${settings.verification_only ? '仅保留验证码' : '全部保留'}；后台入口 ${settings.admin_path}；HTML 地址首次访问后 ${settings.html_link_ttl_days} 天过期${settings.html_expiry_delete_mailbox ? '并自动删除邮箱' : '后补发新地址'}。`;
+      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `已保存：注册${settings.registration_enabled ? '开放' : '关闭'}；邮件${settings.verification_only ? '仅保留验证码' : '全部保留'}；后台入口 ${settings.admin_path}；HTML 页面展示最近 ${settings.html_page_message_limit} 封；地址首次访问后 ${settings.html_link_ttl_days} 天过期${settings.html_expiry_delete_mailbox ? '并自动删除邮箱' : '后补发新地址'}。`;
       log('系统设置已保存');
     }
 

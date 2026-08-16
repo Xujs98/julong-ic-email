@@ -44,6 +44,7 @@ type SystemSettings struct {
 	StoreAllMessages        bool      `json:"store_all_messages,omitempty"`
 	AdminPath               string    `json:"admin_path"`
 	HTMLLinkTTLDays         int       `json:"html_link_ttl_days"`
+	HTMLPageMessageLimit    int       `json:"html_page_message_limit"`
 	HTMLExpiryDeleteMailbox bool      `json:"html_expiry_delete_mailbox,omitempty"`
 	UpdatedAt               time.Time `json:"updated_at,omitempty"`
 }

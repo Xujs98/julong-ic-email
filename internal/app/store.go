@@ -18,15 +18,18 @@ type FileStore struct {
 }
 
 const (
-	defaultAdminPath       = "/manage"
-	defaultHTMLLinkTTLDays = 7
+	defaultAdminPath            = "/manage"
+	defaultHTMLLinkTTLDays      = 7
+	defaultHTMLPageMessageLimit = 50
+	maxHTMLPageMessageLimit     = 500
 )
 
 func defaultSystemSettings() SystemSettings {
 	return SystemSettings{
-		RegistrationEnabled: true,
-		AdminPath:           defaultAdminPath,
-		HTMLLinkTTLDays:     defaultHTMLLinkTTLDays,
+		RegistrationEnabled:  true,
+		AdminPath:            defaultAdminPath,
+		HTMLLinkTTLDays:      defaultHTMLLinkTTLDays,
+		HTMLPageMessageLimit: defaultHTMLPageMessageLimit,
 	}
 }
 
@@ -46,6 +49,12 @@ func normalizeSystemSettings(settings SystemSettings) SystemSettings {
 	}
 	if settings.HTMLLinkTTLDays > 3650 {
 		settings.HTMLLinkTTLDays = 3650
+	}
+	if settings.HTMLPageMessageLimit <= 0 {
+		settings.HTMLPageMessageLimit = defaultHTMLPageMessageLimit
+	}
+	if settings.HTMLPageMessageLimit > maxHTMLPageMessageLimit {
+		settings.HTMLPageMessageLimit = maxHTMLPageMessageLimit
 	}
 	return settings
 }

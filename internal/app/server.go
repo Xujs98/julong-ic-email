@@ -532,6 +532,7 @@ func publicSystemSettings(settings SystemSettings) map[string]any {
 		"verification_only":          !settings.StoreAllMessages,
 		"admin_path":                 settings.AdminPath,
 		"html_link_ttl_days":         settings.HTMLLinkTTLDays,
+		"html_page_message_limit":    settings.HTMLPageMessageLimit,
 		"html_expiry_delete_mailbox": settings.HTMLExpiryDeleteMailbox,
 		"updated_at":                 formatTime(settings.UpdatedAt),
 	}
@@ -564,6 +565,7 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		VerificationOnly        *bool  `json:"verification_only"`
 		AdminPath               string `json:"admin_path"`
 		HTMLLinkTTLDays         int    `json:"html_link_ttl_days"`
+		HTMLPageMessageLimit    *int   `json:"html_page_message_limit"`
 		HTMLExpiryDeleteMailbox *bool  `json:"html_expiry_delete_mailbox"`
 	}
 	if err := decodeJSON(r, &payload); err != nil {
@@ -580,6 +582,14 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	current := s.store.SystemSettings()
+	htmlPageMessageLimit := current.HTMLPageMessageLimit
+	if payload.HTMLPageMessageLimit != nil {
+		if *payload.HTMLPageMessageLimit < 1 || *payload.HTMLPageMessageLimit > maxHTMLPageMessageLimit {
+			writeError(w, http.StatusBadRequest, errCode("invalid_html_page_message_limit", "HTML 页面邮件展示数量必须是 1-500", false))
+			return
+		}
+		htmlPageMessageLimit = *payload.HTMLPageMessageLimit
+	}
 	verificationOnly := !current.StoreAllMessages
 	if payload.VerificationOnly != nil {
 		verificationOnly = *payload.VerificationOnly
@@ -593,6 +603,7 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		StoreAllMessages:        !verificationOnly,
 		AdminPath:               path,
 		HTMLLinkTTLDays:         payload.HTMLLinkTTLDays,
+		HTMLPageMessageLimit:    htmlPageMessageLimit,
 		HTMLExpiryDeleteMailbox: htmlExpiryDeleteMailbox,
 	})
 	if err != nil {
@@ -672,29 +683,31 @@ func (s *Server) handleMailboxHTMLData(w http.ResponseWriter, r *http.Request) {
 	sort.SliceStable(messages, func(i, j int) bool {
 		return firstNonZeroTime(messages[i].ReceivedAt, messages[i].CreatedAt).After(firstNonZeroTime(messages[j].ReceivedAt, messages[j].CreatedAt))
 	})
-	if len(messages) > 50 {
-		messages = messages[:50]
+	latest := map[string]any{}
+	if msg, code, found := latestMailboxCode(append([]Message(nil), messages...), time.Now().Add(-30*24*time.Hour), "", time.Now()); found {
+		latest = map[string]any{"code": code, "subject": msg.Subject, "received_at": formatTime(msg.ReceivedAt)}
+	}
+	messageLimit := s.store.SystemSettings().HTMLPageMessageLimit
+	if len(messages) > messageLimit {
+		messages = messages[:messageLimit]
 	}
 	out := make([]publicMessage, 0, len(messages))
 	for _, msg := range messages {
 		out = append(out, publicMessage{ID: msg.ID, MailboxID: msg.MailboxID, Subject: msg.Subject, From: msg.From, Body: msg.Body, HTMLBody: msg.HTMLBody, ReceivedAt: formatTime(msg.ReceivedAt), CreatedAt: formatTime(msg.CreatedAt)})
-	}
-	latest := map[string]any{}
-	if msg, code, found := latestMailboxCode(append([]Message(nil), messages...), time.Now().Add(-30*24*time.Hour), "", time.Now()); found {
-		latest = map[string]any{"code": code, "subject": msg.Subject, "received_at": formatTime(msg.ReceivedAt)}
 	}
 	ttlSeconds := int(time.Until(link.ExpiresAt).Seconds())
 	if ttlSeconds < 0 {
 		ttlSeconds = 0
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"success":      true,
-		"mailbox":      map[string]any{"email": mailbox.Email, "label": mailbox.Label, "status": mailbox.Status, "receive_count": mailbox.ReceiveCount},
-		"latest":       latest,
-		"messages":     out,
-		"activated_at": formatTime(link.ActivatedAt),
-		"expires_at":   formatTime(link.ExpiresAt),
-		"ttl_seconds":  ttlSeconds,
+		"success":       true,
+		"mailbox":       map[string]any{"email": mailbox.Email, "label": mailbox.Label, "status": mailbox.Status, "receive_count": mailbox.ReceiveCount},
+		"latest":        latest,
+		"messages":      out,
+		"message_limit": messageLimit,
+		"activated_at":  formatTime(link.ActivatedAt),
+		"expires_at":    formatTime(link.ExpiresAt),
+		"ttl_seconds":   ttlSeconds,
 	})
 }
 
