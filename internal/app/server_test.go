@@ -346,6 +346,17 @@ func TestMailboxTableSupportsOutboundWorkflow(t *testing.T) {
 		`name="mailboxExportFormat" value="txt"`,
 		`name="mailboxExportFormat" value="csv"`,
 		`name="mailboxExportFormat" value="json"`,
+		`id="mailboxHTMLStateFilter"`,
+		`data-html-state-filter="all"`,
+		`data-html-state-filter="activated"`,
+		`data-html-state-filter="unactivated"`,
+		`data-html-state-filter="expired"`,
+		`setMailboxHTMLStateFilter('expired')`,
+		`params.set('html_state', activeMailboxHTMLStateFilter)`,
+		`id="mailboxCleanupExpiredButton"`,
+		`cleanupExpiredHTMLMailboxes()`,
+		`/api/mailboxes/html-expired/cleanup`,
+		`.mailbox-html-state-filter[hidden]`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("mailbox outbound workflow source missing %q", want)
@@ -5024,6 +5035,161 @@ func TestMailboxOutboundStatusAndListFilters(t *testing.T) {
 	}
 }
 
+func TestMailboxOutboundHTMLStateFilters(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	cookie, _ := registerTestUser(t, handler, "html-filter-owner", "filter123")
+	activated := createTestMailboxWithCookie(t, handler, cookie, "activated", "activated@icloud.com")
+	unactivated := createTestMailboxWithCookie(t, handler, cookie, "unactivated", "unactivated@icloud.com")
+	expired := createTestMailboxWithCookie(t, handler, cookie, "expired", "expired@icloud.com")
+	inventoryExpired := createTestMailboxWithCookie(t, handler, cookie, "inventory-expired", "inventory-expired@icloud.com")
+	for _, id := range []string{activated.ID, unactivated.ID, expired.ID} {
+		if _, err := store.SetMailboxStatus(id, nil, nil, StatusOutbound, "test outbound"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	now := time.Now()
+	store.mu.Lock()
+	for i := range store.state.MailboxHTMLLinks {
+		link := &store.state.MailboxHTMLLinks[i]
+		switch link.MailboxID {
+		case activated.ID:
+			link.ActivatedAt = now.Add(-time.Hour)
+			link.ExpiresAt = now.Add(time.Hour)
+		case expired.ID, inventoryExpired.ID:
+			link.ActivatedAt = now.Add(-2 * time.Hour)
+			link.ExpiresAt = now.Add(-time.Hour)
+		}
+	}
+	err := store.saveLocked()
+	store.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list := func(state string) ([]publicMailbox, publicPagination) {
+		t.Helper()
+		query := url.Values{"status": {StatusOutbound}, "html_state": {state}, "page": {"1"}, "page_size": {"1"}}
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/mailboxes?"+query.Encode(), nil)
+		req.AddCookie(cookie)
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("list HTML state %q = %d body=%s", state, rr.Code, rr.Body.String())
+		}
+		var body struct {
+			Mailboxes  []publicMailbox  `json:"mailboxes"`
+			Pagination publicPagination `json:"pagination"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body.Mailboxes, body.Pagination
+	}
+
+	for _, tt := range []struct {
+		state string
+		want  string
+	}{
+		{state: "activated", want: activated.ID},
+		{state: "unactivated", want: unactivated.ID},
+		{state: "expired", want: expired.ID},
+	} {
+		rows, pagination := list(tt.state)
+		if len(rows) != 1 || rows[0].ID != tt.want || pagination.Total != 1 || pagination.TotalAll != 1 || pagination.TotalPages != 1 {
+			t.Fatalf("HTML state %q rows=%+v pagination=%+v, want %s", tt.state, rows, pagination, tt.want)
+		}
+	}
+	rows, pagination := list("all")
+	if len(rows) != 1 || pagination.Total != 3 || pagination.TotalAll != 3 || pagination.TotalPages != 3 {
+		t.Fatalf("all HTML states rows=%+v pagination=%+v, want three outbound rows over three pages", rows, pagination)
+	}
+}
+
+func TestCleanupExpiredOutboundMailboxesEndpoint(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	adminCookie, admin := registerTestUser(t, handler, "cleanup-admin", "admin123")
+	ownerCookie, owner := registerTestUser(t, handler, "cleanup-owner", "owner123")
+	for _, user := range []publicUser{admin, owner} {
+		if err := store.SaveICloudSessionForOwner(user.ID, ICloudSession{
+			OwnerID: user.ID, AppleID: user.Username + "@icloud.com", DSID: "dsid-" + user.ID,
+			PremiumMailBaseURL: "https://mail.example.invalid", Cookies: []SessionCookie{{Name: "session", Value: "test"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expired := createTestMailboxWithCookie(t, handler, ownerCookie, "expired", "cleanup-expired@icloud.com")
+	active := createTestMailboxWithCookie(t, handler, ownerCookie, "active", "cleanup-active@icloud.com")
+	inventory := createTestMailboxWithCookie(t, handler, ownerCookie, "inventory", "cleanup-inventory@icloud.com")
+	foreign := createTestMailboxWithCookie(t, handler, adminCookie, "foreign", "cleanup-foreign@icloud.com")
+	for _, id := range []string{expired.ID, active.ID, foreign.ID} {
+		if _, err := store.SetMailboxStatus(id, nil, nil, StatusOutbound, "test outbound"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.AddMessage(expired.ID, "saved", "sender@example.com", "code 123456", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	store.mu.Lock()
+	for i := range store.state.MailboxHTMLLinks {
+		link := &store.state.MailboxHTMLLinks[i]
+		switch link.MailboxID {
+		case expired.ID, inventory.ID, foreign.ID:
+			link.ActivatedAt = now.Add(-2 * time.Hour)
+			link.ExpiresAt = now.Add(-time.Hour)
+		case active.ID:
+			link.ActivatedAt = now.Add(-time.Hour)
+			link.ExpiresAt = now.Add(time.Hour)
+		}
+	}
+	err := store.saveLocked()
+	store.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var remoteDeletes []string
+	server.deletePrivacyMailbox = func(_ context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error) {
+		if session.OwnerID != owner.ID {
+			t.Fatalf("cleanup used owner %q, want %q", session.OwnerID, owner.ID)
+		}
+		remoteDeletes = append(remoteDeletes, email)
+		return ICloudMailboxDeleteResult{Email: email, Found: true, Deleted: true}, nil
+	}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/mailboxes/html-expired/cleanup", strings.NewReader(`{}`))
+	req.AddCookie(ownerCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("cleanup expired mailboxes = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Matched int `json:"matched"`
+		Deleted int `json:"deleted"`
+		Skipped int `json:"skipped"`
+		Failed  int `json:"failed"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Matched != 1 || body.Deleted != 1 || body.Skipped != 0 || body.Failed != 0 || !reflect.DeepEqual(remoteDeletes, []string{expired.Email}) {
+		t.Fatalf("cleanup response=%+v remote=%v body=%s", body, remoteDeletes, rr.Body.String())
+	}
+	if _, ok := store.FindMailboxByID(expired.ID); ok || len(store.MessagesForMailbox(expired.ID)) != 0 {
+		t.Fatal("expired outbound mailbox or its messages remain after cleanup")
+	}
+	for _, id := range []string{active.ID, inventory.ID, foreign.ID} {
+		if _, ok := store.FindMailboxByID(id); !ok {
+			t.Fatalf("non-target mailbox %s was deleted", id)
+		}
+	}
+}
+
 func TestDeleteMailboxPermanentlyDeletesRemoteBeforeLocalData(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
@@ -5356,7 +5522,7 @@ func TestMailboxHTMLDataUsesConfiguredMessageLimit(t *testing.T) {
 	}
 }
 
-func TestExpiredMailboxHTMLLinksAreCleanedWithoutChangingAPI(t *testing.T) {
+func TestExpiredMailboxHTMLLinksAreRetainedUntilExplicitRegeneration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	now := time.Now()
 	state := State{
@@ -5384,17 +5550,27 @@ func TestExpiredMailboxHTMLLinksAreCleanedWithoutChangingAPI(t *testing.T) {
 		t.Fatalf("legacy HTML TTL migration = %+v, want 604800 seconds", snapshot.SystemSettings)
 	}
 	if len(snapshot.MailboxHTMLLinks) != 1 {
-		t.Fatalf("HTML links after cleanup = %d, want one replacement", len(snapshot.MailboxHTMLLinks))
+		t.Fatalf("HTML links after reload = %d, want one retained link", len(snapshot.MailboxHTMLLinks))
 	}
-	replacement := snapshot.MailboxHTMLLinks[0]
-	if replacement.Token == "expired-html" || replacement.Token == "" || replacement.MailboxID != "mbx_1" {
-		t.Fatalf("invalid replacement HTML link: %+v", replacement)
+	retained := snapshot.MailboxHTMLLinks[0]
+	if retained.Token != "expired-html" || retained.MailboxID != "mbx_1" || retained.ActivatedAt.IsZero() || !retained.ExpiresAt.Equal(state.MailboxHTMLLinks[0].ExpiresAt) {
+		t.Fatalf("invalid retained HTML link: %+v", retained)
 	}
-	if !replacement.ActivatedAt.IsZero() || !replacement.ExpiresAt.IsZero() {
-		t.Fatalf("replacement HTML link should wait for first use: %+v", replacement)
+	if _, ok := store.FindMailboxHTMLLink("expired-html"); ok {
+		t.Fatal("expired HTML link should return gone instead of remaining accessible")
+	}
+	if links := store.ExpiredMailboxHTMLLinks(time.Now()); len(links) != 1 || links[0].Token != "expired-html" {
+		t.Fatalf("expired HTML links = %+v, want retained link while auto-delete is off", links)
 	}
 	if len(snapshot.Mailboxes) != 1 || snapshot.Mailboxes[0].APIToken != "api-stays-valid" || !snapshot.Mailboxes[0].APIActive {
-		t.Fatalf("mailbox API changed during cleanup: %+v", snapshot.Mailboxes)
+		t.Fatalf("mailbox API changed while retaining expiry state: %+v", snapshot.Mailboxes)
+	}
+	replacement, err := store.CreateMailboxHTMLLink("mbx_1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacement.Token == "" || replacement.Token == "expired-html" || !replacement.ActivatedAt.IsZero() || !replacement.ExpiresAt.IsZero() {
+		t.Fatalf("explicit regeneration did not create a new inactive HTML link: %+v", replacement)
 	}
 }
 

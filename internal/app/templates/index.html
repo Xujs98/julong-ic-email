@@ -553,6 +553,9 @@
     .search-field { min-width: 0; max-width: none; }
     .mailbox-filter-row { display: flex; gap: 8px; align-items: flex-end; justify-content: flex-end; min-width: 0; }
     .mailbox-filter-field { width: 100%; color: var(--muted); font-size: 12px; font-weight: 700; }
+    .mailbox-html-state-filter { grid-column: 1; display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .mailbox-html-state-filter[hidden] { display: none; }
+    .mailbox-html-state-label { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-weight: 800; }
     .mailbox-control-stack { grid-column: 2; display: grid; gap: 8px; justify-items: end; align-items: start; }
     .mailbox-action-row { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; justify-content: flex-end; }
     .pager { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; justify-content: flex-end; color: var(--muted); font-size: 13px; }
@@ -1099,6 +1102,7 @@
     @media (max-width: 760px) {
       .list-toolbar { grid-template-columns: 1fr; }
       .mailbox-filter-row, .pager { justify-content: flex-start; }
+      .mailbox-control-stack, .mailbox-html-state-filter { grid-column: 1; justify-items: start; }
     }
     @media (max-width: 680px) {
       .app-shell { padding: 8px; gap: 8px; }
@@ -1800,8 +1804,18 @@
                 </select>
               </label>
             </div>
+            <div id="mailboxHTMLStateFilter" class="mailbox-html-state-filter" hidden>
+              <span class="mailbox-html-state-label">HTML 状态</span>
+              <div class="segmented" role="group" aria-label="筛选 HTML 地址状态">
+                <button type="button" class="active" data-html-state-filter="all" aria-pressed="true" onclick="setMailboxHTMLStateFilter('all')">全部</button>
+                <button type="button" data-html-state-filter="activated" aria-pressed="false" onclick="setMailboxHTMLStateFilter('activated')">已激活</button>
+                <button type="button" data-html-state-filter="unactivated" aria-pressed="false" onclick="setMailboxHTMLStateFilter('unactivated')">未激活</button>
+                <button type="button" data-html-state-filter="expired" aria-pressed="false" onclick="setMailboxHTMLStateFilter('expired')">已过期</button>
+              </div>
+            </div>
             <div class="mailbox-control-stack">
               <div class="mailbox-action-row">
+                <button id="mailboxCleanupExpiredButton" type="button" class="danger" onclick="cleanupExpiredHTMLMailboxes()" hidden>清理全部已过期</button>
                 <button id="syncICloudMailboxesButton" onclick="syncICloudMailboxes()">同步已有邮箱</button>
                 <button id="mailboxExportAllButton" type="button" onclick="openMailboxExport('all')" hidden>全部导出</button>
                 <button onclick="clearMailboxSearch()">清空搜索</button>
@@ -2001,6 +2015,7 @@
     let mailboxPage = 1;
     let mailboxPageSize = 10;
     let activeMailboxAccountKey = 'all';
+    let activeMailboxHTMLStateFilter = 'all';
     let mailboxSearchTimer = null;
     const mailboxCodeResults = new Map();
     const mailboxSyncResults = new Map();
@@ -2153,6 +2168,14 @@
       if ($('mailboxBatchReturnButton')) $('mailboxBatchReturnButton').hidden = !outbound;
       if ($('mailboxExportAllButton')) $('mailboxExportAllButton').hidden = !outbound;
       if ($('mailboxBatchExportButton')) $('mailboxBatchExportButton').hidden = !outbound;
+      if ($('mailboxCleanupExpiredButton')) $('mailboxCleanupExpiredButton').hidden = !outbound;
+      const htmlStateFilter = $('mailboxHTMLStateFilter');
+      if (htmlStateFilter) htmlStateFilter.hidden = !outbound;
+      for (const button of document.querySelectorAll('[data-html-state-filter]')) {
+        const active = button.dataset.htmlStateFilter === activeMailboxHTMLStateFilter;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      }
     }
 
     function initViewNavigation() {
@@ -2273,7 +2296,7 @@
       updateHTMLTTLPreview();
       if ($('htmlPageMessageLimit')) $('htmlPageMessageLimit').value = String(settings.html_page_message_limit || 50);
       if ($('htmlPageRefreshSeconds')) $('htmlPageRefreshSeconds').value = String(settings.html_page_refresh_seconds || 20);
-      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `当前唯一登录/注册入口：${settings.admin_path || '/manage'}；邮件${settings.verification_only !== false ? '仅保留验证码' : '全部保留'}；HTML 页面展示最近 ${settings.html_page_message_limit || 50} 封、每 ${settings.html_page_refresh_seconds || 20} 秒刷新；地址首次访问后 ${formatTTLDuration(settings.html_link_ttl_seconds || 604800)} 过期${settings.html_expiry_delete_mailbox ? '，过期后自动删除邮箱' : '，过期后补发新地址'}。`;
+      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `当前唯一登录/注册入口：${settings.admin_path || '/manage'}；邮件${settings.verification_only !== false ? '仅保留验证码' : '全部保留'}；HTML 页面展示最近 ${settings.html_page_message_limit || 50} 封、每 ${settings.html_page_refresh_seconds || 20} 秒刷新；地址首次访问后 ${formatTTLDuration(settings.html_link_ttl_seconds || 604800)} 过期${settings.html_expiry_delete_mailbox ? '，过期后自动删除邮箱' : '，过期后保留已过期状态'}。`;
       return settings;
     }
 
@@ -2290,7 +2313,7 @@
       const data = await api('/api/system-settings', {method:'POST', body: JSON.stringify(payload)});
       const settings = data.settings || payload;
       if ($('systemSettingsStatus')) $('systemSettingsStatus').textContent = '系统设置已保存';
-      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `已保存：注册${settings.registration_enabled ? '开放' : '关闭'}；邮件${settings.verification_only ? '仅保留验证码' : '全部保留'}；唯一登录/注册入口 ${settings.admin_path}；HTML 页面展示最近 ${settings.html_page_message_limit} 封、每 ${settings.html_page_refresh_seconds} 秒刷新；地址首次访问后 ${formatTTLDuration(settings.html_link_ttl_seconds)} 过期${settings.html_expiry_delete_mailbox ? '并自动删除邮箱' : '后补发新地址'}。`;
+      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `已保存：注册${settings.registration_enabled ? '开放' : '关闭'}；邮件${settings.verification_only ? '仅保留验证码' : '全部保留'}；唯一登录/注册入口 ${settings.admin_path}；HTML 页面展示最近 ${settings.html_page_message_limit} 封、每 ${settings.html_page_refresh_seconds} 秒刷新；地址首次访问后 ${formatTTLDuration(settings.html_link_ttl_seconds)} 过期${settings.html_expiry_delete_mailbox ? '并自动删除邮箱' : '后保留已过期状态'}。`;
       log('系统设置已保存');
     }
 
@@ -3395,6 +3418,15 @@
       }, 260);
     }
 
+    function setMailboxHTMLStateFilter(value) {
+      const normalized = ['activated', 'unactivated', 'expired'].includes(value) ? value : 'all';
+      if (activeMailboxHTMLStateFilter === normalized) return;
+      activeMailboxHTMLStateFilter = normalized;
+      mailboxPage = 1;
+      renderMailboxViewMode();
+      loadMailboxPage().catch(err => log('筛选 HTML 状态失败：' + err.message));
+    }
+
     function clearMailboxSearch() {
       if ($('mailboxSearch')) $('mailboxSearch').value = '';
       mailboxPage = 1;
@@ -3496,6 +3528,9 @@
       });
       if (activeView === 'outbound') {
         params.set('status', 'outbound');
+        if (activeMailboxHTMLStateFilter !== 'all') {
+          params.set('html_state', activeMailboxHTMLStateFilter);
+        }
       } else {
         params.set('exclude_status', 'outbound');
       }
@@ -3991,6 +4026,34 @@
       const result = await executeMailboxBatch(rows, row => api(`/api/mailboxes/${encodeURIComponent(row.id)}/disable`, {method:'POST', body:'{}'}));
       log(`批量停用完成：成功 ${rows.length - result.errors.length}，失败 ${result.errors.length}`);
       await refresh();
+    }
+
+    async function cleanupExpiredHTMLMailboxes() {
+      if (!await askConfirm({
+        title: '清理全部已过期邮箱',
+        message: '将永久清理当前数据范围内所有已出库且 HTML 地址已过期的邮箱。',
+        detail: '系统会逐个删除 iCloud 远端地址以及本地邮箱、邮件、API 和 HTML 地址；远端删除失败的邮箱会保留。',
+        confirmText: '清理全部已过期',
+        tone: 'danger'
+      })) return;
+      const button = $('mailboxCleanupExpiredButton');
+      if (button) button.disabled = true;
+      try {
+        const data = await api('/api/mailboxes/html-expired/cleanup', {method:'POST', body:'{}'});
+        const deleted = Number(data.deleted || 0);
+        const failed = Number(data.failed || 0);
+        const skipped = Number(data.skipped || 0);
+        clearMailboxSelection();
+        mailboxPage = 1;
+        log(`过期邮箱清理完成：匹配 ${data.matched || 0}，删除 ${deleted}，跳过 ${skipped}，失败 ${failed}`);
+        showToast(failed > 0 ? `清理完成：删除 ${deleted}，失败 ${failed}` : `已清理 ${deleted} 个过期邮箱`);
+        await refresh();
+      } catch (err) {
+        log('清理全部已过期邮箱失败：' + err.message);
+        showToast('清理失败：' + err.message);
+      } finally {
+        if (button) button.disabled = false;
+      }
     }
 
     async function batchDeleteMailboxes() {

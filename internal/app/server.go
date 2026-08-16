@@ -405,29 +405,16 @@ func (s *Server) cleanupExpiredHTMLMailboxes(ctx context.Context, now time.Time)
 		if !ok {
 			continue
 		}
-		session, ok := s.sessionForMailbox(mailbox.OwnerID, mailbox.AccountID)
-		if !ok {
-			if s.logger != nil {
-				s.logger.Warn("expired HTML mailbox delete deferred: iCloud session missing", "mailbox_id", mailbox.ID, "email", mailbox.Email)
-			}
-			continue
-		}
 		deleteCtx, cancel := context.WithTimeout(ctx, htmlExpiryMailboxDeleteTimeout)
-		release, err := s.acquireMailboxSyncSlot(deleteCtx, mailbox.OwnerID)
-		if err == nil {
-			_, err = deleteRemote(deleteCtx, session, mailbox.Email)
-			release()
-		}
+		_, _, err := s.deleteMailboxRemoteThenLocal(deleteCtx, mailbox.ID, mailboxDeleteConditions{
+			RequireExpired: true,
+			ExpiredAt:      now,
+			DeleteRemote:   deleteRemote,
+		})
 		cancel()
 		if err != nil {
 			if s.logger != nil {
 				s.logger.Warn("expired HTML mailbox delete deferred", "mailbox_id", mailbox.ID, "email", mailbox.Email, "err", err)
-			}
-			continue
-		}
-		if err := s.store.DeleteMailbox(mailbox.ID); err != nil {
-			if s.logger != nil {
-				s.logger.Warn("expired HTML mailbox local cleanup failed", "mailbox_id", mailbox.ID, "email", mailbox.Email, "err", err)
 			}
 			continue
 		}
@@ -508,6 +495,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/accounts", s.handleCreateAccount)
 	s.mux.HandleFunc("GET /api/mailboxes", s.handleListMailboxes)
 	s.mux.HandleFunc("POST /api/mailboxes", s.handleCreateMailbox)
+	s.mux.HandleFunc("POST /api/mailboxes/html-expired/cleanup", s.handleCleanupExpiredHTMLMailboxes)
 	s.mux.HandleFunc("POST /api/mailboxes/remote-clean", s.handleCleanRemoteMailboxes)
 	s.mux.HandleFunc("POST /api/mailboxes/{id}/verify", s.handleVerifyMailbox)
 	s.mux.HandleFunc("POST /api/mailboxes/{id}/enable", s.handleEnableMailbox)
@@ -2187,8 +2175,9 @@ func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 	accountsByID := mailboxAccountMap(state.Accounts)
 	base := filterMailboxesByOwner(state.Mailboxes, strings.TrimSpace(r.URL.Query().Get("owner_id")), scopedOwnerID(r, s.store), s.isAdminRequest(r))
 	scopedBase := filterMailboxesByStatusScope(base, r.URL.Query())
-	groups := publicMailboxGroups(scopedBase, accountsByID)
-	filtered := filterMailboxesForList(scopedBase, accountsByID, r.URL.Query())
+	htmlScopedBase := filterMailboxesByHTMLState(scopedBase, s.store.Snapshot().MailboxHTMLLinks, r.URL.Query().Get("html_state"), time.Now())
+	groups := publicMailboxGroups(htmlScopedBase, accountsByID)
+	filtered := filterMailboxesForList(htmlScopedBase, accountsByID, r.URL.Query())
 	sortMailboxesForList(filtered)
 
 	page, pageSize, paged := mailboxListPagination(r)
@@ -2208,7 +2197,7 @@ func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 			Page:       page,
 			PageSize:   pageSize,
 			Total:      len(filtered),
-			TotalAll:   len(scopedBase),
+			TotalAll:   len(htmlScopedBase),
 			TotalPages: totalPages(len(filtered), pageSize),
 		},
 	}
@@ -2280,6 +2269,53 @@ func filterMailboxesByStatusScope(mailboxes []Mailbox, values url.Values) []Mail
 	return out
 }
 
+func filterMailboxesByHTMLState(mailboxes []Mailbox, links []MailboxHTMLLink, requested string, now time.Time) []Mailbox {
+	requested = normalizeMailboxHTMLStateFilter(requested)
+	if requested == "" {
+		return append([]Mailbox(nil), mailboxes...)
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	linksByMailbox := make(map[string]MailboxHTMLLink, len(links))
+	for _, link := range links {
+		mailboxID := strings.TrimSpace(link.MailboxID)
+		if mailboxID == "" {
+			continue
+		}
+		if _, exists := linksByMailbox[mailboxID]; !exists {
+			linksByMailbox[mailboxID] = link
+		}
+	}
+	out := make([]Mailbox, 0, len(mailboxes))
+	for _, mailbox := range mailboxes {
+		link, ok := linksByMailbox[mailbox.ID]
+		if mailboxHTMLState(link, ok, now) == requested {
+			out = append(out, mailbox)
+		}
+	}
+	return out
+}
+
+func normalizeMailboxHTMLStateFilter(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "activated", "unactivated", "expired":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
+}
+
+func mailboxHTMLState(link MailboxHTMLLink, exists bool, now time.Time) string {
+	if !exists || link.ActivatedAt.IsZero() {
+		return "unactivated"
+	}
+	if !link.ExpiresAt.IsZero() && !link.ExpiresAt.After(now) {
+		return "expired"
+	}
+	return "activated"
+}
+
 func mailboxListMatchesSearch(mailbox Mailbox, accountsByID map[string]Account, keyword string) bool {
 	account := accountsByID[strings.TrimSpace(mailbox.AccountID)]
 	haystack := strings.ToLower(strings.Join([]string{
@@ -2327,7 +2363,7 @@ func paginateMailboxes(mailboxes []Mailbox, page, pageSize int) []Mailbox {
 
 func mailboxListPagination(r *http.Request) (int, int, bool) {
 	values := r.URL.Query()
-	paged := values.Has("page") || values.Has("page_size") || values.Has("search") || values.Has("q") || values.Has("account_key") || values.Has("account_id") || values.Has("owner_id") || values.Has("status") || values.Has("exclude_status")
+	paged := values.Has("page") || values.Has("page_size") || values.Has("search") || values.Has("q") || values.Has("account_key") || values.Has("account_id") || values.Has("owner_id") || values.Has("status") || values.Has("exclude_status") || values.Has("html_state")
 	page := parseBoundedPositiveInt(values.Get("page"), 1, 1, 1_000_000)
 	pageSize := parseBoundedPositiveInt(values.Get("page_size"), mailboxListDefaultPageSize, 1, mailboxListMaxPageSize)
 	return page, pageSize, paged
@@ -2654,6 +2690,120 @@ func (s *Server) handleCleanRemoteMailboxes(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+type mailboxDeleteConditions struct {
+	RequireExpired  bool
+	RequireOutbound bool
+	ExpiredAt       time.Time
+	DeleteRemote    func(context.Context, ICloudSession, string) (ICloudMailboxDeleteResult, error)
+}
+
+func (s *Server) deleteMailboxRemoteThenLocal(ctx context.Context, mailboxID string, conditions mailboxDeleteConditions) (Mailbox, ICloudMailboxDeleteResult, error) {
+	mailbox, ok := s.store.FindMailboxByID(mailboxID)
+	if !ok {
+		return Mailbox{}, ICloudMailboxDeleteResult{}, errCode("mailbox_not_found", "邮箱不存在", false)
+	}
+	release, err := s.acquireMailboxSyncSlot(ctx, mailbox.OwnerID)
+	if err != nil {
+		return mailbox, ICloudMailboxDeleteResult{}, err
+	}
+	defer release()
+
+	mailbox, ok = s.store.FindMailboxByID(mailboxID)
+	if !ok {
+		return Mailbox{}, ICloudMailboxDeleteResult{}, errCode("mailbox_not_found", "邮箱不存在", false)
+	}
+	if conditions.RequireOutbound && mailbox.Status != StatusOutbound {
+		return mailbox, ICloudMailboxDeleteResult{}, errCode("mailbox_cleanup_skipped", "邮箱已不处于出库状态", false)
+	}
+	if conditions.RequireExpired {
+		now := conditions.ExpiredAt
+		if now.IsZero() {
+			now = time.Now()
+		}
+		link, exists := s.store.MailboxHTMLLinkForMailbox(mailbox.ID)
+		if !exists || mailboxHTMLState(link, true, now) != "expired" {
+			return mailbox, ICloudMailboxDeleteResult{}, errCode("mailbox_cleanup_skipped", "HTML 接码地址已不再过期", false)
+		}
+	}
+	session, ok := s.sessionForMailbox(mailbox.OwnerID, mailbox.AccountID)
+	if !ok {
+		return mailbox, ICloudMailboxDeleteResult{}, errCode("icloud_delete_session_missing", "未找到该邮箱对应的 Apple 账号登录态，已保留邮箱", true)
+	}
+	deleteRemote := conditions.DeleteRemote
+	if deleteRemote == nil {
+		deleteRemote = s.deletePrivacyMailbox
+	}
+	if deleteRemote == nil {
+		deleteRemote = NewICloudClient().DeletePrivacyMailbox
+	}
+	deletion, err := deleteRemote(ctx, session, mailbox.Email)
+	if err != nil {
+		return mailbox, ICloudMailboxDeleteResult{}, err
+	}
+	if err := s.store.DeleteMailbox(mailbox.ID); err != nil {
+		return mailbox, deletion, err
+	}
+	return mailbox, deletion, nil
+}
+
+func (s *Server) handleCleanupExpiredHTMLMailboxes(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	state := s.scopedState(r)
+	outbound := make([]Mailbox, 0, len(state.Mailboxes))
+	for _, mailbox := range state.Mailboxes {
+		if mailbox.Status == StatusOutbound {
+			outbound = append(outbound, mailbox)
+		}
+	}
+	candidates := filterMailboxesByHTMLState(outbound, s.store.Snapshot().MailboxHTMLLinks, "expired", now)
+	sortMailboxesForList(candidates)
+
+	type cleanupFailure struct {
+		MailboxID string `json:"mailbox_id"`
+		Email     string `json:"email"`
+		Code      string `json:"code,omitempty"`
+		Message   string `json:"message"`
+	}
+	failures := make([]cleanupFailure, 0)
+	deleted := 0
+	skipped := 0
+	for _, candidate := range candidates {
+		deleteCtx, cancel := context.WithTimeout(r.Context(), htmlExpiryMailboxDeleteTimeout)
+		mailbox, _, err := s.deleteMailboxRemoteThenLocal(deleteCtx, candidate.ID, mailboxDeleteConditions{
+			RequireExpired:  true,
+			RequireOutbound: true,
+			ExpiredAt:       now,
+		})
+		cancel()
+		if err == nil {
+			deleted++
+			continue
+		}
+		if isCodedError(err, "mailbox_cleanup_skipped") || isCodedError(err, "mailbox_not_found") {
+			skipped++
+			continue
+		}
+		failure := cleanupFailure{MailboxID: candidate.ID, Email: firstNonEmpty(mailbox.Email, candidate.Email), Message: err.Error()}
+		var coded codedError
+		if errors.As(err, &coded) {
+			failure.Code = coded.code
+		}
+		failures = append(failures, failure)
+	}
+	status := http.StatusOK
+	if len(failures) > 0 {
+		status = http.StatusMultiStatus
+	}
+	writeJSON(w, status, map[string]any{
+		"success":  true,
+		"matched":  len(candidates),
+		"deleted":  deleted,
+		"skipped":  skipped,
+		"failed":   len(failures),
+		"failures": failures,
+	})
+}
+
 func (s *Server) handleDeleteMailbox(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	mailbox, ok := s.store.FindMailboxByID(id)
@@ -2661,32 +2811,17 @@ func (s *Server) handleDeleteMailbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errCode("mailbox_not_found", "邮箱不存在", false))
 		return
 	}
-	session, ok := s.sessionForMailbox(mailbox.OwnerID, mailbox.AccountID)
-	if !ok {
-		writeError(w, http.StatusConflict, errCode("icloud_delete_session_missing", "未找到该邮箱对应的 Apple 账号登录态，已保留邮箱", true))
-		return
-	}
-	release, err := s.acquireMailboxSyncSlot(r.Context(), mailbox.OwnerID)
-	if err != nil {
-		writeError(w, http.StatusRequestTimeout, err)
-		return
-	}
-	deleteRemote := s.deletePrivacyMailbox
-	if deleteRemote == nil {
-		deleteRemote = NewICloudClient().DeletePrivacyMailbox
-	}
-	deletion, err := deleteRemote(r.Context(), session, mailbox.Email)
-	release()
+	mailbox, deletion, err := s.deleteMailboxRemoteThenLocal(r.Context(), mailbox.ID, mailboxDeleteConditions{})
 	if err != nil {
 		status := http.StatusBadGateway
 		if isCodedError(err, "icloud_delete_session_missing") {
 			status = http.StatusConflict
+		} else if isCodedError(err, "mailbox_not_found") {
+			status = http.StatusNotFound
+		} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			status = http.StatusRequestTimeout
 		}
 		writeError(w, status, err)
-		return
-	}
-	if err := s.store.DeleteMailbox(id); err != nil {
-		writeError(w, http.StatusNotFound, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
