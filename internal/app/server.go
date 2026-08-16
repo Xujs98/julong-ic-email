@@ -3420,14 +3420,21 @@ func (s *Server) keepAliveAppleAccountRound(ctx context.Context) {
 		release()
 		cancel()
 		if err != nil {
-			if isCodedError(err, "apple_account_auth_failed") {
-				state.LastCheckedAt = time.Now()
-				state.LastCheckOK = false
-				state.LastStatusMessage = "新接口登录态异常：" + err.Error()
-				session = withAppleAccountLoginState(session, state)
-				if saveErr := s.store.SaveICloudSessionForOwner(session.OwnerID, session); saveErr != nil && s.logger != nil {
-					s.logger.Warn("apple account keepalive save failed", "owner", s.ownerName(session.OwnerID), "account_id", session.AccountID, "err", saveErr)
-				}
+			if strings.TrimSpace(next.Scnt) == "" {
+				next = state
+			}
+			if strings.TrimSpace(next.APIKey) == "" {
+				next.APIKey = state.APIKey
+			}
+			if len(next.Cookies) == 0 {
+				next.Cookies = append([]SessionCookie(nil), state.Cookies...)
+			}
+			next.LastCheckedAt = time.Now()
+			next.LastCheckOK = false
+			next.LastStatusMessage = "新接口保活失败，系统将自动重试：" + err.Error()
+			session = withAppleAccountLoginState(session, next)
+			if saveErr := s.store.SaveICloudSessionForOwner(session.OwnerID, session); saveErr != nil && s.logger != nil {
+				s.logger.Warn("apple account keepalive save failed", "owner", s.ownerName(session.OwnerID), "account_id", session.AccountID, "err", saveErr)
 			}
 			if s.logger != nil {
 				s.logger.Warn("apple account keepalive failed", "owner", s.ownerName(session.OwnerID), "account_id", session.AccountID, "apple_id", session.AppleID, "err", err)
@@ -3464,13 +3471,7 @@ func (s *Server) appleAccountKeepAliveSessions() []ICloudSession {
 
 func appleAccountKeepAliveEligible(session ICloudSession) bool {
 	state, ok := appleAccountLoginState(session)
-	if !ok || strings.TrimSpace(state.APIKey) == "" {
-		return false
-	}
-	if !state.LastCheckedAt.IsZero() && !state.LastCheckOK {
-		return false
-	}
-	return true
+	return ok && strings.TrimSpace(state.APIKey) != ""
 }
 
 func appleAccountKeepAliveIntervalForSession(session ICloudSession, base time.Duration) time.Duration {

@@ -126,6 +126,28 @@ func TestMailboxTableHeaderStaysAboveRows(t *testing.T) {
 	}
 }
 
+func TestAppleAccountKeepAliveTemplateShowsAutomaticRetry(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`.manage-refresh-clock.retrying`,
+		`data-retrying=`,
+		`新接口重试`,
+		`系统${refreshAt ? `,
+		`自动重试`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("apple account keepalive retry source missing %q", want)
+		}
+	}
+	if strings.Contains(source, `新接口保活：已停止`) {
+		t.Fatal("failed Apple Account login state should keep retrying instead of showing keepalive stopped")
+	}
+}
+
 func TestConfiguredAdminPathIsOnlyLoginAndRegistrationEntry(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
@@ -875,9 +897,9 @@ func TestPublicSessionExposesPerLoginStateCheckStatus(t *testing.T) {
 	}
 }
 
-func TestPublicSessionHidesAppleKeepAliveTimeWhenLoginStateFailed(t *testing.T) {
+func TestPublicSessionExposesAppleKeepAliveRetryTimeWhenLoginStateFailed(t *testing.T) {
 	checkedAt := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
-	got := publicSession(&ICloudSession{
+	session := ICloudSession{
 		SavedAt: time.Now(),
 		AppleID: "failed@example.com",
 		LoginStates: []LoginState{{
@@ -888,12 +910,14 @@ func TestPublicSessionHidesAppleKeepAliveTimeWhenLoginStateFailed(t *testing.T) 
 			LastCheckOK:       false,
 			LastStatusMessage: "新接口登录态异常",
 		}},
-	})
+	}
+	got := publicSession(&session)
 	if !got.AppleAccountLoginSaved || !got.AppleAccountLoginChecked || got.AppleAccountLoginOK {
 		t.Fatalf("apple account failed state not exposed correctly: %+v", got)
 	}
-	if got.AppleAccountNextRefreshAt != "" {
-		t.Fatalf("failed apple account state should not expose keepalive time: %+v", got)
+	wantNext := checkedAt.Add(appleAccountKeepAliveIntervalForSession(session, appleAccountKeepAliveDefaultInterval))
+	if got.AppleAccountNextRefreshAt != formatTime(wantNext) {
+		t.Fatalf("failed apple account retry time = %q, want %q", got.AppleAccountNextRefreshAt, formatTime(wantNext))
 	}
 }
 
@@ -949,7 +973,7 @@ func TestAppleAccountKeepAliveRoundSavesUpdatedState(t *testing.T) {
 	}
 }
 
-func TestAppleAccountKeepAliveRoundSkipsFailedLoginState(t *testing.T) {
+func TestAppleAccountKeepAliveRoundRetriesFailedLoginState(t *testing.T) {
 	store := newTestStore(t)
 	ownerID := "owner-keepalive-failed"
 	account, err := store.AddAccountForOwner(ownerID, "KeepAliveFailed", "failed@example.com", "")
@@ -979,11 +1003,75 @@ func TestAppleAccountKeepAliveRoundSkipsFailedLoginState(t *testing.T) {
 		t.Fatalf("handler type = %T, want *Server", handler)
 	}
 	server.keepAliveAppleAccountState = func(ctx context.Context, state LoginState) (LoginState, error) {
-		t.Fatal("failed login state should not be kept alive")
+		state.Scnt = "recovered-scnt"
+		state.APIKey = "recovered-key"
+		markAppleAccountManageOK(&state)
 		return state, nil
 	}
 
 	server.keepAliveAppleAccountRound(context.Background())
+
+	got, ok := store.ICloudSessionForOwnerAccount(ownerID, account.ID)
+	if !ok {
+		t.Fatal("recovered session not found")
+	}
+	state, ok := appleAccountLoginState(got)
+	if !ok || !state.LastCheckOK || state.Scnt != "recovered-scnt" || state.APIKey != "recovered-key" {
+		t.Fatalf("retried apple account state = %+v ok=%v, want recovered state", state, ok)
+	}
+}
+
+func TestAppleAccountKeepAliveRoundSavesTransientFailureForRetry(t *testing.T) {
+	store := newTestStore(t)
+	ownerID := "owner-keepalive-transient"
+	account, err := store.AddAccountForOwner(ownerID, "KeepAliveTransient", "transient@example.com", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkedAt := time.Now().Add(-time.Hour)
+	session := ICloudSession{
+		OwnerID:   ownerID,
+		AccountID: account.ID,
+		AppleID:   "transient@example.com",
+		SavedAt:   time.Now(),
+		LoginStates: []LoginState{{
+			Kind:          LoginStateAppleAccount,
+			Scnt:          "old-scnt",
+			APIKey:        "old-key",
+			Cookies:       []SessionCookie{{Name: "session", Value: "cookie"}},
+			LastCheckedAt: checkedAt,
+			LastCheckOK:   true,
+		}},
+	}
+	if err := store.SaveICloudSessionForOwner(ownerID, session); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServer(Config{AppleAccountKeepAliveEnabled: true, AppleAccountKeepAliveMS: 1000}, store, discardLogger())
+	server, ok := handler.(*Server)
+	if !ok {
+		t.Fatalf("handler type = %T, want *Server", handler)
+	}
+	server.keepAliveAppleAccountState = func(ctx context.Context, state LoginState) (LoginState, error) {
+		state.Scnt = "rotated-scnt"
+		return state, errors.New("temporary network timeout")
+	}
+
+	server.keepAliveAppleAccountRound(context.Background())
+
+	got, ok := store.ICloudSessionForOwnerAccount(ownerID, account.ID)
+	if !ok {
+		t.Fatal("failed session not found")
+	}
+	state, ok := appleAccountLoginState(got)
+	if !ok || state.LastCheckOK || !state.LastCheckedAt.After(checkedAt) {
+		t.Fatalf("saved failed apple account state = %+v ok=%v", state, ok)
+	}
+	if state.Scnt != "rotated-scnt" || state.APIKey != "old-key" || len(state.Cookies) != 1 {
+		t.Fatalf("failed keepalive credentials were not preserved: %+v", state)
+	}
+	if !strings.Contains(state.LastStatusMessage, "系统将自动重试") || !strings.Contains(state.LastStatusMessage, "temporary network timeout") {
+		t.Fatalf("failed keepalive status = %q", state.LastStatusMessage)
+	}
 }
 
 func TestAppleAccountKeepAliveScanIntervalPollsBeforeBaseInterval(t *testing.T) {
