@@ -24,14 +24,18 @@ const (
 	maxHTMLLinkTTLSeconds       = 3650 * secondsPerDay
 	defaultHTMLPageMessageLimit = 50
 	maxHTMLPageMessageLimit     = 500
+	defaultHTMLPageRefresh      = 20
+	minHTMLPageRefresh          = 5
+	maxHTMLPageRefresh          = 3600
 )
 
 func defaultSystemSettings() SystemSettings {
 	return SystemSettings{
-		RegistrationEnabled:  true,
-		AdminPath:            defaultAdminPath,
-		HTMLLinkTTLSeconds:   defaultHTMLLinkTTLSeconds,
-		HTMLPageMessageLimit: defaultHTMLPageMessageLimit,
+		RegistrationEnabled:    true,
+		AdminPath:              defaultAdminPath,
+		HTMLLinkTTLSeconds:     defaultHTMLLinkTTLSeconds,
+		HTMLPageMessageLimit:   defaultHTMLPageMessageLimit,
+		HTMLPageRefreshSeconds: defaultHTMLPageRefresh,
 	}
 }
 
@@ -65,6 +69,15 @@ func normalizeSystemSettings(settings SystemSettings) SystemSettings {
 	}
 	if settings.HTMLPageMessageLimit > maxHTMLPageMessageLimit {
 		settings.HTMLPageMessageLimit = maxHTMLPageMessageLimit
+	}
+	if settings.HTMLPageRefreshSeconds <= 0 {
+		settings.HTMLPageRefreshSeconds = defaultHTMLPageRefresh
+	}
+	if settings.HTMLPageRefreshSeconds < minHTMLPageRefresh {
+		settings.HTMLPageRefreshSeconds = minHTMLPageRefresh
+	}
+	if settings.HTMLPageRefreshSeconds > maxHTMLPageRefresh {
+		settings.HTMLPageRefreshSeconds = maxHTMLPageRefresh
 	}
 	return settings
 }

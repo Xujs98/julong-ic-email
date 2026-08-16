@@ -534,6 +534,7 @@ func publicSystemSettings(settings SystemSettings) map[string]any {
 		"html_link_ttl_seconds":      settings.HTMLLinkTTLSeconds,
 		"html_link_ttl_days":         htmlLinkTTLDays(settings.HTMLLinkTTLSeconds),
 		"html_page_message_limit":    settings.HTMLPageMessageLimit,
+		"html_page_refresh_seconds":  settings.HTMLPageRefreshSeconds,
 		"html_expiry_delete_mailbox": settings.HTMLExpiryDeleteMailbox,
 		"updated_at":                 formatTime(settings.UpdatedAt),
 	}
@@ -568,6 +569,7 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		HTMLLinkTTLSeconds      *int   `json:"html_link_ttl_seconds"`
 		HTMLLinkTTLDays         *int   `json:"html_link_ttl_days"`
 		HTMLPageMessageLimit    *int   `json:"html_page_message_limit"`
+		HTMLPageRefreshSeconds  *int   `json:"html_page_refresh_seconds"`
 		HTMLExpiryDeleteMailbox *bool  `json:"html_expiry_delete_mailbox"`
 	}
 	if err := decodeJSON(r, &payload); err != nil {
@@ -602,6 +604,14 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		}
 		htmlPageMessageLimit = *payload.HTMLPageMessageLimit
 	}
+	htmlPageRefreshSeconds := current.HTMLPageRefreshSeconds
+	if payload.HTMLPageRefreshSeconds != nil {
+		if *payload.HTMLPageRefreshSeconds < minHTMLPageRefresh || *payload.HTMLPageRefreshSeconds > maxHTMLPageRefresh {
+			writeError(w, http.StatusBadRequest, errCode("invalid_html_page_refresh", "HTML 接码邮件自动刷新秒数必须是 5-3600", false))
+			return
+		}
+		htmlPageRefreshSeconds = *payload.HTMLPageRefreshSeconds
+	}
 	verificationOnly := !current.StoreAllMessages
 	if payload.VerificationOnly != nil {
 		verificationOnly = *payload.VerificationOnly
@@ -616,6 +626,7 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		AdminPath:               path,
 		HTMLLinkTTLSeconds:      htmlLinkTTLSeconds,
 		HTMLPageMessageLimit:    htmlPageMessageLimit,
+		HTMLPageRefreshSeconds:  htmlPageRefreshSeconds,
 		HTMLExpiryDeleteMailbox: htmlExpiryDeleteMailbox,
 	})
 	if err != nil {
@@ -699,7 +710,8 @@ func (s *Server) handleMailboxHTMLData(w http.ResponseWriter, r *http.Request) {
 	if msg, code, found := latestMailboxCode(append([]Message(nil), messages...), time.Now().Add(-30*24*time.Hour), "", time.Now()); found {
 		latest = map[string]any{"code": code, "subject": msg.Subject, "received_at": formatTime(msg.ReceivedAt)}
 	}
-	messageLimit := s.store.SystemSettings().HTMLPageMessageLimit
+	settings := s.store.SystemSettings()
+	messageLimit := settings.HTMLPageMessageLimit
 	if len(messages) > messageLimit {
 		messages = messages[:messageLimit]
 	}
@@ -712,14 +724,15 @@ func (s *Server) handleMailboxHTMLData(w http.ResponseWriter, r *http.Request) {
 		ttlSeconds = 0
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"success":       true,
-		"mailbox":       map[string]any{"email": mailbox.Email, "label": mailbox.Label, "status": mailbox.Status, "receive_count": mailbox.ReceiveCount},
-		"latest":        latest,
-		"messages":      out,
-		"message_limit": messageLimit,
-		"activated_at":  formatTime(link.ActivatedAt),
-		"expires_at":    formatTime(link.ExpiresAt),
-		"ttl_seconds":   ttlSeconds,
+		"success":         true,
+		"mailbox":         map[string]any{"email": mailbox.Email, "label": mailbox.Label, "status": mailbox.Status, "receive_count": mailbox.ReceiveCount},
+		"latest":          latest,
+		"messages":        out,
+		"message_limit":   messageLimit,
+		"refresh_seconds": settings.HTMLPageRefreshSeconds,
+		"activated_at":    formatTime(link.ActivatedAt),
+		"expires_at":      formatTime(link.ExpiresAt),
+		"ttl_seconds":     ttlSeconds,
 	})
 }
 

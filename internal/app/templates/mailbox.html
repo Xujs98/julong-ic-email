@@ -26,16 +26,20 @@
   <main class="wrap">
     <header class="head"><div><div class="brand"><img class="logo" src="/logo.png" alt=""><span>矩龙邮箱</span></div><div class="muted" id="email">正在读取邮箱…</div></div><div class="toolbar"><span class="badge" id="expiry">链接检查中</span><button onclick="loadData()">刷新</button></div></header>
     <section class="card latest"><div><div class="tiny">最新验证码</div><div class="code" id="code">—</div><div class="muted" id="codeMeta">等待邮件</div></div><div class="muted" id="count">0 封邮件</div></section>
-    <section class="card"><div class="toolbar" style="justify-content:space-between"><div><strong>最近邮件</strong><div class="tiny">页面每 10 秒自动刷新，API 地址永不过期。</div></div><span class="tiny" id="updated">—</span></div><div id="messages" class="empty">正在读取…</div></section>
+    <section class="card"><div class="toolbar" style="justify-content:space-between"><div><strong>最近邮件</strong><div class="tiny" id="refreshInfo">页面默认每 20 秒自动刷新，API 地址永不过期。</div></div><span class="tiny" id="updated">—</span></div><div id="messages" class="empty">正在读取…</div></section>
   </main>
   <script>
     const token = location.pathname.split('/').filter(Boolean).pop();
     let lastMessageFingerprint = '';
     let ttlSeconds = 0;
     let ttlMeasuredAt = Date.now();
+    let refreshSeconds = 20;
+    let refreshTimer = 0;
     function formatTTL(seconds){let remaining=Math.max(0,Math.floor(Number(seconds)||0));if(remaining<=0)return'已过期';const d=Math.floor(remaining/86400);remaining%=86400;const h=Math.floor(remaining/3600);remaining%=3600;const m=Math.floor(remaining/60);const s=remaining%60;return`剩余 ${d}天 ${h}时 ${m}分 ${s}秒`}
     function setTTL(seconds){ttlSeconds=Math.max(0,Math.floor(Number(seconds)||0));ttlMeasuredAt=Date.now();renderTTL()}
     function renderTTL(){const elapsed=Math.floor((Date.now()-ttlMeasuredAt)/1000);document.getElementById('expiry').textContent=formatTTL(Math.max(0,ttlSeconds-elapsed))}
+    function setRefreshSeconds(seconds){refreshSeconds=Math.min(3600,Math.max(5,Math.floor(Number(seconds)||20)));document.getElementById('refreshInfo').textContent=`页面每 ${refreshSeconds} 秒自动刷新，API 地址永不过期。`}
+    function scheduleReload(){clearTimeout(refreshTimer);refreshTimer=setTimeout(loadData,refreshSeconds*1000)}
     function formatDateTime(value){if(!value)return'—';const date=new Date(value);if(Number.isNaN(date.getTime()))return String(value);return date.toLocaleString('zh-CN',{hour12:false})}
     function looksLikeHTML(value){const text=String(value||'').trim().toLowerCase();return Boolean(text&&['<!doctype html','<html','<head','<body','<table','<style','<div','<p ','<p>','<span'].some(marker=>text.includes(marker)))}
     function cleanLegacyText(value,subject){let text=String(value||'');for(let i=0;i<4;i++){text=text.replace(/@font-face\s*\{[^{}]*\}/gi,' ').replace(/[^{}]{0,240}\{[^{}]*\}/g,' ')}text=text.replace(/(?:font|line-height|padding|margin|width|height|display|color|background|border|text-align|mso-[\w-]+|-webkit-[\w-]+)\s*:[^;]{0,240};/gi,' ');text=text.replace(/\s+/g,' ').trim();const title=String(subject||'').trim();if(title&&text.startsWith(title+' '+title))text=text.slice(title.length).trim();return text}
@@ -56,11 +60,11 @@
     }
     async function loadData(){
       try{const res=await fetch(`/mailbox/${encodeURIComponent(token)}/data`,{cache:'no-store'});const data=await res.json();if(!res.ok)throw new Error(data.message||'链接已过期');
-        document.getElementById('email').textContent=data.mailbox.email||'—';document.getElementById('count').textContent=`${data.messages.length} 封邮件`;setTTL(data.ttl_seconds);document.getElementById('updated').textContent=new Date().toLocaleTimeString();
+        document.getElementById('email').textContent=data.mailbox.email||'—';document.getElementById('count').textContent=`${data.messages.length} 封邮件`;setTTL(data.ttl_seconds);setRefreshSeconds(data.refresh_seconds);document.getElementById('updated').textContent=new Date().toLocaleTimeString();
         const latest=data.latest||{};document.getElementById('code').textContent=latest.code||'—';document.getElementById('codeMeta').textContent=latest.code?`${latest.subject||'验证码邮件'} · ${formatDateTime(latest.received_at)}`:'暂未识别到验证码';renderMessages(data.messages||[]);
-      }catch(err){setTTL(0);document.getElementById('messages').className='empty';document.getElementById('messages').textContent=err.message||'链接已过期';}
+      }catch(err){setTTL(0);document.getElementById('messages').className='empty';document.getElementById('messages').textContent=err.message||'链接已过期';}finally{scheduleReload()}
     }
-    loadData();setInterval(renderTTL,1000);setInterval(loadData,10000);
+    loadData();setInterval(renderTTL,1000);
   </script>
 </body>
 </html>

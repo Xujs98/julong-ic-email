@@ -95,6 +95,9 @@ func TestMailboxHTMLPageShowsDayHourMinuteSecondCountdown(t *testing.T) {
 		`setTTL(data.ttl_seconds)`,
 		`Date.now()-ttlMeasuredAt`,
 		`setInterval(renderTTL,1000)`,
+		`setRefreshSeconds(data.refresh_seconds)`,
+		`setTimeout(loadData,refreshSeconds*1000)`,
+		`id="refreshInfo"`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("mailbox HTML countdown source missing %q", want)
@@ -181,11 +184,13 @@ func TestSystemSettingsTemplateIncludesMailRetentionAndExpiryDeleteSwitches(t *t
 		`id="verificationOnly"`,
 		`id="htmlExpiryDeleteMailbox"`,
 		`id="htmlPageMessageLimit"`,
+		`id="htmlPageRefreshSeconds"`,
 		`id="htmlLinkTTLSeconds"`,
 		`id="htmlLinkTTLPreview"`,
 		`verification_only:`,
 		`html_link_ttl_seconds:`,
 		`html_page_message_limit:`,
+		`html_page_refresh_seconds:`,
 		`html_expiry_delete_mailbox:`,
 		`formatTTLDuration`,
 	} {
@@ -5136,32 +5141,43 @@ func TestSystemSettingsMessageRetentionAndExpiryDeleteSwitches(t *testing.T) {
 			VerificationOnly        bool `json:"verification_only"`
 			HTMLExpiryDeleteMailbox bool `json:"html_expiry_delete_mailbox"`
 			HTMLPageMessageLimit    int  `json:"html_page_message_limit"`
+			HTMLPageRefreshSeconds  int  `json:"html_page_refresh_seconds"`
 			HTMLLinkTTLSeconds      int  `json:"html_link_ttl_seconds"`
 		} `json:"settings"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.Settings.VerificationOnly || body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 50 || body.Settings.HTMLLinkTTLSeconds != 604800 {
-		t.Fatalf("default settings = %+v, want verification-only on, expiry-delete off, limit 50 and TTL 604800 seconds", body.Settings)
+	if !body.Settings.VerificationOnly || body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 50 || body.Settings.HTMLPageRefreshSeconds != 20 || body.Settings.HTMLLinkTTLSeconds != 604800 {
+		t.Fatalf("default settings = %+v, want verification-only on, expiry-delete off, limit 50, refresh 20 seconds and TTL 604800 seconds", body.Settings)
 	}
 
 	rr = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":true,"verification_only":false,"admin_path":"/manage","html_link_ttl_seconds":5,"html_page_message_limit":120,"html_expiry_delete_mailbox":true}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":true,"verification_only":false,"admin_path":"/manage","html_link_ttl_seconds":5,"html_page_message_limit":120,"html_page_refresh_seconds":35,"html_expiry_delete_mailbox":true}`))
 	req.AddCookie(adminCookie)
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("save settings switches = %d body=%s", rr.Code, rr.Body.String())
 	}
 	settings := store.SystemSettings()
-	if !settings.StoreAllMessages || !settings.HTMLExpiryDeleteMailbox || settings.HTMLPageMessageLimit != 120 || settings.HTMLLinkTTLSeconds != 5 {
-		t.Fatalf("stored settings = %+v, want all messages, expiry deletion, limit 120 and TTL 5 seconds", settings)
+	if !settings.StoreAllMessages || !settings.HTMLExpiryDeleteMailbox || settings.HTMLPageMessageLimit != 120 || settings.HTMLPageRefreshSeconds != 35 || settings.HTMLLinkTTLSeconds != 5 {
+		t.Fatalf("stored settings = %+v, want all messages, expiry deletion, limit 120, refresh 35 seconds and TTL 5 seconds", settings)
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Settings.VerificationOnly || !body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 120 || body.Settings.HTMLLinkTTLSeconds != 5 {
+	if body.Settings.VerificationOnly || !body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 120 || body.Settings.HTMLPageRefreshSeconds != 35 || body.Settings.HTMLLinkTTLSeconds != 5 {
 		t.Fatalf("saved public settings = %+v", body.Settings)
+	}
+
+	for _, invalid := range []int{4, 3601} {
+		rr = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(fmt.Sprintf(`{"registration_enabled":true,"admin_path":"/manage","html_page_refresh_seconds":%d}`, invalid)))
+		req.AddCookie(adminCookie)
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("save refresh %d seconds = %d body=%s, want 400", invalid, rr.Code, rr.Body.String())
+		}
 	}
 }
 
@@ -5169,6 +5185,7 @@ func TestMailboxHTMLDataUsesConfiguredMessageLimit(t *testing.T) {
 	store := newTestStore(t)
 	settings := store.SystemSettings()
 	settings.HTMLPageMessageLimit = 1
+	settings.HTMLPageRefreshSeconds = 37
 	if _, err := store.SaveSystemSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -5195,9 +5212,10 @@ func TestMailboxHTMLDataUsesConfiguredMessageLimit(t *testing.T) {
 		t.Fatalf("mailbox HTML data = %d body=%s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		Messages     []publicMessage `json:"messages"`
-		MessageLimit int             `json:"message_limit"`
-		Latest       struct {
+		Messages       []publicMessage `json:"messages"`
+		MessageLimit   int             `json:"message_limit"`
+		RefreshSeconds int             `json:"refresh_seconds"`
+		Latest         struct {
 			Code string `json:"code"`
 		} `json:"latest"`
 	}
@@ -5206,6 +5224,9 @@ func TestMailboxHTMLDataUsesConfiguredMessageLimit(t *testing.T) {
 	}
 	if body.MessageLimit != 1 || len(body.Messages) != 1 || body.Messages[0].Subject != "Newest notification" {
 		t.Fatalf("limited HTML messages = %+v limit=%d", body.Messages, body.MessageLimit)
+	}
+	if body.RefreshSeconds != 37 {
+		t.Fatalf("HTML refresh seconds = %d, want 37", body.RefreshSeconds)
 	}
 	if body.Latest.Code != "246810" {
 		t.Fatalf("latest verification code = %q, want 246810 from messages outside display limit", body.Latest.Code)

@@ -46,6 +46,7 @@ type SystemSettings struct {
 	HTMLLinkTTLSeconds      int       `json:"html_link_ttl_seconds,omitempty"`
 	HTMLLinkTTLDays         int       `json:"html_link_ttl_days,omitempty"`
 	HTMLPageMessageLimit    int       `json:"html_page_message_limit"`
+	HTMLPageRefreshSeconds  int       `json:"html_page_refresh_seconds"`
 	HTMLExpiryDeleteMailbox bool      `json:"html_expiry_delete_mailbox,omitempty"`
 	UpdatedAt               time.Time `json:"updated_at,omitempty"`
 }
