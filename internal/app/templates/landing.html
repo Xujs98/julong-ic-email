@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>矩龙邮箱</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <style>
+    * { box-sizing: border-box; }
+    :root { color-scheme: light; --ink:#0b1d38; --muted:#60718c; --line:rgba(74,112,170,.18); --accent:#3b82f6; }
+    body {
+      margin:0; min-height:100vh; display:grid; place-items:center; overflow:hidden;
+      color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+      background:radial-gradient(circle at 15% 15%,rgba(59,130,246,.16),transparent 30%),radial-gradient(circle at 85% 82%,rgba(19,184,166,.14),transparent 28%),linear-gradient(145deg,#f8fbff 0%,#edf5ff 52%,#f3fbf9 100%);
+    }
+    body::before, body::after {
+      content:""; position:fixed; width:320px; height:320px; border:1px solid rgba(255,255,255,.72);
+      border-radius:50%; box-shadow:0 0 90px rgba(59,130,246,.08);
+    }
+    body::before { top:-180px; right:-110px; }
+    body::after { bottom:-210px; left:-120px; }
+    main {
+      position:relative; z-index:1; width:min(560px,calc(100% - 36px)); padding:54px 36px;
+      border:1px solid var(--line); border-radius:30px; background:rgba(255,255,255,.82);
+      box-shadow:0 32px 100px rgba(34,72,126,.14); backdrop-filter:blur(20px); text-align:center;
+    }
+    .logo {
+      width:92px; height:92px; padding:10px; border-radius:26px; background:#fff;
+      box-shadow:0 16px 40px rgba(59,130,246,.18); object-fit:contain;
+    }
+    .eyebrow { margin-top:24px; color:var(--accent); font-size:12px; font-weight:900; letter-spacing:.22em; }
+    h1 { margin:10px 0 0; font-size:clamp(34px,8vw,52px); letter-spacing:-.05em; }
+    p { margin:16px 0 0; color:var(--muted); font-size:18px; line-height:1.8; }
+    .welcome { font-weight:700; color:#385170; }
+    @media (max-width:520px) {
+      main { padding:42px 24px; border-radius:24px; }
+      .logo { width:78px; height:78px; border-radius:22px; }
+      p { font-size:16px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <img class="logo" src="/logo.png" alt="矩龙邮箱 Logo">
+    <div class="eyebrow">JULONG MAIL</div>
+    <h1>矩龙邮箱</h1>
+    <p class="welcome">欢迎使用矩龙邮箱</p>
+  </main>
+</body>
+</html>

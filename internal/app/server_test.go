@@ -73,7 +73,7 @@ func TestBrandAssetsAreServed(t *testing.T) {
 		})
 	}
 
-	for _, name := range []string{"templates/index.html", "templates/login.html", "templates/manage.html", "templates/mailbox.html", "templates/mailbox_expired.html"} {
+	for _, name := range []string{"templates/landing.html", "templates/index.html", "templates/login.html", "templates/manage.html", "templates/mailbox.html", "templates/mailbox_expired.html"} {
 		data, err := webFS.ReadFile(name)
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
@@ -111,8 +111,8 @@ func TestConfiguredAdminPathIsOnlyLoginAndRegistrationEntry(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
-	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/manage" {
-		t.Fatalf("unauthenticated home = %d location=%q, want redirect to /manage", rr.Code, rr.Header().Get("Location"))
+	if rr.Code != http.StatusOK || rr.Header().Get("Location") != "" || !strings.Contains(rr.Body.String(), "欢迎使用矩龙邮箱") || strings.Contains(rr.Body.String(), "/manage") {
+		t.Fatalf("unauthenticated home exposed entry: status=%d location=%q body=%s", rr.Code, rr.Header().Get("Location"), rr.Body.String())
 	}
 
 	rr = httptest.NewRecorder()
@@ -134,10 +134,22 @@ func TestConfiguredAdminPathIsOnlyLoginAndRegistrationEntry(t *testing.T) {
 	}
 
 	adminCookie, _ := registerTestUser(t, handler, "entry-admin", "admin123")
+	rr = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(adminCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "管理总览") {
+		t.Fatalf("authenticated home = %d body=%s", rr.Code, rr.Body.String())
+	}
 	settings := store.SystemSettings()
 	settings.AdminPath = "/julongyx"
 	if _, err := store.SaveSystemSettings(settings); err != nil {
 		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rr.Code != http.StatusOK || strings.Contains(rr.Body.String(), "/julongyx") || strings.Contains(rr.Body.String(), "登录") || strings.Contains(rr.Body.String(), "注册") {
+		t.Fatalf("public landing exposed custom entry: status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
 	rr = httptest.NewRecorder()
@@ -164,7 +176,7 @@ func TestConfiguredAdminPathIsOnlyLoginAndRegistrationEntry(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/julongyx/login", strings.NewReader(`{"username":"entry-admin","password":"admin123"}`))
+	req = httptest.NewRequest(http.MethodPost, "/julongyx/login", strings.NewReader(`{"username":"entry-admin","password":"admin123"}`))
 	req.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {

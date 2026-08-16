@@ -537,7 +537,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, _, ok := s.currentWebSession(r); !ok {
-		http.Redirect(w, r, s.store.SystemSettings().AdminPath, http.StatusFound)
+		s.writeTemplate(w, "templates/landing.html")
 		return
 	}
 	s.writeTemplate(w, "templates/index.html")
