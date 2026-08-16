@@ -163,9 +163,13 @@ func TestSystemSettingsTemplateIncludesMailRetentionAndExpiryDeleteSwitches(t *t
 		`id="verificationOnly"`,
 		`id="htmlExpiryDeleteMailbox"`,
 		`id="htmlPageMessageLimit"`,
+		`id="htmlLinkTTLSeconds"`,
+		`id="htmlLinkTTLPreview"`,
 		`verification_only:`,
+		`html_link_ttl_seconds:`,
 		`html_page_message_limit:`,
 		`html_expiry_delete_mailbox:`,
+		`formatTTLDuration`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("system settings template source missing %q", want)
@@ -4987,8 +4991,8 @@ func TestMailboxHTMLLinkAndSystemSettings(t *testing.T) {
 	if mailbox.HTMLLinkActivated != "" || mailbox.HTMLLinkExpires != "" {
 		t.Fatalf("new mailbox HTML link should be inactive: %+v", mailbox)
 	}
-	if mailbox.Label != "demo" || mailbox.HTMLLinkTTLDays != 7 {
-		t.Fatalf("new mailbox label/HTML TTL = %+v, want label demo and 7 days", mailbox)
+	if mailbox.Label != "demo" || mailbox.HTMLLinkTTLSeconds != 604800 {
+		t.Fatalf("new mailbox label/HTML TTL = %+v, want label demo and 604800 seconds", mailbox)
 	}
 
 	rr := httptest.NewRecorder()
@@ -5018,7 +5022,7 @@ func TestMailboxHTMLLinkAndSystemSettings(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":false,"admin_path":"/control-panel","html_link_ttl_days":2}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":false,"admin_path":"/control-panel","html_link_ttl_seconds":93784}`))
 	req.AddCookie(adminCookie)
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -5042,7 +5046,7 @@ func TestMailboxHTMLLinkAndSystemSettings(t *testing.T) {
 	if activatedLink.ActivatedAt.Before(activationStartedAt) {
 		t.Fatalf("HTML link activated before first request: %s < %s", activatedLink.ActivatedAt, activationStartedAt)
 	}
-	if want := activatedLink.ActivatedAt.AddDate(0, 0, 2); !activatedLink.ExpiresAt.Equal(want) {
+	if want := activatedLink.ActivatedAt.Add(93784 * time.Second); !activatedLink.ExpiresAt.Equal(want) {
 		t.Fatalf("HTML link expires at %s, want %s", activatedLink.ExpiresAt, want)
 	}
 	firstActivatedAt := activatedLink.ActivatedAt
@@ -5080,8 +5084,8 @@ func TestMailboxHTMLLinkAndSystemSettings(t *testing.T) {
 	if mailboxList.Mailboxes[0].HTMLLinkActivated == "" || mailboxList.Mailboxes[0].HTMLLinkExpires == "" {
 		t.Fatalf("mailbox list omitted HTML expiry fields: %+v", mailboxList.Mailboxes[0])
 	}
-	if mailboxList.Mailboxes[0].Label != "demo" || mailboxList.Mailboxes[0].HTMLLinkTTLDays != 2 {
-		t.Fatalf("mailbox list label/HTML TTL = %+v, want label demo and 2 days", mailboxList.Mailboxes[0])
+	if mailboxList.Mailboxes[0].Label != "demo" || mailboxList.Mailboxes[0].HTMLLinkTTLSeconds != 93784 {
+		t.Fatalf("mailbox list label/HTML TTL = %+v, want label demo and 93784 seconds", mailboxList.Mailboxes[0])
 	}
 
 	rr = httptest.NewRecorder()
@@ -5114,30 +5118,31 @@ func TestSystemSettingsMessageRetentionAndExpiryDeleteSwitches(t *testing.T) {
 			VerificationOnly        bool `json:"verification_only"`
 			HTMLExpiryDeleteMailbox bool `json:"html_expiry_delete_mailbox"`
 			HTMLPageMessageLimit    int  `json:"html_page_message_limit"`
+			HTMLLinkTTLSeconds      int  `json:"html_link_ttl_seconds"`
 		} `json:"settings"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.Settings.VerificationOnly || body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 50 {
-		t.Fatalf("default settings = %+v, want verification-only on, expiry-delete off and limit 50", body.Settings)
+	if !body.Settings.VerificationOnly || body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 50 || body.Settings.HTMLLinkTTLSeconds != 604800 {
+		t.Fatalf("default settings = %+v, want verification-only on, expiry-delete off, limit 50 and TTL 604800 seconds", body.Settings)
 	}
 
 	rr = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":true,"verification_only":false,"admin_path":"/manage","html_link_ttl_days":7,"html_page_message_limit":120,"html_expiry_delete_mailbox":true}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":true,"verification_only":false,"admin_path":"/manage","html_link_ttl_seconds":5,"html_page_message_limit":120,"html_expiry_delete_mailbox":true}`))
 	req.AddCookie(adminCookie)
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("save settings switches = %d body=%s", rr.Code, rr.Body.String())
 	}
 	settings := store.SystemSettings()
-	if !settings.StoreAllMessages || !settings.HTMLExpiryDeleteMailbox || settings.HTMLPageMessageLimit != 120 {
-		t.Fatalf("stored settings = %+v, want all messages, expiry deletion and limit 120", settings)
+	if !settings.StoreAllMessages || !settings.HTMLExpiryDeleteMailbox || settings.HTMLPageMessageLimit != 120 || settings.HTMLLinkTTLSeconds != 5 {
+		t.Fatalf("stored settings = %+v, want all messages, expiry deletion, limit 120 and TTL 5 seconds", settings)
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Settings.VerificationOnly || !body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 120 {
+	if body.Settings.VerificationOnly || !body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 120 || body.Settings.HTMLLinkTTLSeconds != 5 {
 		t.Fatalf("saved public settings = %+v", body.Settings)
 	}
 }
@@ -5213,6 +5218,9 @@ func TestExpiredMailboxHTMLLinksAreCleanedWithoutChangingAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := store.Snapshot()
+	if snapshot.SystemSettings.HTMLLinkTTLSeconds != 604800 || snapshot.SystemSettings.HTMLLinkTTLDays != 0 {
+		t.Fatalf("legacy HTML TTL migration = %+v, want 604800 seconds", snapshot.SystemSettings)
+	}
 	if len(snapshot.MailboxHTMLLinks) != 1 {
 		t.Fatalf("HTML links after cleanup = %d, want one replacement", len(snapshot.MailboxHTMLLinks))
 	}

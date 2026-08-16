@@ -835,6 +835,7 @@
       border-radius: 8px;
     }
     .hint { color: var(--faint); font-size: 12px; line-height: 1.6; padding: 0 18px 16px; }
+    .duration-preview { color: var(--green-2); font-size: 12px; font-weight: 900; }
     .table-wrap { overflow: auto; }
     table { width: 100%; border-collapse: collapse; min-width: 940px; }
     th, td { border-top: 1px solid var(--line); padding: 13px 14px; text-align: left; vertical-align: middle; }
@@ -1857,7 +1858,7 @@
             <label class="checkline"><input id="verificationOnly" type="checkbox"> 只保留验证码邮件</label>
             <label class="checkline"><input id="htmlExpiryDeleteMailbox" type="checkbox"> HTML 接码地址过期后自动删除邮箱</label>
             <label>后台入口路径<input id="adminPath" placeholder="/manage" pattern="/[A-Za-z0-9_/-]+"></label>
-            <label>HTML 接码地址过期天数<input id="htmlLinkTTLDays" type="number" min="1" max="3650" value="7"></label>
+            <label>HTML 接码地址过期秒数<input id="htmlLinkTTLSeconds" type="number" min="1" max="315360000" value="604800" oninput="updateHTMLTTLPreview()"><span id="htmlLinkTTLPreview" class="duration-preview" aria-live="polite">预览：7天 0时 0分 0秒</span></label>
             <label>HTML 页面邮件展示数量<input id="htmlPageMessageLimit" type="number" min="1" max="500" value="50"></label>
             <div class="full hint">关闭“只保留验证码邮件”后会保存收到的全部邮件，最新验证码和取码 API 仍只提取验证码。开启过期自动删除后，会先永久删除 iCloud 隐私邮箱，成功后再清理本地邮箱、邮件、API 和 HTML 地址；远端失败会保留并重试。</div>
           </div>
@@ -2236,6 +2237,25 @@
       return data;
     }
 
+    function formatTTLDuration(totalSeconds) {
+      let remaining = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      const days = Math.floor(remaining / 86400);
+      remaining %= 86400;
+      const hours = Math.floor(remaining / 3600);
+      remaining %= 3600;
+      const minutes = Math.floor(remaining / 60);
+      const seconds = remaining % 60;
+      return `${days}天 ${hours}时 ${minutes}分 ${seconds}秒`;
+    }
+
+    function updateHTMLTTLPreview() {
+      const input = $('htmlLinkTTLSeconds');
+      const preview = $('htmlLinkTTLPreview');
+      if (!input || !preview) return;
+      const seconds = Math.max(0, Number.parseInt(input.value, 10) || 0);
+      preview.textContent = `预览：${formatTTLDuration(seconds)}`;
+    }
+
     async function loadSystemSettings() {
       const data = await api('/api/system-settings');
       const settings = data.settings || {};
@@ -2243,9 +2263,10 @@
       if ($('verificationOnly')) $('verificationOnly').checked = settings.verification_only !== false;
       if ($('htmlExpiryDeleteMailbox')) $('htmlExpiryDeleteMailbox').checked = !!settings.html_expiry_delete_mailbox;
       if ($('adminPath')) $('adminPath').value = settings.admin_path || '/manage';
-      if ($('htmlLinkTTLDays')) $('htmlLinkTTLDays').value = String(settings.html_link_ttl_days || 7);
+      if ($('htmlLinkTTLSeconds')) $('htmlLinkTTLSeconds').value = String(settings.html_link_ttl_seconds || 604800);
+      updateHTMLTTLPreview();
       if ($('htmlPageMessageLimit')) $('htmlPageMessageLimit').value = String(settings.html_page_message_limit || 50);
-      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `当前后台入口：${settings.admin_path || '/manage'}；邮件${settings.verification_only !== false ? '仅保留验证码' : '全部保留'}；HTML 页面展示最近 ${settings.html_page_message_limit || 50} 封；地址首次访问后 ${settings.html_link_ttl_days || 7} 天过期${settings.html_expiry_delete_mailbox ? '，过期后自动删除邮箱' : '，过期后补发新地址'}。`;
+      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `当前后台入口：${settings.admin_path || '/manage'}；邮件${settings.verification_only !== false ? '仅保留验证码' : '全部保留'}；HTML 页面展示最近 ${settings.html_page_message_limit || 50} 封；地址首次访问后 ${formatTTLDuration(settings.html_link_ttl_seconds || 604800)} 过期${settings.html_expiry_delete_mailbox ? '，过期后自动删除邮箱' : '，过期后补发新地址'}。`;
       return settings;
     }
 
@@ -2254,14 +2275,14 @@
         registration_enabled: !!($('registrationEnabled') && $('registrationEnabled').checked),
         verification_only: !!($('verificationOnly') && $('verificationOnly').checked),
         admin_path: ($('adminPath') ? $('adminPath').value : '/manage').trim(),
-        html_link_ttl_days: boundedInt('htmlLinkTTLDays', 7, 1, 3650),
+        html_link_ttl_seconds: boundedInt('htmlLinkTTLSeconds', 604800, 1, 315360000),
         html_page_message_limit: boundedInt('htmlPageMessageLimit', 50, 1, 500),
         html_expiry_delete_mailbox: !!($('htmlExpiryDeleteMailbox') && $('htmlExpiryDeleteMailbox').checked)
       };
       const data = await api('/api/system-settings', {method:'POST', body: JSON.stringify(payload)});
       const settings = data.settings || payload;
       if ($('systemSettingsStatus')) $('systemSettingsStatus').textContent = '系统设置已保存';
-      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `已保存：注册${settings.registration_enabled ? '开放' : '关闭'}；邮件${settings.verification_only ? '仅保留验证码' : '全部保留'}；后台入口 ${settings.admin_path}；HTML 页面展示最近 ${settings.html_page_message_limit} 封；地址首次访问后 ${settings.html_link_ttl_days} 天过期${settings.html_expiry_delete_mailbox ? '并自动删除邮箱' : '后补发新地址'}。`;
+      if ($('systemSettingsNotice')) $('systemSettingsNotice').textContent = `已保存：注册${settings.registration_enabled ? '开放' : '关闭'}；邮件${settings.verification_only ? '仅保留验证码' : '全部保留'}；后台入口 ${settings.admin_path}；HTML 页面展示最近 ${settings.html_page_message_limit} 封；地址首次访问后 ${formatTTLDuration(settings.html_link_ttl_seconds)} 过期${settings.html_expiry_delete_mailbox ? '并自动删除邮箱' : '后补发新地址'}。`;
       log('系统设置已保存');
     }
 
@@ -3711,17 +3732,17 @@
       if (!row.html_link_url) {
         return '<span class="html-expiry expired"><strong>未生成</strong><small>点击链接图标生成</small></span>';
       }
-      const ttlDays = Math.max(1, Number.parseInt(row.html_link_ttl_days, 10) || 7);
+      const ttlSeconds = Math.max(1, Number.parseInt(row.html_link_ttl_seconds, 10) || 604800);
       if (!row.html_link_activated_at || !row.html_link_expires) {
-        return `<span class="html-expiry pending" title="首次访问后开始计算有效期"><strong>未激活</strong><small>激活后 ${ttlDays} 天到期</small></span>`;
+        return `<span class="html-expiry pending" title="首次访问后开始计算有效期"><strong>未激活</strong><small>激活后 ${esc(formatTTLDuration(ttlSeconds))} 到期</small></span>`;
       }
       const expiresAt = new Date(row.html_link_expires);
       const expired = !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now();
       if (expired) {
         return `<span class="html-expiry expired" title="激活时间：${esc(formatMailboxDate(row.html_link_activated_at))}；到期时间：${esc(formatMailboxDate(row.html_link_expires))}"><strong>已过期</strong><small>有效期已结束</small></span>`;
       }
-      const remainingDays = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 86400000));
-      return `<span class="html-expiry active" title="激活时间：${esc(formatMailboxDate(row.html_link_activated_at))}；到期时间：${esc(formatMailboxDate(row.html_link_expires))}"><strong>已激活</strong><small>剩余 ${remainingDays} 天</small></span>`;
+      const remainingSeconds = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 1000));
+      return `<span class="html-expiry active" title="激活时间：${esc(formatMailboxDate(row.html_link_activated_at))}；到期时间：${esc(formatMailboxDate(row.html_link_expires))}"><strong>已激活</strong><small>剩余 ${esc(formatTTLDuration(remainingSeconds))}</small></span>`;
     }
 
     function mailboxTableStatus(row) {

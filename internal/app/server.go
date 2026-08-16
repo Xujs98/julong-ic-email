@@ -531,7 +531,8 @@ func publicSystemSettings(settings SystemSettings) map[string]any {
 		"registration_enabled":       settings.RegistrationEnabled,
 		"verification_only":          !settings.StoreAllMessages,
 		"admin_path":                 settings.AdminPath,
-		"html_link_ttl_days":         settings.HTMLLinkTTLDays,
+		"html_link_ttl_seconds":      settings.HTMLLinkTTLSeconds,
+		"html_link_ttl_days":         htmlLinkTTLDays(settings.HTMLLinkTTLSeconds),
 		"html_page_message_limit":    settings.HTMLPageMessageLimit,
 		"html_expiry_delete_mailbox": settings.HTMLExpiryDeleteMailbox,
 		"updated_at":                 formatTime(settings.UpdatedAt),
@@ -564,7 +565,8 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		RegistrationEnabled     bool   `json:"registration_enabled"`
 		VerificationOnly        *bool  `json:"verification_only"`
 		AdminPath               string `json:"admin_path"`
-		HTMLLinkTTLDays         int    `json:"html_link_ttl_days"`
+		HTMLLinkTTLSeconds      *int   `json:"html_link_ttl_seconds"`
+		HTMLLinkTTLDays         *int   `json:"html_link_ttl_days"`
 		HTMLPageMessageLimit    *int   `json:"html_page_message_limit"`
 		HTMLExpiryDeleteMailbox *bool  `json:"html_expiry_delete_mailbox"`
 	}
@@ -577,11 +579,21 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, errCode("invalid_admin_path", "后台入口只能使用字母、数字、下划线、短横线和斜杠", false))
 		return
 	}
-	if payload.HTMLLinkTTLDays < 1 || payload.HTMLLinkTTLDays > 3650 {
-		writeError(w, http.StatusBadRequest, errCode("invalid_html_link_ttl", "HTML 接码地址过期天数必须是 1-3650", false))
-		return
-	}
 	current := s.store.SystemSettings()
+	htmlLinkTTLSeconds := current.HTMLLinkTTLSeconds
+	if payload.HTMLLinkTTLSeconds != nil {
+		if *payload.HTMLLinkTTLSeconds < 1 || *payload.HTMLLinkTTLSeconds > maxHTMLLinkTTLSeconds {
+			writeError(w, http.StatusBadRequest, errCode("invalid_html_link_ttl", "HTML 接码地址过期秒数必须是 1-315360000", false))
+			return
+		}
+		htmlLinkTTLSeconds = *payload.HTMLLinkTTLSeconds
+	} else if payload.HTMLLinkTTLDays != nil {
+		if *payload.HTMLLinkTTLDays < 1 || *payload.HTMLLinkTTLDays > maxHTMLLinkTTLSeconds/secondsPerDay {
+			writeError(w, http.StatusBadRequest, errCode("invalid_html_link_ttl", "HTML 接码地址过期天数必须是 1-3650", false))
+			return
+		}
+		htmlLinkTTLSeconds = *payload.HTMLLinkTTLDays * secondsPerDay
+	}
 	htmlPageMessageLimit := current.HTMLPageMessageLimit
 	if payload.HTMLPageMessageLimit != nil {
 		if *payload.HTMLPageMessageLimit < 1 || *payload.HTMLPageMessageLimit > maxHTMLPageMessageLimit {
@@ -602,7 +614,7 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		RegistrationEnabled:     payload.RegistrationEnabled,
 		StoreAllMessages:        !verificationOnly,
 		AdminPath:               path,
-		HTMLLinkTTLDays:         payload.HTMLLinkTTLDays,
+		HTMLLinkTTLSeconds:      htmlLinkTTLSeconds,
 		HTMLPageMessageLimit:    htmlPageMessageLimit,
 		HTMLExpiryDeleteMailbox: htmlExpiryDeleteMailbox,
 	})
@@ -4853,30 +4865,32 @@ func (s *Server) publicMailbox(r *http.Request, mailbox Mailbox) publicMailbox {
 		linkActivated = formatTime(link.ActivatedAt)
 		linkExpires = formatTime(link.ExpiresAt)
 	}
+	settings := s.store.SystemSettings()
 	return publicMailbox{
-		ID:                mailbox.ID,
-		OwnerID:           mailbox.OwnerID,
-		Owner:             s.ownerName(mailbox.OwnerID),
-		AccountID:         mailbox.AccountID,
-		AccountLabel:      accountLabel,
-		AccountAppleID:    accountAppleID,
-		Label:             mailbox.Label,
-		Email:             mailbox.Email,
-		APITokenMask:      maskSecret(mailbox.APIToken, 6),
-		APIURL:            s.mailboxAPIURL(r, mailbox),
-		HTMLLinkURL:       linkURL,
-		HTMLLinkActivated: linkActivated,
-		HTMLLinkExpires:   linkExpires,
-		HTMLLinkTTLDays:   s.store.SystemSettings().HTMLLinkTTLDays,
-		APIActive:         mailbox.APIActive,
-		ICloudActive:      mailbox.ICloudActive,
-		ReceiveCount:      mailbox.ReceiveCount,
-		Status:            mailbox.Status,
-		Note:              mailbox.Note,
-		LastSyncAt:        formatTime(mailbox.LastSyncAt),
-		LastSyncUID:       mailbox.LastSyncUID,
-		CreatedAt:         formatTime(mailbox.CreatedAt),
-		UpdatedAt:         formatTime(mailbox.UpdatedAt),
+		ID:                 mailbox.ID,
+		OwnerID:            mailbox.OwnerID,
+		Owner:              s.ownerName(mailbox.OwnerID),
+		AccountID:          mailbox.AccountID,
+		AccountLabel:       accountLabel,
+		AccountAppleID:     accountAppleID,
+		Label:              mailbox.Label,
+		Email:              mailbox.Email,
+		APITokenMask:       maskSecret(mailbox.APIToken, 6),
+		APIURL:             s.mailboxAPIURL(r, mailbox),
+		HTMLLinkURL:        linkURL,
+		HTMLLinkActivated:  linkActivated,
+		HTMLLinkExpires:    linkExpires,
+		HTMLLinkTTLSeconds: settings.HTMLLinkTTLSeconds,
+		HTMLLinkTTLDays:    htmlLinkTTLDays(settings.HTMLLinkTTLSeconds),
+		APIActive:          mailbox.APIActive,
+		ICloudActive:       mailbox.ICloudActive,
+		ReceiveCount:       mailbox.ReceiveCount,
+		Status:             mailbox.Status,
+		Note:               mailbox.Note,
+		LastSyncAt:         formatTime(mailbox.LastSyncAt),
+		LastSyncUID:        mailbox.LastSyncUID,
+		CreatedAt:          formatTime(mailbox.CreatedAt),
+		UpdatedAt:          formatTime(mailbox.UpdatedAt),
 	}
 }
 

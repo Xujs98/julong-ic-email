@@ -43,7 +43,8 @@ type SystemSettings struct {
 	RegistrationEnabled     bool      `json:"registration_enabled"`
 	StoreAllMessages        bool      `json:"store_all_messages,omitempty"`
 	AdminPath               string    `json:"admin_path"`
-	HTMLLinkTTLDays         int       `json:"html_link_ttl_days"`
+	HTMLLinkTTLSeconds      int       `json:"html_link_ttl_seconds,omitempty"`
+	HTMLLinkTTLDays         int       `json:"html_link_ttl_days,omitempty"`
 	HTMLPageMessageLimit    int       `json:"html_page_message_limit"`
 	HTMLExpiryDeleteMailbox bool      `json:"html_expiry_delete_mailbox,omitempty"`
 	UpdatedAt               time.Time `json:"updated_at,omitempty"`
@@ -326,7 +327,8 @@ type publicMailbox struct {
 	HTMLLinkURL        string `json:"html_link_url,omitempty"`
 	HTMLLinkActivated  string `json:"html_link_activated_at,omitempty"`
 	HTMLLinkExpires    string `json:"html_link_expires,omitempty"`
-	HTMLLinkTTLDays    int    `json:"html_link_ttl_days"`
+	HTMLLinkTTLSeconds int    `json:"html_link_ttl_seconds"`
+	HTMLLinkTTLDays    int    `json:"html_link_ttl_days,omitempty"`
 	APIActive          bool   `json:"api_active"`
 	ICloudActive       bool   `json:"icloud_active"`
 	ReceiveCount       int    `json:"receive_count"`

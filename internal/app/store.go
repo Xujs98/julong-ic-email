@@ -19,7 +19,9 @@ type FileStore struct {
 
 const (
 	defaultAdminPath            = "/manage"
-	defaultHTMLLinkTTLDays      = 7
+	secondsPerDay               = 24 * 60 * 60
+	defaultHTMLLinkTTLSeconds   = 7 * secondsPerDay
+	maxHTMLLinkTTLSeconds       = 3650 * secondsPerDay
 	defaultHTMLPageMessageLimit = 50
 	maxHTMLPageMessageLimit     = 500
 )
@@ -28,7 +30,7 @@ func defaultSystemSettings() SystemSettings {
 	return SystemSettings{
 		RegistrationEnabled:  true,
 		AdminPath:            defaultAdminPath,
-		HTMLLinkTTLDays:      defaultHTMLLinkTTLDays,
+		HTMLLinkTTLSeconds:   defaultHTMLLinkTTLSeconds,
 		HTMLPageMessageLimit: defaultHTMLPageMessageLimit,
 	}
 }
@@ -44,12 +46,20 @@ func normalizeSystemSettings(settings SystemSettings) SystemSettings {
 	if settings.AdminPath == "" {
 		settings.AdminPath = defaultAdminPath
 	}
-	if settings.HTMLLinkTTLDays <= 0 {
-		settings.HTMLLinkTTLDays = defaultHTMLLinkTTLDays
+	if settings.HTMLLinkTTLSeconds <= 0 {
+		legacyDays := settings.HTMLLinkTTLDays
+		if legacyDays <= 0 {
+			legacyDays = defaultHTMLLinkTTLSeconds / secondsPerDay
+		}
+		if legacyDays > maxHTMLLinkTTLSeconds/secondsPerDay {
+			legacyDays = maxHTMLLinkTTLSeconds / secondsPerDay
+		}
+		settings.HTMLLinkTTLSeconds = legacyDays * secondsPerDay
 	}
-	if settings.HTMLLinkTTLDays > 3650 {
-		settings.HTMLLinkTTLDays = 3650
+	if settings.HTMLLinkTTLSeconds > maxHTMLLinkTTLSeconds {
+		settings.HTMLLinkTTLSeconds = maxHTMLLinkTTLSeconds
 	}
+	settings.HTMLLinkTTLDays = 0
 	if settings.HTMLPageMessageLimit <= 0 {
 		settings.HTMLPageMessageLimit = defaultHTMLPageMessageLimit
 	}
@@ -57,6 +67,13 @@ func normalizeSystemSettings(settings SystemSettings) SystemSettings {
 		settings.HTMLPageMessageLimit = maxHTMLPageMessageLimit
 	}
 	return settings
+}
+
+func htmlLinkTTLDays(seconds int) int {
+	if seconds <= 0 {
+		seconds = defaultHTMLLinkTTLSeconds
+	}
+	return (seconds + secondsPerDay - 1) / secondsPerDay
 }
 
 type DeleteUserResult struct {
@@ -225,7 +242,7 @@ func (s *FileStore) ActivateMailboxHTMLLink(token string, now time.Time) (Mailbo
 		if link.ActivatedAt.IsZero() || link.ExpiresAt.IsZero() {
 			settings := s.systemSettingsLocked()
 			link.ActivatedAt = now
-			link.ExpiresAt = now.AddDate(0, 0, settings.HTMLLinkTTLDays)
+			link.ExpiresAt = now.Add(time.Duration(settings.HTMLLinkTTLSeconds) * time.Second)
 			s.state.MailboxHTMLLinks[i] = link
 			changed = true
 		}
