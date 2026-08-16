@@ -1,0 +1,28 @@
+name: julong-ic-email
+
+services:
+  app:
+    image: "${JULONG_IMAGE:-ghcr.io/xujs98/julong-ic-email:latest}"
+    pull_policy: always
+    container_name: julong-ic-email
+    restart: unless-stopped
+    ports:
+      - "${JULONG_BIND_IP:-127.0.0.1}:${JULONG_PORT:-8787}:8787"
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+      IPM_PUBLIC_BASE_URL: "${IPM_PUBLIC_BASE_URL:-}"
+      IPM_API_KEY: "${IPM_API_KEY:-}"
+      IPM_APPLE_ACCOUNT_API_KEY: "${IPM_APPLE_ACCOUNT_API_KEY:-}"
+    volumes:
+      - julong-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 15s
+
+volumes:
+  julong-data:
+    name: julong-ic-email-data

@@ -24,6 +24,7 @@ verification-code-speedup.md
 
 # Local config / secrets
 .secrets/
+.env
 config.json
 config.local.json
 *.secret.json

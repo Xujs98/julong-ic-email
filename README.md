@@ -45,6 +45,10 @@ internal/app/templates/    前端页面模板
 internal/app/templates/logo.png 项目 Logo 图片
 internal/app/templates/favicon.ico 网站 favicon
 config.example.json        配置模板
+config.docker.json         Docker 容器默认配置
+Dockerfile                 本地构建 Linux 容器镜像
+compose.yaml               服务器只拉取预构建镜像的 Compose 配置
+.env.example               Docker Compose 环境变量模板
 README.md                  使用与部署说明
 更新日志.md                 公开版功能更新记录
 AGENTS.md                  开发、验证、提交和 GitHub 推送约定
@@ -423,7 +427,44 @@ GET /api/runtime/export-mailbox-emails?format=txt&account_id=<account_id>
 
 普通用户即使传入别人的 `owner_id` 也不会越权，后端仍按当前登录用户的数据范围导出。
 
-## 服务器部署
+## Docker Compose 部署（服务器不构建）
+
+项目采用“本地构建并推送镜像，服务器只拉取镜像”的方式。默认镜像地址为 `ghcr.io/xujs98/julong-ic-email:latest`。
+
+本地登录 GHCR，并构建 amd64/arm64 双架构镜像：
+
+```bash
+echo "$GHCR_TOKEN" | docker login ghcr.io -u Xujs98 --password-stdin
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/xujs98/julong-ic-email:2026.08.16.1 \
+  -t ghcr.io/xujs98/julong-ic-email:latest \
+  --push .
+```
+
+`GHCR_TOKEN` 需要 GitHub Packages 写入权限。服务器拉取公开镜像时不需要登录；私有镜像需先执行 `docker login ghcr.io`。
+
+服务器只需拉取仓库并启动：
+
+```bash
+git clone https://github.com/Xujs98/julong-ic-email.git
+cd julong-ic-email
+cp .env.example .env
+docker compose pull
+docker compose up -d
+docker compose ps
+```
+
+默认只发布到宿主机 `127.0.0.1:8787`，适合 Nginx/Caddy 反向代理。直接通过服务器 IP 访问时，将 `.env` 中的 `JULONG_BIND_IP` 设置为 `0.0.0.0`。运行数据保存在 Docker 命名卷 `julong-ic-email-data`，更新容器不会覆盖。
+
+后续更新：本地重新构建并推送 `latest`，服务器执行：
+
+```bash
+git pull --ff-only
+docker compose pull
+docker compose up -d
+```
+
+## 服务器部署（二进制方式）
 
 推荐部署结构：
 
