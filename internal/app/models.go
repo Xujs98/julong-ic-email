@@ -36,13 +36,16 @@ type State struct {
 	MailboxHTMLLinks []MailboxHTMLLink `json:"mailbox_html_links,omitempty"`
 }
 
-// SystemSettings controls public registration, the administrator entry point,
-// and the lifetime of mailbox HTML code pages. API tokens are independent.
+// SystemSettings controls public registration, message retention, the
+// administrator entry point, and the lifetime of mailbox HTML code pages. API
+// tokens are independent.
 type SystemSettings struct {
-	RegistrationEnabled bool      `json:"registration_enabled"`
-	AdminPath           string    `json:"admin_path"`
-	HTMLLinkTTLDays     int       `json:"html_link_ttl_days"`
-	UpdatedAt           time.Time `json:"updated_at,omitempty"`
+	RegistrationEnabled     bool      `json:"registration_enabled"`
+	StoreAllMessages        bool      `json:"store_all_messages,omitempty"`
+	AdminPath               string    `json:"admin_path"`
+	HTMLLinkTTLDays         int       `json:"html_link_ttl_days"`
+	HTMLExpiryDeleteMailbox bool      `json:"html_expiry_delete_mailbox,omitempty"`
+	UpdatedAt               time.Time `json:"updated_at,omitempty"`
 }
 
 type MailboxHTMLLink struct {

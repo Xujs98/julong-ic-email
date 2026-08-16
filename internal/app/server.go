@@ -45,6 +45,8 @@ const (
 	defaultMailWatcherInitialFetchLimit = 20
 	defaultMailWatcherLookback          = 24 * time.Hour
 	mailWatcherSyncTimeout              = 90 * time.Second
+	htmlExpiryMailboxCleanupInterval    = time.Minute
+	htmlExpiryMailboxDeleteTimeout      = 90 * time.Second
 )
 
 type Server struct {
@@ -74,6 +76,9 @@ type Server struct {
 	mailWatcherInitialFetchLimit   int
 	mailWatcherLookback            time.Duration
 	mailWatcherActiveUntil         map[string]time.Time
+	htmlExpiryCleanerMu            sync.Mutex
+	htmlExpiryCleanerCancel        context.CancelFunc
+	htmlExpiryCleanerInterval      time.Duration
 	appleAccountKeepAliveMu        sync.Mutex
 	appleAccountKeepAliveCancel    context.CancelFunc
 	appleAccountKeepAliveEnabled   bool
@@ -225,6 +230,7 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 		mailWatcherInitialFetchLimit:  defaultMailWatcherInitialFetchLimit,
 		mailWatcherLookback:           defaultMailWatcherLookback,
 		mailWatcherActiveUntil:        make(map[string]time.Time),
+		htmlExpiryCleanerInterval:     htmlExpiryMailboxCleanupInterval,
 		appleAccountKeepAliveEnabled:  cfg.AppleAccountKeepAliveEnabled,
 		appleAccountKeepAliveInterval: appleAccountKeepAliveDefaultInterval,
 		mailboxSchedulers:             make(map[string]*mailboxSchedulerJob),
@@ -308,6 +314,104 @@ func (s *Server) StopMailWatcher() {
 	s.mailWatcherMu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+}
+
+func (s *Server) StartHTMLExpiryMailboxCleaner(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.htmlExpiryCleanerMu.Lock()
+	if s.htmlExpiryCleanerCancel != nil {
+		s.htmlExpiryCleanerMu.Unlock()
+		return
+	}
+	cleanerCtx, cancel := context.WithCancel(ctx)
+	s.htmlExpiryCleanerCancel = cancel
+	s.htmlExpiryCleanerMu.Unlock()
+
+	go s.runHTMLExpiryMailboxCleaner(cleanerCtx)
+}
+
+func (s *Server) StopHTMLExpiryMailboxCleaner() {
+	s.htmlExpiryCleanerMu.Lock()
+	cancel := s.htmlExpiryCleanerCancel
+	s.htmlExpiryCleanerCancel = nil
+	s.htmlExpiryCleanerMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (s *Server) runHTMLExpiryMailboxCleaner(ctx context.Context) {
+	defer func() {
+		s.htmlExpiryCleanerMu.Lock()
+		s.htmlExpiryCleanerCancel = nil
+		s.htmlExpiryCleanerMu.Unlock()
+	}()
+
+	s.cleanupExpiredHTMLMailboxes(ctx, time.Now())
+	interval := s.htmlExpiryCleanerInterval
+	if interval <= 0 {
+		interval = htmlExpiryMailboxCleanupInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			s.cleanupExpiredHTMLMailboxes(ctx, now)
+		}
+	}
+}
+
+func (s *Server) cleanupExpiredHTMLMailboxes(ctx context.Context, now time.Time) {
+	if ctx == nil || ctx.Err() != nil || !s.store.SystemSettings().HTMLExpiryDeleteMailbox {
+		return
+	}
+	deleteRemote := s.deletePrivacyMailbox
+	if deleteRemote == nil {
+		deleteRemote = NewICloudClient().DeletePrivacyMailbox
+	}
+	for _, link := range s.store.ExpiredMailboxHTMLLinks(now) {
+		if ctx.Err() != nil {
+			return
+		}
+		mailbox, ok := s.store.FindMailboxByID(link.MailboxID)
+		if !ok {
+			continue
+		}
+		session, ok := s.sessionForMailbox(mailbox.OwnerID, mailbox.AccountID)
+		if !ok {
+			if s.logger != nil {
+				s.logger.Warn("expired HTML mailbox delete deferred: iCloud session missing", "mailbox_id", mailbox.ID, "email", mailbox.Email)
+			}
+			continue
+		}
+		deleteCtx, cancel := context.WithTimeout(ctx, htmlExpiryMailboxDeleteTimeout)
+		release, err := s.acquireMailboxSyncSlot(deleteCtx, mailbox.OwnerID)
+		if err == nil {
+			_, err = deleteRemote(deleteCtx, session, mailbox.Email)
+			release()
+		}
+		cancel()
+		if err != nil {
+			if s.logger != nil {
+				s.logger.Warn("expired HTML mailbox delete deferred", "mailbox_id", mailbox.ID, "email", mailbox.Email, "err", err)
+			}
+			continue
+		}
+		if err := s.store.DeleteMailbox(mailbox.ID); err != nil {
+			if s.logger != nil {
+				s.logger.Warn("expired HTML mailbox local cleanup failed", "mailbox_id", mailbox.ID, "email", mailbox.Email, "err", err)
+			}
+			continue
+		}
+		if s.logger != nil {
+			s.logger.Info("expired HTML mailbox deleted", "mailbox_id", mailbox.ID, "email", mailbox.Email)
+		}
 	}
 }
 
@@ -424,10 +528,12 @@ func (s *Server) handleManagePage(w http.ResponseWriter, _ *http.Request) {
 func publicSystemSettings(settings SystemSettings) map[string]any {
 	settings = normalizeSystemSettings(settings)
 	return map[string]any{
-		"registration_enabled": settings.RegistrationEnabled,
-		"admin_path":           settings.AdminPath,
-		"html_link_ttl_days":   settings.HTMLLinkTTLDays,
-		"updated_at":           formatTime(settings.UpdatedAt),
+		"registration_enabled":       settings.RegistrationEnabled,
+		"verification_only":          !settings.StoreAllMessages,
+		"admin_path":                 settings.AdminPath,
+		"html_link_ttl_days":         settings.HTMLLinkTTLDays,
+		"html_expiry_delete_mailbox": settings.HTMLExpiryDeleteMailbox,
+		"updated_at":                 formatTime(settings.UpdatedAt),
 	}
 }
 
@@ -454,9 +560,11 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var payload struct {
-		RegistrationEnabled bool   `json:"registration_enabled"`
-		AdminPath           string `json:"admin_path"`
-		HTMLLinkTTLDays     int    `json:"html_link_ttl_days"`
+		RegistrationEnabled     bool   `json:"registration_enabled"`
+		VerificationOnly        *bool  `json:"verification_only"`
+		AdminPath               string `json:"admin_path"`
+		HTMLLinkTTLDays         int    `json:"html_link_ttl_days"`
+		HTMLExpiryDeleteMailbox *bool  `json:"html_expiry_delete_mailbox"`
 	}
 	if err := decodeJSON(r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -471,10 +579,21 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, errCode("invalid_html_link_ttl", "HTML 接码地址过期天数必须是 1-3650", false))
 		return
 	}
+	current := s.store.SystemSettings()
+	verificationOnly := !current.StoreAllMessages
+	if payload.VerificationOnly != nil {
+		verificationOnly = *payload.VerificationOnly
+	}
+	htmlExpiryDeleteMailbox := current.HTMLExpiryDeleteMailbox
+	if payload.HTMLExpiryDeleteMailbox != nil {
+		htmlExpiryDeleteMailbox = *payload.HTMLExpiryDeleteMailbox
+	}
 	settings, err := s.store.SaveSystemSettings(SystemSettings{
-		RegistrationEnabled: payload.RegistrationEnabled,
-		AdminPath:           path,
-		HTMLLinkTTLDays:     payload.HTMLLinkTTLDays,
+		RegistrationEnabled:     payload.RegistrationEnabled,
+		StoreAllMessages:        !verificationOnly,
+		AdminPath:               path,
+		HTMLLinkTTLDays:         payload.HTMLLinkTTLDays,
+		HTMLExpiryDeleteMailbox: htmlExpiryDeleteMailbox,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -3467,6 +3586,11 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 	if len(refreshed) == 0 {
 		return 0, nil
 	}
+	storeAllMessages := s.store.SystemSettings().StoreAllMessages
+	syncKeyword := keyword
+	if storeAllMessages {
+		syncKeyword = allMailboxMessagesKeyword
+	}
 	if err := s.waitMailboxSyncInterval(ctx, ownerID); err != nil {
 		return 0, err
 	}
@@ -3511,7 +3635,7 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 	synced := 0
 	for _, key := range order {
 		group := groups[key]
-		syncResult, err := syncFn(ctx, group.state, group.mailboxes, after, keyword, maxMessages)
+		syncResult, err := syncFn(ctx, group.state, group.mailboxes, after, syncKeyword, maxMessages)
 		if err != nil {
 			return synced, err
 		}
@@ -3525,7 +3649,7 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 			latestMessageAt := mailbox.LastSyncAt
 			mailboxChanged := false
 			for _, msg := range messagesByMailbox[mailbox.ID] {
-				if extractOTP(msg.Subject+"\n"+msg.Body) == "" {
+				if !storeAllMessages && extractOTP(msg.Subject+"\n"+msg.Body) == "" {
 					continue
 				}
 				remoteID := strings.TrimSpace(msg.RemoteID)
@@ -3592,6 +3716,11 @@ func (s *Server) syncMailboxBatchForOwnerWithLimit(ctx context.Context, ownerID 
 	if len(refreshed) == 0 {
 		return nil
 	}
+	storeAllMessages := s.store.SystemSettings().StoreAllMessages
+	syncKeyword := keyword
+	if storeAllMessages {
+		syncKeyword = allMailboxMessagesKeyword
+	}
 	if err := s.waitMailboxSyncInterval(ctx, ownerID); err != nil {
 		return err
 	}
@@ -3629,7 +3758,7 @@ func (s *Server) syncMailboxBatchForOwnerWithLimit(ctx context.Context, ownerID 
 		if maxThreadsOverride > 0 {
 			maxThreads = maxThreadsOverride
 		}
-		messagesByMailbox, err := syncFn(ctx, group.session, group.mailboxes, after, keyword, maxThreads)
+		messagesByMailbox, err := syncFn(ctx, group.session, group.mailboxes, after, syncKeyword, maxThreads)
 		if err != nil {
 			return err
 		}
@@ -3637,7 +3766,7 @@ func (s *Server) syncMailboxBatchForOwnerWithLimit(ctx context.Context, ownerID 
 			lastSyncUID := mailbox.LastSyncUID
 			latestMessageAt := mailbox.LastSyncAt
 			for _, msg := range messagesByMailbox[mailbox.ID] {
-				if extractOTP(msg.Subject+"\n"+msg.Body) == "" {
+				if !storeAllMessages && extractOTP(msg.Subject+"\n"+msg.Body) == "" {
 					continue
 				}
 				_, _, err := s.store.UpsertMessageContent(mailbox.ID, msg.RemoteID, "icloud", msg.Subject, msg.From, msg.Body, msg.HTMLBody, msg.ReceivedAt)

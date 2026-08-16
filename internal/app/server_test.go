@@ -153,6 +153,24 @@ func TestMailboxTableMessageColumnUsesDialog(t *testing.T) {
 	}
 }
 
+func TestSystemSettingsTemplateIncludesMailRetentionAndExpiryDeleteSwitches(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`id="verificationOnly"`,
+		`id="htmlExpiryDeleteMailbox"`,
+		`verification_only:`,
+		`html_expiry_delete_mailbox:`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("system settings template source missing %q", want)
+		}
+	}
+}
+
 func TestMailboxTableSupportsOutboundWorkflow(t *testing.T) {
 	data, err := webFS.ReadFile("templates/index.html")
 	if err != nil {
@@ -2702,6 +2720,9 @@ func TestLooksLikeVerificationText(t *testing.T) {
 			t.Fatalf("looksLikeVerificationText(%q) = %v, want %v", tt.text, got, tt.want)
 		}
 	}
+	if !shouldIncludeSyncedMessage("Ordinary newsletter", allMailboxMessagesKeyword) {
+		t.Fatal("all-message sync mode should bypass verification text filtering")
+	}
 }
 
 func TestIMAPQuoteEscapesUnsafeCharacters(t *testing.T) {
@@ -4519,6 +4540,110 @@ func TestSyncMailboxCodeBatchSkipsEmptyMailboxCursorWrites(t *testing.T) {
 	}
 }
 
+func TestSyncMailboxRespectsMessageRetentionSetting(t *testing.T) {
+	oldInterval := mailboxMailSyncMinInterval
+	mailboxMailSyncMinInterval = 0
+	t.Cleanup(func() { mailboxMailSyncMinInterval = oldInterval })
+
+	for _, tt := range []struct {
+		name      string
+		storeAll  bool
+		wantCount int
+	}{
+		{name: "verification only", storeAll: false, wantCount: 1},
+		{name: "all messages", storeAll: true, wantCount: 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			settings := store.SystemSettings()
+			settings.StoreAllMessages = tt.storeAll
+			if _, err := store.SaveSystemSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+			ownerID := "owner-retention-" + strings.ReplaceAll(tt.name, " ", "-")
+			accountID := "acc-retention"
+			if err := store.SaveICloudSessionForOwner(ownerID, testIMAPSession(ownerID, accountID, "retention-owner@icloud.com")); err != nil {
+				t.Fatal(err)
+			}
+			mailbox, err := store.AddMailboxForOwner(ownerID, accountID, "retention", "retention.alias@icloud.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now()
+			server := NewServer(Config{}, store, discardLogger()).(*Server)
+			server.syncCodeMailboxBatchWithCursor = func(ctx context.Context, state LoginState, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (iCloudIMAPSyncResult, error) {
+				wantKeyword := "ChatGPT"
+				if tt.storeAll {
+					wantKeyword = allMailboxMessagesKeyword
+				}
+				if keyword != wantKeyword {
+					t.Fatalf("sync keyword = %q, want %q", keyword, wantKeyword)
+				}
+				return iCloudIMAPSyncResult{LastUID: "101", MessagesByMailbox: map[string][]ICloudSyncedMessage{
+					mailbox.ID: {
+						{RemoteID: "imap:100", UID: "100", Subject: "Your sign-in code", Body: "Use 246810 to continue.", ReceivedAt: now.Add(-time.Minute)},
+						{RemoteID: "imap:101", UID: "101", Subject: "Security settings changed", Body: "This message has no one-time code.", ReceivedAt: now},
+					},
+				}}, nil
+			}
+
+			count, err := server.syncMailbox(context.Background(), mailbox, time.Time{}, "ChatGPT")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if count != tt.wantCount {
+				t.Fatalf("synced messages = %d, want %d", count, tt.wantCount)
+			}
+			messages := store.MessagesForMailbox(mailbox.ID)
+			if len(messages) != tt.wantCount {
+				t.Fatalf("stored messages = %+v, want %d", messages, tt.wantCount)
+			}
+			_, code, found := latestMailboxCode(messages, time.Time{}, "", now.Add(time.Minute))
+			if !found || code != "246810" {
+				t.Fatalf("latest code = %q found=%v, want 246810", code, found)
+			}
+		})
+	}
+}
+
+func TestLegacyMailboxSyncKeepsOrdinaryMailWhenConfigured(t *testing.T) {
+	oldInterval := mailboxMailSyncMinInterval
+	mailboxMailSyncMinInterval = 0
+	t.Cleanup(func() { mailboxMailSyncMinInterval = oldInterval })
+
+	store := newTestStore(t)
+	settings := store.SystemSettings()
+	settings.StoreAllMessages = true
+	if _, err := store.SaveSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	ownerID := "legacy-retention-owner"
+	accountID := "legacy-retention-account"
+	if err := store.SaveICloudSessionForOwner(ownerID, ICloudSession{
+		OwnerID: ownerID, AccountID: accountID, AppleID: "legacy@example.test", DSID: "legacy-dsid",
+		PremiumMailBaseURL: "https://mail.example.invalid", Cookies: []SessionCookie{{Name: "session", Value: "test"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := store.AddMailboxForOwner(ownerID, accountID, "legacy", "legacy.alias@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(Config{}, store, discardLogger()).(*Server)
+	server.syncMailboxBatch = func(ctx context.Context, session ICloudSession, mailboxes []Mailbox, after time.Time, keyword string, maxThreads int) (map[string][]ICloudSyncedMessage, error) {
+		if keyword != allMailboxMessagesKeyword {
+			t.Fatalf("legacy sync keyword = %q, want all-message sentinel", keyword)
+		}
+		return map[string][]ICloudSyncedMessage{mailbox.ID: {{RemoteID: "icloud:ordinary", Subject: "Welcome newsletter", Body: "No verification code here.", ReceivedAt: time.Now()}}}, nil
+	}
+	if err := server.syncMailboxBatchForOwner(context.Background(), ownerID, []Mailbox{mailbox}, time.Time{}, "OpenAI"); err != nil {
+		t.Fatal(err)
+	}
+	if messages := store.MessagesForMailbox(mailbox.ID); len(messages) != 1 || messages[0].Subject != "Welcome newsletter" {
+		t.Fatalf("legacy stored messages = %+v, want ordinary message", messages)
+	}
+}
+
 func TestEnsureMailWatcherIMAPBaselineStoresAccountUID(t *testing.T) {
 	store := newTestStore(t)
 	ownerID := "owner-imap-baseline"
@@ -4970,6 +5095,50 @@ func TestMailboxHTMLLinkAndSystemSettings(t *testing.T) {
 	}
 }
 
+func TestSystemSettingsMessageRetentionAndExpiryDeleteSwitches(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	adminCookie, _ := registerTestUser(t, handler, "settings-admin", "admin123")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/system-settings", nil)
+	req.AddCookie(adminCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get default settings = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Settings struct {
+			VerificationOnly        bool `json:"verification_only"`
+			HTMLExpiryDeleteMailbox bool `json:"html_expiry_delete_mailbox"`
+		} `json:"settings"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Settings.VerificationOnly || body.Settings.HTMLExpiryDeleteMailbox {
+		t.Fatalf("default settings = %+v, want verification-only on and expiry-delete off", body.Settings)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":true,"verification_only":false,"admin_path":"/manage","html_link_ttl_days":7,"html_expiry_delete_mailbox":true}`))
+	req.AddCookie(adminCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save settings switches = %d body=%s", rr.Code, rr.Body.String())
+	}
+	settings := store.SystemSettings()
+	if !settings.StoreAllMessages || !settings.HTMLExpiryDeleteMailbox {
+		t.Fatalf("stored settings = %+v, want all messages and expiry deletion", settings)
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Settings.VerificationOnly || !body.Settings.HTMLExpiryDeleteMailbox {
+		t.Fatalf("saved public settings = %+v", body.Settings)
+	}
+}
+
 func TestExpiredMailboxHTMLLinksAreCleanedWithoutChangingAPI(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	now := time.Now()
@@ -5007,6 +5176,109 @@ func TestExpiredMailboxHTMLLinksAreCleanedWithoutChangingAPI(t *testing.T) {
 	if len(snapshot.Mailboxes) != 1 || snapshot.Mailboxes[0].APIToken != "api-stays-valid" || !snapshot.Mailboxes[0].APIActive {
 		t.Fatalf("mailbox API changed during cleanup: %+v", snapshot.Mailboxes)
 	}
+}
+
+func TestExpiredHTMLMailboxAutoDeleteWaitsForRemoteSuccess(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		remoteErr  error
+		wantExists bool
+	}{
+		{name: "remote success", wantExists: false},
+		{name: "remote failure", remoteErr: errors.New("temporary remote failure"), wantExists: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			store, mailbox, expiredLink := newExpiredHTMLAutoDeleteStore(t)
+			if links := store.ExpiredMailboxHTMLLinks(time.Now()); len(links) != 1 || links[0].Token != expiredLink.Token {
+				t.Fatalf("expired links = %+v, want preserved link %q", links, expiredLink.Token)
+			}
+			if _, ok, err := store.ActivateMailboxHTMLLink(expiredLink.Token, time.Now()); err != nil || ok {
+				t.Fatalf("activate expired link ok=%v err=%v, want gone", ok, err)
+			}
+			if link, ok := store.MailboxHTMLLinkForMailbox(mailbox.ID); !ok || link.Token != expiredLink.Token {
+				t.Fatalf("pending-delete HTML link = %+v ok=%v, want original expired link", link, ok)
+			}
+
+			server := NewServer(Config{}, store, discardLogger()).(*Server)
+			rr := httptest.NewRecorder()
+			server.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/mailbox/"+expiredLink.Token, nil))
+			if rr.Code != http.StatusGone {
+				t.Fatalf("expired public HTML status = %d body=%s, want 410", rr.Code, rr.Body.String())
+			}
+			var calls int
+			server.deletePrivacyMailbox = func(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error) {
+				calls++
+				if session.AccountID != mailbox.AccountID || email != mailbox.Email {
+					t.Fatalf("remote delete input = session:%+v email:%q", session, email)
+				}
+				if tt.remoteErr != nil {
+					return ICloudMailboxDeleteResult{}, tt.remoteErr
+				}
+				return ICloudMailboxDeleteResult{Email: email, Found: true, Deleted: true}, nil
+			}
+			server.cleanupExpiredHTMLMailboxes(context.Background(), time.Now())
+			if calls != 1 {
+				t.Fatalf("remote delete calls = %d, want 1", calls)
+			}
+			_, exists := store.FindMailboxByID(mailbox.ID)
+			if exists != tt.wantExists {
+				t.Fatalf("mailbox exists = %v, want %v", exists, tt.wantExists)
+			}
+			if tt.wantExists {
+				if len(store.MessagesForMailbox(mailbox.ID)) != 1 || len(store.ExpiredMailboxHTMLLinks(time.Now())) != 1 {
+					t.Fatalf("local data was changed after remote failure: %+v", store.Snapshot())
+				}
+				return
+			}
+			if len(store.MessagesForMailbox(mailbox.ID)) != 0 {
+				t.Fatalf("messages remain after auto delete: %+v", store.MessagesForMailbox(mailbox.ID))
+			}
+			for _, link := range store.Snapshot().MailboxHTMLLinks {
+				if link.MailboxID == mailbox.ID {
+					t.Fatalf("HTML link remains after auto delete: %+v", link)
+				}
+			}
+		})
+	}
+}
+
+func newExpiredHTMLAutoDeleteStore(t *testing.T) (*FileStore, Mailbox, MailboxHTMLLink) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "state.json")
+	now := time.Now()
+	mailbox := Mailbox{
+		ID: "mbx_expired", OwnerID: "usr_expired", AccountID: "acc_expired", Email: "expired@icloud.com",
+		APIToken: "test-api-token", APIActive: true, ICloudActive: true, Status: StatusAvailable, CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now,
+	}
+	link := MailboxHTMLLink{
+		Token: "expired-auto-delete", MailboxID: mailbox.ID, OwnerID: mailbox.OwnerID,
+		CreatedAt: now.Add(-48 * time.Hour), ActivatedAt: now.Add(-48 * time.Hour), ExpiresAt: now.Add(-time.Hour),
+	}
+	state := State{
+		NextID:    20,
+		Mailboxes: []Mailbox{mailbox},
+		Messages:  []Message{{ID: "msg_expired", OwnerID: mailbox.OwnerID, MailboxID: mailbox.ID, Subject: "Saved message", Body: "saved", CreatedAt: now.Add(-2 * time.Hour)}},
+		ICloudSessions: []ICloudSession{{
+			OwnerID: mailbox.OwnerID, AccountID: mailbox.AccountID, AppleID: "expired-owner@example.test", DSID: "expired-dsid",
+			PremiumMailBaseURL: "https://mail.example.invalid", Cookies: []SessionCookie{{Name: "session", Value: "test"}},
+		}},
+		MailboxHTMLLinks: []MailboxHTMLLink{link},
+		SystemSettings: SystemSettings{
+			RegistrationEnabled: true, AdminPath: "/manage", HTMLLinkTTLDays: 1, HTMLExpiryDeleteMailbox: true, UpdatedAt: now,
+		},
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, mailbox, link
 }
 
 func TestStoreMigratesLegacyMailboxesToSoleOwnerAccount(t *testing.T) {

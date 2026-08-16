@@ -866,7 +866,7 @@ func iCloudIMAPMessagesByMailbox(fetched []iCloudIMAPFetchedMessage, mailboxes [
 		if !ok {
 			continue
 		}
-		if !looksLikeVerificationText(message.Subject+"\n"+message.Body, keyword) {
+		if !shouldIncludeSyncedMessage(message.Subject+"\n"+message.Body, keyword) {
 			continue
 		}
 		matchedMailboxIDs := matchingMailboxIDs(recipients, aliases)

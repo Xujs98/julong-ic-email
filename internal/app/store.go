@@ -151,7 +151,11 @@ func (s *FileStore) SaveSystemSettings(settings SystemSettings) (SystemSettings,
 	settings = normalizeSystemSettings(settings)
 	settings.UpdatedAt = time.Now()
 	s.state.SystemSettings = settings
-	s.cleanupExpiredMailboxHTMLLinksLocked(time.Now())
+	now := time.Now()
+	s.cleanupExpiredMailboxHTMLLinksLocked(now)
+	if _, err := s.ensureMailboxHTMLLinksLocked(now); err != nil {
+		return SystemSettings{}, err
+	}
 	return settings, s.saveLocked()
 }
 
@@ -160,6 +164,7 @@ func (s *FileStore) CreateMailboxHTMLLink(mailboxID string, force bool) (Mailbox
 	defer s.mu.Unlock()
 	now := time.Now()
 	s.cleanupExpiredMailboxHTMLLinksLocked(now)
+	settings := s.systemSettingsLocked()
 	mailboxID = strings.TrimSpace(mailboxID)
 	idx := s.mailboxIndexLocked(mailboxID)
 	if idx < 0 {
@@ -167,7 +172,7 @@ func (s *FileStore) CreateMailboxHTMLLink(mailboxID string, force bool) (Mailbox
 	}
 	if !force {
 		for _, link := range s.state.MailboxHTMLLinks {
-			if link.MailboxID == mailboxID && mailboxHTMLLinkValidAt(link, now) {
+			if link.MailboxID == mailboxID && (mailboxHTMLLinkValidAt(link, now) || settings.HTMLExpiryDeleteMailbox) {
 				return link, nil
 			}
 		}
@@ -200,11 +205,16 @@ func (s *FileStore) ActivateMailboxHTMLLink(token string, now time.Time) (Mailbo
 		if link.Token != token {
 			continue
 		}
-		if link.ActivatedAt.IsZero() || link.ExpiresAt.IsZero() {
-			settings := normalizeSystemSettings(s.state.SystemSettings)
-			if settings.UpdatedAt.IsZero() {
-				settings = defaultSystemSettings()
+		if !mailboxHTMLLinkValidAt(link, now) {
+			if changed {
+				if err := s.saveLocked(); err != nil {
+					return MailboxHTMLLink{}, false, err
+				}
 			}
+			return MailboxHTMLLink{}, false, nil
+		}
+		if link.ActivatedAt.IsZero() || link.ExpiresAt.IsZero() {
+			settings := s.systemSettingsLocked()
 			link.ActivatedAt = now
 			link.ExpiresAt = now.AddDate(0, 0, settings.HTMLLinkTTLDays)
 			s.state.MailboxHTMLLinks[i] = link
@@ -230,24 +240,19 @@ func (s *FileStore) FindMailboxHTMLLink(token string) (MailboxHTMLLink, bool) {
 	defer s.mu.Unlock()
 	token = strings.TrimSpace(token)
 	now := time.Now()
-	changed := false
-	filtered := s.state.MailboxHTMLLinks[:0]
-	var found MailboxHTMLLink
+	changed := s.cleanupExpiredMailboxHTMLLinksLocked(now) > 0
 	for _, link := range s.state.MailboxHTMLLinks {
-		if !mailboxHTMLLinkValidAt(link, now) {
-			changed = true
-			continue
+		if link.Token == token && mailboxHTMLLinkValidAt(link, now) {
+			if changed {
+				_ = s.saveLocked()
+			}
+			return link, true
 		}
-		if link.Token == token {
-			found = link
-		}
-		filtered = append(filtered, link)
 	}
 	if changed {
-		s.state.MailboxHTMLLinks = filtered
 		_ = s.saveLocked()
 	}
-	return found, found.Token != ""
+	return MailboxHTMLLink{}, false
 }
 
 func (s *FileStore) MailboxHTMLLinkForMailbox(mailboxID string) (MailboxHTMLLink, bool) {
@@ -256,8 +261,9 @@ func (s *FileStore) MailboxHTMLLinkForMailbox(mailboxID string) (MailboxHTMLLink
 	mailboxID = strings.TrimSpace(mailboxID)
 	now := time.Now()
 	changed := s.cleanupExpiredMailboxHTMLLinksLocked(now) > 0
+	settings := s.systemSettingsLocked()
 	for _, link := range s.state.MailboxHTMLLinks {
-		if link.MailboxID == mailboxID && mailboxHTMLLinkValidAt(link, now) {
+		if link.MailboxID == mailboxID && (mailboxHTMLLinkValidAt(link, now) || settings.HTMLExpiryDeleteMailbox) {
 			if changed {
 				_ = s.saveLocked()
 			}
@@ -297,6 +303,9 @@ func (s *FileStore) cleanupExpiredMailboxHTMLLinksLocked(now time.Time) int {
 	if now.IsZero() {
 		now = time.Now()
 	}
+	if s.systemSettingsLocked().HTMLExpiryDeleteMailbox {
+		return 0
+	}
 	removed := 0
 	filtered := s.state.MailboxHTMLLinks[:0]
 	for _, link := range s.state.MailboxHTMLLinks {
@@ -316,6 +325,14 @@ func mailboxHTMLLinkValidAt(link MailboxHTMLLink, now time.Time) bool {
 	return link.Token != "" && (link.ExpiresAt.IsZero() || link.ExpiresAt.After(now))
 }
 
+func (s *FileStore) systemSettingsLocked() SystemSettings {
+	settings := s.state.SystemSettings
+	if settings.UpdatedAt.IsZero() {
+		settings = defaultSystemSettings()
+	}
+	return normalizeSystemSettings(settings)
+}
+
 func (s *FileStore) newMailboxHTMLLinkLocked(mailboxID, ownerID string, now time.Time) (MailboxHTMLLink, error) {
 	if now.IsZero() {
 		now = time.Now()
@@ -329,10 +346,11 @@ func (s *FileStore) newMailboxHTMLLinkLocked(mailboxID, ownerID string, now time
 
 func (s *FileStore) ensureMailboxHTMLLinksLocked(now time.Time) (bool, error) {
 	changed := false
+	settings := s.systemSettingsLocked()
 	for _, mailbox := range s.state.Mailboxes {
 		found := false
 		for _, link := range s.state.MailboxHTMLLinks {
-			if link.MailboxID == mailbox.ID && mailboxHTMLLinkValidAt(link, now) {
+			if link.MailboxID == mailbox.ID && (mailboxHTMLLinkValidAt(link, now) || (settings.HTMLExpiryDeleteMailbox && link.Token != "")) {
 				found = true
 				break
 			}
@@ -348,6 +366,30 @@ func (s *FileStore) ensureMailboxHTMLLinksLocked(now time.Time) (bool, error) {
 		changed = true
 	}
 	return changed, nil
+}
+
+func (s *FileStore) ExpiredMailboxHTMLLinks(now time.Time) []MailboxHTMLLink {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if !s.systemSettingsLocked().HTMLExpiryDeleteMailbox {
+		return nil
+	}
+	out := make([]MailboxHTMLLink, 0)
+	seen := make(map[string]struct{})
+	for _, link := range s.state.MailboxHTMLLinks {
+		if link.MailboxID == "" || link.ExpiresAt.IsZero() || link.ExpiresAt.After(now) {
+			continue
+		}
+		if _, ok := seen[link.MailboxID]; ok {
+			continue
+		}
+		seen[link.MailboxID] = struct{}{}
+		out = append(out, link)
+	}
+	return out
 }
 
 func (s *FileStore) migrateMailboxHTMLLinkActivationLocked() bool {

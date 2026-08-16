@@ -51,8 +51,10 @@ func main() {
 	handler := app.NewServer(cfg, store, logger)
 	if panel, ok := handler.(*app.Server); ok {
 		panel.StartMailWatcher(ctx)
+		panel.StartHTMLExpiryMailboxCleaner(ctx)
 		panel.StartAppleAccountKeepAlive(ctx)
 		defer panel.StopMailWatcher()
+		defer panel.StopHTMLExpiryMailboxCleaner()
 		defer panel.StopAppleAccountKeepAlive()
 	}
 

@@ -64,6 +64,7 @@ func NewICloudClient() *ICloudClient {
 }
 
 const mailboxSyncCursorOverlap = 2 * time.Minute
+const allMailboxMessagesKeyword = "__all_mailbox_messages__"
 const appleAccountManageRefreshSkew = 0 * time.Second
 const appleAccountKeepAliveDefaultInterval = 4 * time.Minute
 const appleAccountKeepAliveTimeout = 25 * time.Second
@@ -1357,7 +1358,7 @@ func (c *ICloudClient) SyncMailboxMessages(ctx context.Context, session ICloudSe
 				continue
 			}
 			text := thread.Subject + "\n" + thread.Preview
-			if !looksLikeVerificationText(text, keyword) {
+			if !shouldIncludeSyncedMessage(text, keyword) {
 				continue
 			}
 			messages, err := c.threadMessages(ctx, session, folder, thread.ThreadID, mailbox.Email, queryAfter)
@@ -1418,7 +1419,7 @@ func (c *ICloudClient) SyncMailboxMessagesBatch(ctx context.Context, session ICl
 				continue
 			}
 			text := thread.Subject + "\n" + thread.Preview
-			if !looksLikeVerificationText(text, keyword) {
+			if !shouldIncludeSyncedMessage(text, keyword) {
 				continue
 			}
 			messagesByMailbox, err := c.threadMessagesForAliases(ctx, session, folder, thread.ThreadID, aliases, afterByMailbox)
@@ -1471,6 +1472,10 @@ func looksLikeVerificationText(text, keyword string) bool {
 		}
 	}
 	return false
+}
+
+func shouldIncludeSyncedMessage(text, keyword string) bool {
+	return strings.TrimSpace(keyword) == allMailboxMessagesKeyword || looksLikeVerificationText(text, keyword)
 }
 
 func (c *ICloudClient) CheckMailSession(ctx context.Context, session ICloudSession) error {

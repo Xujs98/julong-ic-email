@@ -38,6 +38,26 @@ func TestICloudIMAPMessagesByMailboxMatchesRecipientAlias(t *testing.T) {
 	}
 }
 
+func TestICloudIMAPMessagesByMailboxCanKeepOrdinaryMail(t *testing.T) {
+	receivedAt := time.Date(2026, 8, 16, 8, 0, 0, 0, time.UTC)
+	mailboxes := []Mailbox{{ID: "mbx_all", Email: "all-mail@icloud.com"}}
+	raw := "From: Account Alerts <alerts@example.test>\r\n" +
+		"To: all-mail@icloud.com\r\n" +
+		"Subject: Multi-factor authentication settings changed\r\n" +
+		"Date: " + receivedAt.Format(time.RFC1123Z) + "\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n\r\n" +
+		"Your security settings were updated successfully.\r\n"
+
+	filtered := iCloudIMAPMessagesByMailbox([]iCloudIMAPFetchedMessage{{UID: "43", Raw: []byte(raw)}}, mailboxes, time.Time{}, "ChatGPT")
+	if len(filtered["mbx_all"]) != 0 {
+		t.Fatalf("ordinary messages with verification filter = %+v, want none", filtered["mbx_all"])
+	}
+	all := iCloudIMAPMessagesByMailbox([]iCloudIMAPFetchedMessage{{UID: "43", Raw: []byte(raw)}}, mailboxes, time.Time{}, allMailboxMessagesKeyword)
+	if len(all["mbx_all"]) != 1 || all["mbx_all"][0].Subject != "Multi-factor authentication settings changed" {
+		t.Fatalf("ordinary messages with all-mail mode = %+v, want one notification", all["mbx_all"])
+	}
+}
+
 func TestICloudIMAPMessagePreservesHTMLBody(t *testing.T) {
 	receivedAt := time.Date(2026, 8, 15, 9, 36, 39, 0, time.UTC)
 	raw := "From: OpenAI <noreply@tm.openai.com>\r\n" +
