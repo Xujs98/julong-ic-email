@@ -109,6 +109,7 @@ type Mailbox struct {
 	ICloudActive      bool      `json:"icloud_active"`
 	ReceiveCount      int       `json:"receive_count"`
 	Status            string    `json:"status"`
+	OutboundBatch     string    `json:"outbound_batch,omitempty"`
 	Note              string    `json:"note"`
 	LastSyncAt        time.Time `json:"last_sync_at,omitempty"`
 	LastSyncUID       string    `json:"last_sync_uid,omitempty"`
@@ -334,6 +335,7 @@ type publicMailbox struct {
 	ICloudActive       bool   `json:"icloud_active"`
 	ReceiveCount       int    `json:"receive_count"`
 	Status             string `json:"status"`
+	OutboundBatch      string `json:"outbound_batch,omitempty"`
 	Note               string `json:"note"`
 	LastSyncAt         string `json:"last_sync_at,omitempty"`
 	LastSyncUID        string `json:"last_sync_uid,omitempty"`

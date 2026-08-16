@@ -558,6 +558,17 @@
     .mailbox-html-state-label { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-weight: 800; }
     .mailbox-control-stack { grid-column: 2; display: grid; gap: 8px; justify-items: end; align-items: start; }
     .mailbox-action-row { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; justify-content: flex-end; }
+    .mailbox-search-hint { display: block; margin-top: 7px; color: var(--faint); font-size: 11px; font-weight: 650; line-height: 1.55; }
+    .mailbox-search-hint code { color: var(--green-2); font-family: inherit; font-weight: 850; }
+    .mailbox-column-picker { position: relative; }
+    .mailbox-column-picker > summary { min-height: 44px; display: flex; align-items: center; gap: 7px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--green-2); background: var(--dragon-accent-soft); cursor: pointer; font-weight: 850; list-style: none; white-space: nowrap; }
+    .mailbox-column-picker > summary::-webkit-details-marker { display: none; }
+    .mailbox-column-menu { position: absolute; z-index: 45; top: calc(100% + 9px); right: 0; width: 230px; max-height: min(520px, 70vh); overflow: auto; padding: 13px; border: 1px solid var(--line); border-radius: 17px; background: color-mix(in srgb, var(--panel) 98%, transparent); box-shadow: var(--shadow-strong); }
+    .mailbox-column-menu strong { display: block; padding: 4px 7px 10px; color: var(--muted); font-size: 13px; }
+    .mailbox-column-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 39px; padding: 7px 9px; border-radius: 10px; color: var(--text); font-size: 13px; font-weight: 750; cursor: pointer; }
+    .mailbox-column-option:hover { background: var(--dragon-accent-soft); }
+    .mailbox-column-option input { width: 17px; height: 17px; min-height: 0; accent-color: var(--green); }
+    .mailbox-column-reset { width: 100%; margin-top: 8px; min-height: 36px; }
     .pager { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; justify-content: flex-end; color: var(--muted); font-size: 13px; }
     .pager button { padding: 8px 11px; border-radius: 8px; }
     #mailboxPageInfo { white-space: nowrap; }
@@ -1055,6 +1066,10 @@
     .app-confirm-title { margin: 0; color: var(--text); font-size: 22px; line-height: 1.25; letter-spacing: -.03em; }
     .app-confirm-message { margin: 11px 0 0; color: var(--ink-soft); font-size: 15px; font-weight: 750; line-height: 1.65; white-space: pre-line; word-break: break-word; }
     .app-confirm-detail { margin: 9px 0 0; color: var(--muted); font-size: 13px; line-height: 1.7; white-space: pre-line; word-break: break-word; }
+    .app-confirm-input-wrap { display: grid; gap: 7px; margin-top: 15px; color: var(--muted); font-size: 12px; font-weight: 850; }
+    .app-confirm-input-wrap[hidden] { display: none; }
+    .app-confirm-input-wrap input { width: 100%; min-height: 44px; }
+    .app-confirm-input-hint { color: var(--faint); font-size: 11px; font-weight: 650; line-height: 1.5; }
     .app-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 26px 24px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel-2) 76%, transparent); }
     .app-confirm-actions button { min-width: 104px; padding: 11px 18px; border-radius: 13px; }
     .app-confirm-actions .app-confirm-submit { color: var(--on-accent); border-color: transparent; background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: 0 12px 24px color-mix(in srgb, var(--green) 22%, transparent); }
@@ -1418,6 +1433,9 @@
       white-space: nowrap;
     }
     .mailbox-label-chip.empty { color: var(--faint); border-color: var(--line); background: var(--th-bg); }
+    .mailbox-batch-cell { max-width: 180px; }
+    .mailbox-batch-chip { display: inline-flex; align-items: center; max-width: 160px; padding: 6px 10px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line)); border-radius: 10px; color: var(--green-2); background: var(--dragon-accent-soft); font-size: 12px; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
+    .mailbox-batch-chip.empty { color: var(--faint); border-color: var(--line); background: var(--th-bg); cursor: default; }
     .mailbox-status-badge {
       display: inline-flex;
       align-items: center;
@@ -1795,7 +1813,8 @@
           </div>
           <div class="toolbar list-toolbar">
             <label class="search-field">全局搜索邮箱
-              <input id="mailboxSearch" placeholder="搜索邮箱地址或标签" oninput="setMailboxSearch()">
+              <input id="mailboxSearch" placeholder="邮箱/标签，或 [批次] && [已激活]" oninput="setMailboxSearch()">
+              <span class="mailbox-search-hint">联合搜索：<code>[批次]</code> 查批次，<code>![批次]</code> 排除批次，<code>[已激活]</code> / <code>![已激活]</code> 筛选 HTML 状态，使用 <code>&amp;&amp;</code> 组合条件。</span>
             </label>
             <div class="mailbox-filter-row">
               <label class="mailbox-filter-field">同步范围
@@ -1818,6 +1837,24 @@
                 <button id="mailboxCleanupExpiredButton" type="button" class="danger" onclick="cleanupExpiredHTMLMailboxes()" hidden>清理全部已过期</button>
                 <button id="syncICloudMailboxesButton" onclick="syncICloudMailboxes()">同步已有邮箱</button>
                 <button id="mailboxExportAllButton" type="button" onclick="openMailboxExport('all')" hidden>全部导出</button>
+                <details id="mailboxColumnPicker" class="mailbox-column-picker">
+                  <summary>查看列</summary>
+                  <div class="mailbox-column-menu" onclick="event.stopPropagation()">
+                    <strong>按需显示列</strong>
+                    <label class="mailbox-column-option">ID<input type="checkbox" data-mailbox-column-toggle="id" onchange="toggleMailboxColumn('id', this.checked)"></label>
+                    <label class="mailbox-column-option">标签<input type="checkbox" data-mailbox-column-toggle="label" onchange="toggleMailboxColumn('label', this.checked)"></label>
+                    <label class="mailbox-column-option">状态<input type="checkbox" data-mailbox-column-toggle="status" onchange="toggleMailboxColumn('status', this.checked)"></label>
+                    <label class="mailbox-column-option">邮箱<input type="checkbox" data-mailbox-column-toggle="email" onchange="toggleMailboxColumn('email', this.checked)"></label>
+                    <label class="mailbox-column-option">Apple 账号<input type="checkbox" data-mailbox-column-toggle="account" onchange="toggleMailboxColumn('account', this.checked)"></label>
+                    <label class="mailbox-column-option">批次<input type="checkbox" data-mailbox-column-toggle="batch" onchange="toggleMailboxColumn('batch', this.checked)"></label>
+                    <label class="mailbox-column-option">邮件<input type="checkbox" data-mailbox-column-toggle="messages" onchange="toggleMailboxColumn('messages', this.checked)"></label>
+                    <label class="mailbox-column-option">创建时间<input type="checkbox" data-mailbox-column-toggle="created" onchange="toggleMailboxColumn('created', this.checked)"></label>
+                    <label class="mailbox-column-option">HTML 过期时间<input type="checkbox" data-mailbox-column-toggle="html" onchange="toggleMailboxColumn('html', this.checked)"></label>
+                    <label class="mailbox-column-option">取件码<input type="checkbox" data-mailbox-column-toggle="code" onchange="toggleMailboxColumn('code', this.checked)"></label>
+                    <label class="mailbox-column-option">操作<input type="checkbox" data-mailbox-column-toggle="actions" onchange="toggleMailboxColumn('actions', this.checked)"></label>
+                    <button type="button" class="mailbox-column-reset" onclick="resetMailboxColumns()">恢复默认</button>
+                  </div>
+                </details>
                 <button onclick="clearMailboxSearch()">清空搜索</button>
               </div>
               <div class="pager">
@@ -1859,7 +1896,7 @@
             <table class="mailbox-table">
               <thead><tr>
                 <th class="mailbox-check-column"><input id="mailboxSelectAll" class="mailbox-check" type="checkbox" onchange="toggleSelectAllMailboxes(this.checked)" aria-label="选择当前页全部邮箱"></th>
-                <th>ID</th><th>标签</th><th>状态</th><th>邮箱</th><th>Apple 账号</th><th>邮件</th><th>创建时间</th><th>HTML 过期时间</th><th>取件码</th><th>操作</th>
+                <th data-mailbox-column="id">ID</th><th data-mailbox-column="label">标签</th><th data-mailbox-column="status">状态</th><th data-mailbox-column="email">邮箱</th><th data-mailbox-column="account">Apple 账号</th><th data-mailbox-column="batch">批次</th><th data-mailbox-column="messages">邮件</th><th data-mailbox-column="created">创建时间</th><th data-mailbox-column="html">HTML 过期时间</th><th data-mailbox-column="code">取件码</th><th data-mailbox-column="actions">操作</th>
               </tr></thead>
               <tbody id="mailboxes"></tbody>
             </table>
@@ -1995,6 +2032,7 @@
           <h2 id="appConfirmTitle" class="app-confirm-title">请确认操作</h2>
           <p id="appConfirmMessage" class="app-confirm-message"></p>
           <p id="appConfirmDetail" class="app-confirm-detail" hidden></p>
+          <label id="appConfirmInputWrap" class="app-confirm-input-wrap" hidden><span id="appConfirmInputLabel">输入内容</span><input id="appConfirmInput" maxlength="128"><small id="appConfirmInputHint" class="app-confirm-input-hint"></small></label>
         </div>
       </div>
       <div class="app-confirm-actions">
@@ -2007,6 +2045,10 @@
     const $ = (id) => document.getElementById(id);
     const sessionCheckEnabledStorage = 'ipm_session_check_enabled';
     const sessionCheckMinutesStorage = 'ipm_session_check_minutes';
+    const mailboxColumnStorageKey = 'julong_mailbox_visible_columns';
+    const defaultMailboxColumns = ['id', 'label', 'status', 'email', 'account', 'batch', 'messages', 'created', 'html', 'code', 'actions'];
+    const mailboxColumnKeys = new Set(defaultMailboxColumns);
+    let mailboxVisibleColumns = new Set(defaultMailboxColumns);
     let lastMailboxes = [];
     let lastMailboxGroups = [];
     let lastMailboxPagination = {page: 1, page_size: 10, total: 0, total_all: 0, total_pages: 1};
@@ -2034,6 +2076,7 @@
     let createAccountSelectionTouched = false;
     let appConfirmResolver = null;
     let appConfirmPreviousFocus = null;
+    let appConfirmInputEnabled = false;
     let activeMailboxMessagesID = '';
     let mailboxMessagesRequestID = 0;
     let mailboxMessagesPreviousFocus = null;
@@ -2065,12 +2108,21 @@
       const dialog = $('appConfirmDialog');
       const card = $('appConfirmCard');
       const detail = $('appConfirmDetail');
+      const inputWrap = $('appConfirmInputWrap');
+      const input = $('appConfirmInput');
       const tone = ['danger', 'warning'].includes(config.tone) ? config.tone : 'default';
       card.className = `app-confirm-card tone-${tone}`;
       $('appConfirmTitle').textContent = config.title || '请确认操作';
       $('appConfirmMessage').textContent = config.message || '';
       detail.textContent = config.detail || '';
       detail.hidden = !config.detail;
+      appConfirmInputEnabled = !!config.inputLabel;
+      inputWrap.hidden = !appConfirmInputEnabled;
+      $('appConfirmInputLabel').textContent = config.inputLabel || '';
+      $('appConfirmInputHint').textContent = config.inputHint || '';
+      input.placeholder = config.inputPlaceholder || '';
+      input.value = config.inputValue || '';
+      input.maxLength = Number(config.inputMaxLength || 128);
       $('appConfirmIcon').textContent = tone === 'danger' ? '!' : (tone === 'warning' ? '!' : '?');
       $('appConfirmCancel').textContent = config.cancelText || '取消';
       $('appConfirmSubmit').textContent = config.confirmText || '确认';
@@ -2078,7 +2130,7 @@
       document.body.classList.add('app-confirm-open');
       dialog.classList.add('show');
       dialog.setAttribute('aria-hidden', 'false');
-      requestAnimationFrame(() => $('appConfirmCancel').focus());
+      requestAnimationFrame(() => (appConfirmInputEnabled ? input : $('appConfirmCancel')).focus());
       return new Promise(resolve => { appConfirmResolver = resolve; });
     }
 
@@ -2094,7 +2146,9 @@
         appConfirmPreviousFocus.focus({preventScroll: true});
       }
       appConfirmPreviousFocus = null;
-      resolver(!!accepted);
+      const result = accepted && appConfirmInputEnabled ? $('appConfirmInput').value.trim() : !!accepted;
+      appConfirmInputEnabled = false;
+      resolver(result);
     }
 
     function handleAppConfirmBackdrop(event) {
@@ -2176,6 +2230,60 @@
         button.classList.toggle('active', active);
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
       }
+      applyMailboxColumnVisibility();
+    }
+
+    function initMailboxColumnVisibility() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(mailboxColumnStorageKey) || 'null');
+        if (Array.isArray(saved)) {
+          mailboxVisibleColumns = new Set(saved.filter(key => mailboxColumnKeys.has(key)));
+        }
+      } catch (_) {
+        mailboxVisibleColumns = new Set(defaultMailboxColumns);
+      }
+      applyMailboxColumnVisibility();
+    }
+
+    function saveMailboxColumnVisibility() {
+      try {
+        localStorage.setItem(mailboxColumnStorageKey, JSON.stringify([...mailboxVisibleColumns]));
+      } catch (_) {}
+    }
+
+    function mailboxColumnIsVisible(key) {
+      if (!mailboxVisibleColumns.has(key)) return false;
+      if (key === 'batch' && activeView !== 'outbound') return false;
+      return true;
+    }
+
+    function applyMailboxColumnVisibility() {
+      for (const node of document.querySelectorAll('[data-mailbox-column]')) {
+        node.hidden = !mailboxColumnIsVisible(node.dataset.mailboxColumn || '');
+      }
+      for (const input of document.querySelectorAll('[data-mailbox-column-toggle]')) {
+        const key = input.dataset.mailboxColumnToggle || '';
+        input.checked = mailboxVisibleColumns.has(key);
+      }
+    }
+
+    function toggleMailboxColumn(key, visible) {
+      if (!mailboxColumnKeys.has(key)) return;
+      if (visible) mailboxVisibleColumns.add(key);
+      else mailboxVisibleColumns.delete(key);
+      saveMailboxColumnVisibility();
+      applyMailboxColumnVisibility();
+    }
+
+    function resetMailboxColumns() {
+      mailboxVisibleColumns = new Set(defaultMailboxColumns);
+      saveMailboxColumnVisibility();
+      applyMailboxColumnVisibility();
+      showToast('已恢复默认显示列');
+    }
+
+    function visibleMailboxColumnCount() {
+      return 1 + defaultMailboxColumns.filter(mailboxColumnIsVisible).length;
     }
 
     function initViewNavigation() {
@@ -3583,7 +3691,8 @@
       if ($('mailboxPrevPage')) $('mailboxPrevPage').disabled = page <= 1;
       if ($('mailboxNextPage')) $('mailboxNextPage').disabled = page >= totalPages;
       if (rows.length === 0) {
-        $('mailboxes').innerHTML = `<tr><td colspan="11" class="muted empty">${activeView === 'outbound' ? '暂无已出库邮箱' : '没有匹配的库存邮箱'}</td></tr>`;
+        $('mailboxes').innerHTML = `<tr><td colspan="${visibleMailboxColumnCount()}" class="muted empty">${activeView === 'outbound' ? '暂无匹配的已出库邮箱' : '没有匹配的库存邮箱'}</td></tr>`;
+        applyMailboxColumnVisibility();
         renderMailboxBatchBar();
         return;
       }
@@ -3592,16 +3701,17 @@
         const selected = selectedMailboxIDs.has(row.id);
         return `<tr class="${selected ? 'selected' : ''}" data-mailbox-id="${esc(row.id)}">
             <td class="mailbox-check-column"><input class="mailbox-check" type="checkbox" ${selected ? 'checked' : ''} onchange="toggleMailboxSelection('${row.id}', this.checked)" aria-label="选择 ${esc(row.email)}"></td>
-            <td><span class="mailbox-id" title="${esc(row.id)}">${esc(mailboxDisplayID(row.id))}</span></td>
-            <td class="mailbox-label-cell"><span class="mailbox-label-chip ${row.label ? '' : 'empty'}" title="${esc(row.label || '未设置标签')}">${esc(row.label || '未设置')}</span></td>
-            <td><span class="mailbox-status-badge ${status.kind}" title="API ${row.api_active ? '正常' : '停用'} / iCloud ${row.icloud_active ? '正常' : '停用'}">${esc(status.text)}</span></td>
-            <td><button type="button" class="copy-email-button" onclick="copyMailboxEmail('${row.id}')" title="点击复制邮箱地址">${esc(row.email)}</button></td>
-            <td class="mailbox-account-cell" title="${esc(mailboxAccountTitle(row))}">${esc(mailboxAccountTitle(row))}</td>
-            <td><button type="button" class="mailbox-message-count-button" onclick="openMailboxMessages('${row.id}')" title="查看 ${esc(row.email)} 的邮件" aria-label="查看 ${esc(row.email)} 的邮件">${row.receive_count || 0} 封</button></td>
-            <td class="mailbox-created-cell">${esc(formatMailboxDate(row.created_at))}</td>
-            <td class="mailbox-html-expiry-cell">${renderMailboxHTMLExpiry(row)}</td>
-            <td class="mailbox-code-cell">${renderMailboxCodeCell(row.id)}</td>
-            <td><div class="row-actions">
+            <td data-mailbox-column="id"><span class="mailbox-id" title="${esc(row.id)}">${esc(mailboxDisplayID(row.id))}</span></td>
+            <td data-mailbox-column="label" class="mailbox-label-cell"><span class="mailbox-label-chip ${row.label ? '' : 'empty'}" title="${esc(row.label || '未设置标签')}">${esc(row.label || '未设置')}</span></td>
+            <td data-mailbox-column="status"><span class="mailbox-status-badge ${status.kind}" title="API ${row.api_active ? '正常' : '停用'} / iCloud ${row.icloud_active ? '正常' : '停用'}">${esc(status.text)}</span></td>
+            <td data-mailbox-column="email"><button type="button" class="copy-email-button" onclick="copyMailboxEmail('${row.id}')" title="点击复制邮箱地址">${esc(row.email)}</button></td>
+            <td data-mailbox-column="account" class="mailbox-account-cell" title="${esc(mailboxAccountTitle(row))}">${esc(mailboxAccountTitle(row))}</td>
+            <td data-mailbox-column="batch" class="mailbox-batch-cell">${renderMailboxBatch(row)}</td>
+            <td data-mailbox-column="messages"><button type="button" class="mailbox-message-count-button" onclick="openMailboxMessages('${row.id}')" title="查看 ${esc(row.email)} 的邮件" aria-label="查看 ${esc(row.email)} 的邮件">${row.receive_count || 0} 封</button></td>
+            <td data-mailbox-column="created" class="mailbox-created-cell">${esc(formatMailboxDate(row.created_at))}</td>
+            <td data-mailbox-column="html" class="mailbox-html-expiry-cell">${renderMailboxHTMLExpiry(row)}</td>
+            <td data-mailbox-column="code" class="mailbox-code-cell">${renderMailboxCodeCell(row.id)}</td>
+            <td data-mailbox-column="actions"><div class="row-actions">
               <button id="verifyButton-${esc(row.id)}" onclick="verifyMailbox('${row.id}')" title="获取验证码" aria-label="获取验证码">${mailboxActionIcon('eye')}</button>
               <button class="action-sync ${syncButtonClass(row.id)}" onclick="syncMailbox('${row.id}')" ${syncButtonDisabled(row.id)} title="同步邮件" aria-label="同步邮件">${mailboxActionIcon('sync')}</button>
               <button onclick="createMailboxHTMLLink('${row.id}')" title="复制 HTML 接码地址" aria-label="复制 HTML 接码地址">${mailboxActionIcon('link')}</button>
@@ -3623,7 +3733,20 @@
             </td>
           </tr>`;
       }).join('');
+      applyMailboxColumnVisibility();
       renderMailboxBatchBar();
+    }
+
+    function renderMailboxBatch(row) {
+      const batch = String(row.outbound_batch || '').trim();
+      if (!batch) return '<span class="mailbox-batch-chip empty">未设置</span>';
+      return `<button type="button" class="mailbox-batch-chip" title="点击搜索批次：${esc(batch)}" onclick="setMailboxBatchSearch(${esc(JSON.stringify(batch))})">${esc(batch)}</button>`;
+    }
+
+    function setMailboxBatchSearch(batch) {
+      if ($('mailboxSearch')) $('mailboxSearch').value = `[${String(batch || '').trim()}]`;
+      mailboxPage = 1;
+      loadMailboxPage().catch(err => log('批次搜索失败：' + err.message));
     }
 
     function mailboxDisplayID(id) {
@@ -3806,7 +3929,7 @@
       if (row.status === 'outbound') {
         return `<button type="button" onclick="setMailboxStatus('${row.id}', 'available')">退回库存</button>`;
       }
-      return `<button type="button" onclick="setMailboxStatus('${row.id}', 'outbound')">设为出库</button>`;
+      return `<button type="button" onclick="outboundMailbox('${row.id}')">设为出库</button>`;
     }
 
     function renderMailboxAPIToggleAction(row) {
@@ -3948,6 +4071,11 @@
 
     async function batchSetMailboxStatus(status) {
       if (!status) return;
+      if (status === 'outbound') {
+        if ($('mailboxBatchStatus')) $('mailboxBatchStatus').value = '';
+        await batchOutboundMailboxes();
+        return;
+      }
       const rows = selectedMailboxList();
       if (rows.length === 0) return;
       const result = await executeMailboxBatch(rows, row => {
@@ -3963,27 +4091,45 @@
     async function batchOutboundMailboxes() {
       const rows = selectedMailboxList();
       if (rows.length === 0) return;
-      if (!await askConfirm({
+      await outboundMailboxRows(rows, true);
+    }
+
+    async function outboundMailbox(id) {
+      const row = mailboxRowByID(id);
+      if (!row) return;
+      await outboundMailboxRows([row], false);
+    }
+
+    async function outboundMailboxRows(rows, clearSelectionAfter) {
+      const batch = await askConfirm({
         title: '批量出库邮箱',
         message: `将选中的 ${rows.length} 个邮箱移到“取件码与发货”。`,
         detail: '邮箱状态会改为“出库”，API、HTML 地址和邮件记录保持不变。',
         confirmText: `出库 ${rows.length} 个`,
-        tone: 'warning'
-      })) return;
-      const result = await executeMailboxBatch(rows, async row => {
-        await api(`/api/mailboxes/${encodeURIComponent(row.id)}/status`, {
-          method:'POST',
-          body: JSON.stringify({status:'outbound', note:'面板批量出库'})
-        });
-        return row.id;
+        tone: 'warning',
+        inputLabel: '出库批次',
+        inputPlaceholder: '例如：客户A-0816（可留空）',
+        inputHint: '留空时自动使用当前 13 位时间戳；同一次出库的邮箱使用同一批次。',
+        inputMaxLength: 128
       });
-      const successCount = rows.length - result.errors.length;
-      clearMailboxSelection();
-      log(`批量出库完成：成功 ${successCount}，失败 ${result.errors.length}`);
-      showToast(result.errors.length
-        ? `出库完成：成功 ${successCount}，失败 ${result.errors.length}`
-        : `已出库 ${successCount} 个邮箱`);
-      if (successCount > 0) setActiveView('outbound');
+      if (batch === false) return;
+      try {
+        const data = await api('/api/mailboxes/batch-outbound', {
+          method:'POST',
+          body: JSON.stringify({ids: rows.map(row => row.id), batch})
+        });
+        const successCount = Number(data.count || rows.length);
+        const resolvedBatch = data.batch || batch || '';
+        if (clearSelectionAfter) clearMailboxSelection();
+        if ($('mailboxBatchStatus')) $('mailboxBatchStatus').value = '';
+        log(`批量出库完成：成功 ${successCount}，批次 ${resolvedBatch}`);
+        showToast(`已出库 ${successCount} 个邮箱 · 批次 ${resolvedBatch}`);
+        if (successCount > 0) setActiveView('outbound');
+      } catch (err) {
+        log('批量出库失败：' + err.message);
+        showToast('出库失败：' + err.message);
+        return;
+      }
       await refresh();
     }
 
@@ -4614,6 +4760,10 @@
 
     async function setMailboxStatus(id, status) {
       if (!status) return;
+      if (status === 'outbound') {
+        await outboundMailbox(id);
+        return;
+      }
       const apiActive = status === 'disabled' ? false : undefined;
       const payload = {status, note: '面板手动改状态'};
       if (apiActive !== undefined) payload.api_active = apiActive;
@@ -4739,6 +4889,7 @@
     }
 
     initAppearanceControls();
+    initMailboxColumnVisibility();
     initViewNavigation();
     initSessionCheckSettings();
     ensureManageRefreshClockTimer();

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 //go:embed templates/*
@@ -29,6 +30,7 @@ const mailboxCreateMinInterval = 3 * time.Second
 const mailboxCreateLimitCooldown = 2 * time.Minute
 const mailboxListDefaultPageSize = 10
 const mailboxListMaxPageSize = 500
+const mailboxBatchOutboundMaxSize = 5000
 
 var mailboxMailSyncMinInterval = 3 * time.Second
 var mailboxCodeFastWait = 600 * time.Millisecond
@@ -495,6 +497,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/accounts", s.handleCreateAccount)
 	s.mux.HandleFunc("GET /api/mailboxes", s.handleListMailboxes)
 	s.mux.HandleFunc("POST /api/mailboxes", s.handleCreateMailbox)
+	s.mux.HandleFunc("POST /api/mailboxes/batch-outbound", s.handleBatchOutboundMailboxes)
 	s.mux.HandleFunc("POST /api/mailboxes/html-expired/cleanup", s.handleCleanupExpiredHTMLMailboxes)
 	s.mux.HandleFunc("POST /api/mailboxes/remote-clean", s.handleCleanRemoteMailboxes)
 	s.mux.HandleFunc("POST /api/mailboxes/{id}/verify", s.handleVerifyMailbox)
@@ -2175,9 +2178,12 @@ func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 	accountsByID := mailboxAccountMap(state.Accounts)
 	base := filterMailboxesByOwner(state.Mailboxes, strings.TrimSpace(r.URL.Query().Get("owner_id")), scopedOwnerID(r, s.store), s.isAdminRequest(r))
 	scopedBase := filterMailboxesByStatusScope(base, r.URL.Query())
-	htmlScopedBase := filterMailboxesByHTMLState(scopedBase, s.store.Snapshot().MailboxHTMLLinks, r.URL.Query().Get("html_state"), time.Now())
+	now := time.Now()
+	htmlLinks := s.store.Snapshot().MailboxHTMLLinks
+	htmlStates := mailboxHTMLStates(htmlLinks, now)
+	htmlScopedBase := filterMailboxesByHTMLState(scopedBase, htmlLinks, r.URL.Query().Get("html_state"), now)
 	groups := publicMailboxGroups(htmlScopedBase, accountsByID)
-	filtered := filterMailboxesForList(htmlScopedBase, accountsByID, r.URL.Query())
+	filtered := filterMailboxesForList(htmlScopedBase, accountsByID, htmlStates, r.URL.Query())
 	sortMailboxesForList(filtered)
 
 	page, pageSize, paged := mailboxListPagination(r)
@@ -2224,9 +2230,9 @@ func filterMailboxesByOwner(mailboxes []Mailbox, ownerFilter, scopedOwner string
 	return out
 }
 
-func filterMailboxesForList(mailboxes []Mailbox, accountsByID map[string]Account, values url.Values) []Mailbox {
+func filterMailboxesForList(mailboxes []Mailbox, accountsByID map[string]Account, htmlStates map[string]string, values url.Values) []Mailbox {
 	accountKey := strings.TrimSpace(firstNonEmpty(values.Get("account_key"), values.Get("account_id")))
-	keyword := strings.ToLower(strings.TrimSpace(firstNonEmpty(values.Get("search"), values.Get("q"))))
+	search := parseMailboxSearch(firstNonEmpty(values.Get("search"), values.Get("q")))
 	status := strings.ToLower(strings.TrimSpace(values.Get("status")))
 	excludeStatus := strings.ToLower(strings.TrimSpace(values.Get("exclude_status")))
 	out := make([]Mailbox, 0, len(mailboxes))
@@ -2238,10 +2244,10 @@ func filterMailboxesForList(mailboxes []Mailbox, accountsByID map[string]Account
 		if excludeStatus != "" && mailboxStatus == excludeStatus {
 			continue
 		}
-		if keyword == "" && accountKey != "" && accountKey != "all" && !constantTimeEqual(mailboxListAccountKey(mailbox, accountsByID), accountKey) {
+		if len(search) == 0 && accountKey != "" && accountKey != "all" && !constantTimeEqual(mailboxListAccountKey(mailbox, accountsByID), accountKey) {
 			continue
 		}
-		if keyword != "" && !mailboxListMatchesSearch(mailbox, accountsByID, keyword) {
+		if len(search) > 0 && !mailboxListMatchesSearch(mailbox, accountsByID, htmlStates[mailbox.ID], search) {
 			continue
 		}
 		out = append(out, mailbox)
@@ -2277,22 +2283,39 @@ func filterMailboxesByHTMLState(mailboxes []Mailbox, links []MailboxHTMLLink, re
 	if now.IsZero() {
 		now = time.Now()
 	}
-	linksByMailbox := make(map[string]MailboxHTMLLink, len(links))
-	for _, link := range links {
-		mailboxID := strings.TrimSpace(link.MailboxID)
-		if mailboxID == "" {
-			continue
-		}
-		if _, exists := linksByMailbox[mailboxID]; !exists {
-			linksByMailbox[mailboxID] = link
-		}
-	}
+	linksByMailbox := mailboxHTMLLinksByMailbox(links)
 	out := make([]Mailbox, 0, len(mailboxes))
 	for _, mailbox := range mailboxes {
 		link, ok := linksByMailbox[mailbox.ID]
 		if mailboxHTMLState(link, ok, now) == requested {
 			out = append(out, mailbox)
 		}
+	}
+	return out
+}
+
+func mailboxHTMLLinksByMailbox(links []MailboxHTMLLink) map[string]MailboxHTMLLink {
+	out := make(map[string]MailboxHTMLLink, len(links))
+	for _, link := range links {
+		mailboxID := strings.TrimSpace(link.MailboxID)
+		if mailboxID == "" {
+			continue
+		}
+		if _, exists := out[mailboxID]; !exists {
+			out[mailboxID] = link
+		}
+	}
+	return out
+}
+
+func mailboxHTMLStates(links []MailboxHTMLLink, now time.Time) map[string]string {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	linksByMailbox := mailboxHTMLLinksByMailbox(links)
+	out := make(map[string]string, len(linksByMailbox))
+	for mailboxID, link := range linksByMailbox {
+		out[mailboxID] = mailboxHTMLState(link, true, now)
 	}
 	return out
 }
@@ -2316,7 +2339,81 @@ func mailboxHTMLState(link MailboxHTMLLink, exists bool, now time.Time) string {
 	return "activated"
 }
 
-func mailboxListMatchesSearch(mailbox Mailbox, accountsByID map[string]Account, keyword string) bool {
+type mailboxSearchTerm struct {
+	kind    string
+	value   string
+	negated bool
+}
+
+func parseMailboxSearch(raw string) []mailboxSearchTerm {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, "&&")
+	out := make([]mailboxSearchTerm, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Trim(strings.TrimSpace(part), ",，;；")
+		if part == "" {
+			continue
+		}
+		term := mailboxSearchTerm{}
+		if strings.HasPrefix(part, "!") {
+			term.negated = true
+			part = strings.TrimSpace(strings.TrimPrefix(part, "!"))
+		}
+		asciiBracketed := strings.HasPrefix(part, "[") && strings.HasSuffix(part, "]")
+		wideBracketed := strings.HasPrefix(part, "【") && strings.HasSuffix(part, "】")
+		bracketed := asciiBracketed || wideBracketed
+		if asciiBracketed {
+			part = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(part, "["), "]"))
+		} else if wideBracketed {
+			part = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(part, "【"), "】"))
+		}
+		term.value = strings.ToLower(strings.TrimSpace(part))
+		if term.value == "" {
+			continue
+		}
+		term.kind = "global"
+		if bracketed {
+			term.kind, term.value = mailboxSearchBracketKind(term.value)
+		}
+		out = append(out, term)
+	}
+	return out
+}
+
+func mailboxSearchBracketKind(value string) (string, string) {
+	switch value {
+	case "已激活", "activated", "html:activated":
+		return "html", "activated"
+	case "未激活", "unactivated", "html:unactivated":
+		return "html", "unactivated"
+	case "已过期", "expired", "html:expired":
+		return "html", "expired"
+	case "可用", "available":
+		return "status", StatusAvailable
+	case "已使用", "used":
+		return "status", StatusUsed
+	case "失败", "failed":
+		return "status", StatusFailed
+	case "停用", "disabled":
+		return "status", StatusDisabled
+	case "出库", "outbound":
+		return "status", StatusOutbound
+	case "api启用", "api正常", "api:enabled":
+		return "api", "enabled"
+	case "api停用", "api:disabled":
+		return "api", "disabled"
+	default:
+		return "batch", value
+	}
+}
+
+func mailboxListMatchesSearch(mailbox Mailbox, accountsByID map[string]Account, htmlState string, terms []mailboxSearchTerm) bool {
+	if htmlState == "" {
+		htmlState = "unactivated"
+	}
 	account := accountsByID[strings.TrimSpace(mailbox.AccountID)]
 	haystack := strings.ToLower(strings.Join([]string{
 		mailbox.Email,
@@ -2326,9 +2423,31 @@ func mailboxListMatchesSearch(mailbox Mailbox, accountsByID map[string]Account, 
 		account.Label,
 		account.AppleID,
 		mailbox.Status,
+		mailbox.OutboundBatch,
 		mailbox.OwnerID,
 	}, " "))
-	return strings.Contains(haystack, keyword)
+	for _, term := range terms {
+		matched := false
+		switch term.kind {
+		case "html":
+			matched = htmlState == term.value
+		case "status":
+			matched = strings.EqualFold(strings.TrimSpace(mailbox.Status), term.value)
+		case "api":
+			matched = mailbox.APIActive == (term.value == "enabled")
+		case "batch":
+			matched = strings.Contains(strings.ToLower(strings.TrimSpace(mailbox.OutboundBatch)), term.value)
+		default:
+			matched = strings.Contains(haystack, term.value)
+		}
+		if term.negated {
+			matched = !matched
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
 }
 
 func sortMailboxesForList(mailboxes []Mailbox) {
@@ -2517,6 +2636,74 @@ func (s *Server) handleEnableMailbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "mailbox": s.publicMailbox(r, mailbox)})
 }
 
+func (s *Server) handleBatchOutboundMailboxes(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		IDs   []string `json:"ids"`
+		Batch string   `json:"batch"`
+	}
+	if err := decodeJSON(r, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(payload.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, errCode("mailbox_ids_missing", "请至少选择一个邮箱", false))
+		return
+	}
+	if len(payload.IDs) > mailboxBatchOutboundMaxSize {
+		writeError(w, http.StatusBadRequest, errCode("mailbox_ids_too_many", "单次最多出库 5000 个邮箱", false))
+		return
+	}
+	payload.Batch = strings.TrimSpace(payload.Batch)
+	if utf8.RuneCountInString(payload.Batch) > 128 {
+		writeError(w, http.StatusBadRequest, errCode("outbound_batch_too_long", "批次最多输入 128 个字符", false))
+		return
+	}
+	seen := make(map[string]struct{}, len(payload.IDs))
+	ids := make([]string, 0, len(payload.IDs))
+	allowedIDs := make(map[string]struct{})
+	for _, mailbox := range s.scopedState(r).Mailboxes {
+		allowedIDs[mailbox.ID] = struct{}{}
+	}
+	for _, rawID := range payload.IDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		if _, ok := allowedIDs[id]; !ok {
+			writeError(w, http.StatusNotFound, errCode("mailbox_not_found", "邮箱不存在", false))
+			return
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		writeError(w, http.StatusBadRequest, errCode("mailbox_ids_missing", "请至少选择一个邮箱", false))
+		return
+	}
+	mailboxes, err := s.store.SetMailboxesOutbound(ids, payload.Batch, "面板批量出库")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	out := make([]publicMailbox, 0, len(mailboxes))
+	for _, mailbox := range mailboxes {
+		out = append(out, s.publicMailbox(r, mailbox))
+	}
+	batch := ""
+	if len(mailboxes) > 0 {
+		batch = mailboxes[0].OutboundBatch
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":   true,
+		"batch":     batch,
+		"count":     len(out),
+		"mailboxes": out,
+	})
+}
+
 func (s *Server) handleSetMailboxStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !s.canAccessMailboxID(r, id) {
@@ -2526,6 +2713,7 @@ func (s *Server) handleSetMailboxStatus(w http.ResponseWriter, r *http.Request) 
 	var payload struct {
 		Status       string `json:"status"`
 		Note         string `json:"note"`
+		Batch        string `json:"batch"`
 		APIActive    *bool  `json:"api_active"`
 		ICloudActive *bool  `json:"icloud_active"`
 	}
@@ -2538,7 +2726,22 @@ func (s *Server) handleSetMailboxStatus(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, errCode("invalid_status", "状态只能是 available、used、failed、active、disabled、outbound", false))
 		return
 	}
-	mailbox, err := s.store.SetMailboxStatus(id, payload.APIActive, payload.ICloudActive, status, payload.Note)
+	payload.Batch = strings.TrimSpace(payload.Batch)
+	if utf8.RuneCountInString(payload.Batch) > 128 {
+		writeError(w, http.StatusBadRequest, errCode("outbound_batch_too_long", "批次最多输入 128 个字符", false))
+		return
+	}
+	var mailbox Mailbox
+	var err error
+	if status == StatusOutbound {
+		var rows []Mailbox
+		rows, err = s.store.SetMailboxesOutbound([]string{id}, payload.Batch, payload.Note)
+		if len(rows) > 0 {
+			mailbox = rows[0]
+		}
+	} else {
+		mailbox, err = s.store.SetMailboxStatus(id, payload.APIActive, payload.ICloudActive, status, payload.Note)
+	}
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
@@ -5065,6 +5268,7 @@ func (s *Server) publicMailbox(r *http.Request, mailbox Mailbox) publicMailbox {
 		ICloudActive:       mailbox.ICloudActive,
 		ReceiveCount:       mailbox.ReceiveCount,
 		Status:             mailbox.Status,
+		OutboundBatch:      mailbox.OutboundBatch,
 		Note:               mailbox.Note,
 		LastSyncAt:         formatTime(mailbox.LastSyncAt),
 		LastSyncUID:        mailbox.LastSyncUID,

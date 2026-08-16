@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -386,6 +388,30 @@ func TestMailboxTableSupportsOutboundWorkflow(t *testing.T) {
 	}
 }
 
+func TestMailboxOutboundBatchSearchAndColumnPickerTemplate(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`/api/mailboxes/batch-outbound`,
+		`inputLabel: '出库批次'`,
+		`留空时自动使用当前 13 位时间戳`,
+		`data-mailbox-column="batch"`,
+		`data-mailbox-column-toggle="batch"`,
+		`mailboxColumnStorageKey`,
+		`toggleMailboxColumn`,
+		`[批次] && [已激活]`,
+		`![已激活]`,
+		`renderMailboxBatch(row)`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("outbound batch/search/column template missing %q", want)
+		}
+	}
+}
+
 func TestMailboxTableUsesCreationTime(t *testing.T) {
 	data, err := webFS.ReadFile("templates/index.html")
 	if err != nil {
@@ -393,7 +419,7 @@ func TestMailboxTableUsesCreationTime(t *testing.T) {
 	}
 	source := string(data)
 	for _, want := range []string{
-		`<th>创建时间</th>`,
+		`<th data-mailbox-column="created">创建时间</th>`,
 		`class="mailbox-created-cell"`,
 		`formatMailboxDate(row.created_at)`,
 	} {
@@ -5030,9 +5056,10 @@ func TestMailboxOutboundStatusAndListFilters(t *testing.T) {
 		t.Fatalf("set outbound status = %d body=%s", rr.Code, rr.Body.String())
 	}
 	updated, ok := store.FindMailboxByID(outbound.ID)
-	if !ok || updated.Status != StatusOutbound || updated.Note != "test outbound" {
+	if !ok || updated.Status != StatusOutbound || updated.Note != "test outbound" || strings.TrimSpace(updated.OutboundBatch) == "" {
 		t.Fatalf("outbound mailbox = %+v ok=%v", updated, ok)
 	}
+	outboundBatch := updated.OutboundBatch
 	if !validMailboxStatus(StatusOutbound) {
 		t.Fatal("outbound status should be valid")
 	}
@@ -5045,7 +5072,7 @@ func TestMailboxOutboundStatusAndListFilters(t *testing.T) {
 		t.Fatalf("disable outbound mailbox API = %d body=%s", rr.Code, rr.Body.String())
 	}
 	disabledOutbound, ok := store.FindMailboxByID(outbound.ID)
-	if !ok || disabledOutbound.APIActive || disabledOutbound.Status != StatusOutbound {
+	if !ok || disabledOutbound.APIActive || disabledOutbound.Status != StatusOutbound || disabledOutbound.OutboundBatch != outboundBatch {
 		t.Fatalf("disabled outbound mailbox = %+v ok=%v", disabledOutbound, ok)
 	}
 	rr = httptest.NewRecorder()
@@ -5056,7 +5083,7 @@ func TestMailboxOutboundStatusAndListFilters(t *testing.T) {
 		t.Fatalf("enable outbound mailbox API = %d body=%s", rr.Code, rr.Body.String())
 	}
 	enabledOutbound, ok := store.FindMailboxByID(outbound.ID)
-	if !ok || !enabledOutbound.APIActive || enabledOutbound.Status != StatusOutbound {
+	if !ok || !enabledOutbound.APIActive || enabledOutbound.Status != StatusOutbound || enabledOutbound.OutboundBatch != outboundBatch {
 		t.Fatalf("enabled outbound mailbox = %+v ok=%v", enabledOutbound, ok)
 	}
 
@@ -5082,7 +5109,7 @@ func TestMailboxOutboundStatusAndListFilters(t *testing.T) {
 		return body.Mailboxes
 	}
 	outboundRows := list("status=outbound")
-	if len(outboundRows) != 1 || outboundRows[0].ID != outbound.ID || outboundRows[0].Status != StatusOutbound {
+	if len(outboundRows) != 1 || outboundRows[0].ID != outbound.ID || outboundRows[0].Status != StatusOutbound || outboundRows[0].OutboundBatch != outboundBatch {
 		t.Fatalf("outbound rows = %+v, want %s", outboundRows, outbound.ID)
 	}
 	inventoryRows := list("exclude_status=outbound")
@@ -5121,6 +5148,160 @@ func TestMailboxOutboundStatusAndListFilters(t *testing.T) {
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("set foreign mailbox outbound = %d body=%s, want 404", rr.Code, rr.Body.String())
 	}
+}
+
+func TestBatchOutboundMailboxesUsesSharedBatchAndTimestampFallback(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	adminCookie, _ := registerTestUser(t, handler, "batch-admin", "admin123")
+	cookie, _ := registerTestUser(t, handler, "batch-owner", "batch123")
+	first := createTestMailboxWithCookie(t, handler, cookie, "first", "batch-first@icloud.com")
+	second := createTestMailboxWithCookie(t, handler, cookie, "second", "batch-second@icloud.com")
+
+	postBatch := func(ids []string, batch string) (string, int) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{"ids": ids, "batch": batch})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/mailboxes/batch-outbound", bytes.NewReader(body))
+		req.AddCookie(cookie)
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("batch outbound = %d body=%s", rr.Code, rr.Body.String())
+		}
+		var response struct {
+			Batch string `json:"batch"`
+			Count int    `json:"count"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response.Batch, response.Count
+	}
+
+	batch, count := postBatch([]string{first.ID, second.ID}, "客户A-0816")
+	if batch != "客户A-0816" || count != 2 {
+		t.Fatalf("explicit batch response = %q/%d", batch, count)
+	}
+	for _, id := range []string{first.ID, second.ID} {
+		mailbox, ok := store.FindMailboxByID(id)
+		if !ok || mailbox.Status != StatusOutbound || mailbox.OutboundBatch != batch {
+			t.Fatalf("explicit batch mailbox %s = %+v ok=%v", id, mailbox, ok)
+		}
+	}
+
+	third := createTestMailboxWithCookie(t, handler, cookie, "third", "batch-third@icloud.com")
+	fourth := createTestMailboxWithCookie(t, handler, cookie, "fourth", "batch-fourth@icloud.com")
+	timestampBatch, count := postBatch([]string{third.ID, fourth.ID}, "")
+	if count != 2 || len(timestampBatch) != 13 || strings.Trim(timestampBatch, "0123456789") != "" {
+		t.Fatalf("timestamp batch response = %q/%d, want 13 digit shared timestamp", timestampBatch, count)
+	}
+	for _, id := range []string{third.ID, fourth.ID} {
+		mailbox, ok := store.FindMailboxByID(id)
+		if !ok || mailbox.OutboundBatch != timestampBatch {
+			t.Fatalf("timestamp batch mailbox %s = %+v ok=%v", id, mailbox, ok)
+		}
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/mailboxes/"+url.PathEscape(first.ID)+"/status", strings.NewReader(`{"status":"available"}`))
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("return outbound mailbox = %d body=%s", rr.Code, rr.Body.String())
+	}
+	returned, ok := store.FindMailboxByID(first.ID)
+	if !ok || returned.Status != StatusAvailable || returned.OutboundBatch != "" {
+		t.Fatalf("returned mailbox = %+v ok=%v, want cleared batch", returned, ok)
+	}
+
+	ownerInventory := createTestMailboxWithCookie(t, handler, cookie, "owner-inventory", "owner-inventory@icloud.com")
+	foreign := createTestMailboxWithCookie(t, handler, adminCookie, "foreign", "batch-foreign@icloud.com")
+	body, err := json.Marshal(map[string]any{"ids": []string{ownerInventory.ID, foreign.ID}, "batch": "should-not-apply"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/mailboxes/batch-outbound", bytes.NewReader(body))
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("cross-owner batch outbound = %d body=%s, want 404", rr.Code, rr.Body.String())
+	}
+	unchanged, ok := store.FindMailboxByID(ownerInventory.ID)
+	if !ok || unchanged.Status != StatusAvailable || unchanged.OutboundBatch != "" {
+		t.Fatalf("batch outbound should be atomic on authorization failure: %+v ok=%v", unchanged, ok)
+	}
+}
+
+func TestMailboxAdvancedSearchCombinesBatchAndHTMLState(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	cookie, _ := registerTestUser(t, handler, "search-owner", "search123")
+	alphaActive := createTestMailboxWithCookie(t, handler, cookie, "alpha-active", "alpha-active@icloud.com")
+	alphaPending := createTestMailboxWithCookie(t, handler, cookie, "alpha-pending", "alpha-pending@icloud.com")
+	betaActive := createTestMailboxWithCookie(t, handler, cookie, "beta-active", "beta-active@icloud.com")
+	if _, err := store.SetMailboxesOutbound([]string{alphaActive.ID, alphaPending.ID}, "alpha", "test batch"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetMailboxesOutbound([]string{betaActive.ID}, "beta", "test batch"); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	store.mu.Lock()
+	for i := range store.state.MailboxHTMLLinks {
+		link := &store.state.MailboxHTMLLinks[i]
+		if link.MailboxID == alphaActive.ID || link.MailboxID == betaActive.ID {
+			link.ActivatedAt = now.Add(-time.Hour)
+			link.ExpiresAt = now.Add(time.Hour)
+		}
+	}
+	err := store.saveLocked()
+	store.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	search := func(query string) []string {
+		t.Helper()
+		values := url.Values{"status": {StatusOutbound}, "search": {query}, "page": {"1"}, "page_size": {"50"}}
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/mailboxes?"+values.Encode(), nil)
+		req.AddCookie(cookie)
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("search %q = %d body=%s", query, rr.Code, rr.Body.String())
+		}
+		var response struct {
+			Mailboxes []publicMailbox `json:"mailboxes"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]string, 0, len(response.Mailboxes))
+		for _, mailbox := range response.Mailboxes {
+			ids = append(ids, mailbox.ID)
+		}
+		sort.Strings(ids)
+		return ids
+	}
+
+	assertIDs := func(query string, want ...string) {
+		t.Helper()
+		sort.Strings(want)
+		if got := search(query); !reflect.DeepEqual(got, want) {
+			t.Fatalf("search %q = %v, want %v", query, got, want)
+		}
+	}
+	assertIDs("[alpha]", alphaActive.ID, alphaPending.ID)
+	assertIDs("![alpha]", betaActive.ID)
+	assertIDs("[已激活]", alphaActive.ID, betaActive.ID)
+	assertIDs("![已激活]", alphaPending.ID)
+	assertIDs("[alpha]&&[已激活]", alphaActive.ID)
+	assertIDs("【alpha】&&【已激活】", alphaActive.ID)
 }
 
 func TestMailboxOutboundHTMLStateFilters(t *testing.T) {

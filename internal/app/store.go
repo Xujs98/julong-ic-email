@@ -1103,13 +1103,80 @@ func (s *FileStore) SetMailboxStatus(id string, apiActive *bool, icloudActive *b
 		s.state.Mailboxes[idx].ICloudActive = *icloudActive
 	}
 	if strings.TrimSpace(status) != "" {
-		s.state.Mailboxes[idx].Status = strings.TrimSpace(status)
+		nextStatus := strings.TrimSpace(status)
+		s.state.Mailboxes[idx].Status = nextStatus
+		if nextStatus == StatusOutbound {
+			if strings.TrimSpace(s.state.Mailboxes[idx].OutboundBatch) == "" {
+				s.state.Mailboxes[idx].OutboundBatch = outboundBatchValue("", time.Now())
+			}
+		} else {
+			s.state.Mailboxes[idx].OutboundBatch = ""
+		}
 	}
 	if strings.TrimSpace(note) != "" {
 		s.state.Mailboxes[idx].Note = strings.TrimSpace(note)
 	}
 	s.state.Mailboxes[idx].UpdatedAt = time.Now()
 	return s.state.Mailboxes[idx], s.saveLocked()
+}
+
+func (s *FileStore) SetMailboxesOutbound(ids []string, batch, note string) ([]Mailbox, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seen := make(map[string]struct{}, len(ids))
+	indexes := make([]int, 0, len(ids))
+	indexByID := make(map[string]int, len(s.state.Mailboxes))
+	for idx := range s.state.Mailboxes {
+		indexByID[s.state.Mailboxes[idx].ID] = idx
+	}
+	for _, rawID := range ids {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		idx, ok := indexByID[id]
+		if !ok {
+			return nil, errCode("mailbox_not_found", "邮箱不存在", false)
+		}
+		indexes = append(indexes, idx)
+	}
+	if len(indexes) == 0 {
+		return nil, errCode("mailbox_ids_missing", "请至少选择一个邮箱", false)
+	}
+
+	now := time.Now()
+	batch = outboundBatchValue(batch, now)
+	note = strings.TrimSpace(note)
+	out := make([]Mailbox, 0, len(indexes))
+	for _, idx := range indexes {
+		s.state.Mailboxes[idx].Status = StatusOutbound
+		s.state.Mailboxes[idx].OutboundBatch = batch
+		if note != "" {
+			s.state.Mailboxes[idx].Note = note
+		}
+		s.state.Mailboxes[idx].UpdatedAt = now
+		out = append(out, s.state.Mailboxes[idx])
+	}
+	if err := s.saveLocked(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func outboundBatchValue(batch string, now time.Time) string {
+	batch = strings.TrimSpace(batch)
+	if batch != "" {
+		return batch
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return fmt.Sprintf("%d", now.UnixMilli())
 }
 
 func (s *FileStore) SetMailboxSyncCursor(id string, syncedAt time.Time, lastUID string) (Mailbox, error) {
