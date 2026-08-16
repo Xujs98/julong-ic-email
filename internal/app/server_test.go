@@ -84,6 +84,24 @@ func TestBrandAssetsAreServed(t *testing.T) {
 	}
 }
 
+func TestMailboxHTMLPageShowsDayHourMinuteSecondCountdown(t *testing.T) {
+	data, err := webFS.ReadFile("templates/mailbox.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`剩余 ${d}天 ${h}时 ${m}分 ${s}秒`,
+		`setTTL(data.ttl_seconds)`,
+		`Date.now()-ttlMeasuredAt`,
+		`setInterval(renderTTL,1000)`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("mailbox HTML countdown source missing %q", want)
+		}
+	}
+}
+
 func TestMailboxMessagesAreScopedAndSorted(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
