@@ -671,13 +671,13 @@ func TestAppleAccountManageFingerprintUsesCapturedLocale(t *testing.T) {
 	}
 }
 
-func TestAppleAccountAPIErrorDoesNotTreatGenericHTTPAsAuthExpired(t *testing.T) {
+func TestAppleAccountAPIErrorTreatsGenericUnauthorizedAsAuthSuspect(t *testing.T) {
 	generic := appleAccountAPIError(http.StatusUnauthorized, []byte(`<html><body>401 Unauthorized</body></html>`), "测试阶段")
 	if isCodedError(generic, "apple_account_auth_failed") {
 		t.Fatalf("generic 401 classified as auth failed: %v", generic)
 	}
-	if !isCodedError(generic, "apple_account_api_failed") {
-		t.Fatalf("generic 401 code = %v, want apple_account_api_failed", generic)
+	if !isCodedError(generic, "apple_account_auth_suspect") {
+		t.Fatalf("generic 401 code = %v, want apple_account_auth_suspect", generic)
 	}
 
 	expired := appleAccountAPIError(http.StatusUnauthorized, []byte(`{"service_errors":[{"message":"authentication_failed"}]}`), "测试阶段")
@@ -1101,10 +1101,10 @@ func TestAppleAccountKeepAliveRoundSavesTransientFailureForRetry(t *testing.T) {
 	if state.Scnt != "rotated-scnt" || state.APIKey != "old-key" || len(state.Cookies) != 1 {
 		t.Fatalf("failed keepalive credentials were not preserved: %+v", state)
 	}
-	if state.KeepAliveFailures != 1 || state.KeepAliveRetryAt.IsZero() || time.Until(state.KeepAliveRetryAt) < 20*time.Second {
+	if state.KeepAliveFailures != 1 || state.KeepAliveRetryAt.IsZero() || time.Until(state.KeepAliveRetryAt) < 5*time.Second {
 		t.Fatalf("failed keepalive retry schedule = failures:%d retry:%s", state.KeepAliveFailures, state.KeepAliveRetryAt)
 	}
-	if !strings.Contains(state.LastStatusMessage, "30秒后自动重试") || !strings.Contains(state.LastStatusMessage, "temporary network timeout") {
+	if !strings.Contains(state.LastStatusMessage, "10秒后自动复核") || !strings.Contains(state.LastStatusMessage, "temporary network timeout") {
 		t.Fatalf("failed keepalive status = %q", state.LastStatusMessage)
 	}
 }
@@ -1123,17 +1123,42 @@ func TestAppleAccountKeepAliveRetryDelayUsesFastBackoff(t *testing.T) {
 		failures int
 		want     time.Duration
 	}{
-		{failures: 1, want: 30 * time.Second},
-		{failures: 2, want: time.Minute},
-		{failures: 3, want: 2 * time.Minute},
-		{failures: 4, want: 4 * time.Minute},
-		{failures: 5, want: 5 * time.Minute},
+		{failures: 1, want: 10 * time.Second},
+		{failures: 2, want: 30 * time.Second},
+		{failures: 3, want: time.Minute},
+		{failures: 4, want: 2 * time.Minute},
+		{failures: 5, want: 4 * time.Minute},
+		{failures: 6, want: 5 * time.Minute},
 		{failures: 9, want: 5 * time.Minute},
 	}
 	for _, tt := range tests {
 		if got := appleAccountKeepAliveRetryDelay(tt.failures); got != tt.want {
 			t.Fatalf("retry delay for %d failures = %s, want %s", tt.failures, got, tt.want)
 		}
+	}
+}
+
+func TestAppleAccountKeepAliveFailureKeepsRecentHealthyStateDuringRecovery(t *testing.T) {
+	now := time.Now()
+	previous := LoginState{
+		Kind:                   LoginStateAppleAccount,
+		Scnt:                   "saved-scnt",
+		APIKey:                 "saved-key",
+		LastCheckedAt:          now.Add(-time.Minute),
+		LastCheckOK:            true,
+		KeepAliveLastSuccessAt: now.Add(-time.Minute),
+	}
+	transient := appleAccountKeepAliveFailureState(previous, previous, now, errors.New("temporary timeout"))
+	if !transient.LastCheckOK || transient.KeepAliveFailures != 1 || !strings.Contains(transient.LastStatusMessage, "保活恢复中") {
+		t.Fatalf("transient recovery state = %+v", transient)
+	}
+	firstAuth := appleAccountKeepAliveFailureState(previous, previous, now, errCode("apple_account_auth_suspect", "unauthorized", true))
+	if !firstAuth.LastCheckOK || firstAuth.KeepAliveAuthFailures != 1 {
+		t.Fatalf("first auth verification state = %+v", firstAuth)
+	}
+	secondAuth := appleAccountKeepAliveFailureState(firstAuth, firstAuth, now.Add(10*time.Second), errCode("apple_account_auth_suspect", "unauthorized", true))
+	if secondAuth.LastCheckOK || secondAuth.KeepAliveAuthFailures != 2 || !strings.Contains(secondAuth.LastStatusMessage, "登录态异常") {
+		t.Fatalf("confirmed auth failure state = %+v", secondAuth)
 	}
 }
 
@@ -1374,8 +1399,8 @@ func TestICloudClientCreatePrivacyMailboxWithAppleAccountDoesNotRetryHTTPError(t
 	if addAttempts != 1 {
 		t.Fatalf("add attempts = %d, want 1", addAttempts)
 	}
-	if !isCodedError(err, "apple_account_api_failed") {
-		t.Fatalf("error = %#v, want apple_account_api_failed", err)
+	if !isCodedError(err, "apple_account_transient") {
+		t.Fatalf("error = %#v, want apple_account_transient", err)
 	}
 }
 
@@ -1901,6 +1926,11 @@ func TestICloudClientKeepAliveAppleAccountManageStateTouchesRealManageAPI(t *tes
 			w.Header().Set("scnt", "manage-scnt")
 			_, _ = w.Write([]byte(`{"apiKey":"fresh-key"}`))
 		case "GET /account/manage/forwardemail":
+			if r.Header.Get("X-Apple-Api-Key") == "old-key" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"reason":"token_refresh_required"}`))
+				return
+			}
 			if r.Header.Get("X-Apple-Api-Key") != "fresh-key" {
 				t.Fatalf("forwardemail api key = %q, want fresh-key", r.Header.Get("X-Apple-Api-Key"))
 			}
@@ -1909,15 +1939,6 @@ func TestICloudClientKeepAliveAppleAccountManageStateTouchesRealManageAPI(t *tes
 			}
 			w.Header().Set("scnt", "touch-scnt")
 			_, _ = w.Write([]byte(`{"forwardToEmail":"receiver@icloud.com"}`))
-		case "POST /v2/jslogs":
-			if r.Header.Get("X-Apple-Api-Key") != "fresh-key" {
-				t.Fatalf("jslogs api key = %q, want fresh-key", r.Header.Get("X-Apple-Api-Key"))
-			}
-			if r.Header.Get("scnt") != "touch-scnt" {
-				t.Fatalf("jslogs scnt header = %q, want touch-scnt", r.Header.Get("scnt"))
-			}
-			w.Header().Set("X-Apple-ID-Session-Id", "jslog-session")
-			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1938,18 +1959,99 @@ func TestICloudClientKeepAliveAppleAccountManageStateTouchesRealManageAPI(t *tes
 		t.Fatal(err)
 	}
 	wantPaths := []string{
+		"GET /account/manage/forwardemail",
 		"GET /account/manage/section/privacy",
 		"GET /bootstrap/portal",
 		"GET /account/manage/gs/ws/token",
 		"GET /account/manage",
 		"GET /account/manage/forwardemail",
-		"POST /v2/jslogs",
 	}
 	if strings.Join(paths, "\n") != strings.Join(wantPaths, "\n") {
 		t.Fatalf("paths = %#v, want %#v", paths, wantPaths)
 	}
-	if state.APIKey != "fresh-key" || state.Scnt != "touch-scnt" || state.SessionID != "jslog-session" || !state.LastCheckOK || state.LastCheckedAt.Before(now) || len(state.Cookies) == 0 {
+	if state.APIKey != "fresh-key" || state.Scnt != "touch-scnt" || state.SessionID != "old-session" || !state.LastCheckOK || state.LastCheckedAt.Before(now) || len(state.Cookies) == 0 {
 		t.Fatalf("state = %+v, want touched real manage API state", state)
+	}
+}
+
+func TestICloudClientKeepAliveUsesLightProbeWhileTokenWorks(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+	var paths []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/account/manage/forwardemail":
+			if r.Header.Get("X-Apple-Api-Key") != "working-key" {
+				t.Fatalf("probe api key = %q", r.Header.Get("X-Apple-Api-Key"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("scnt", "probe-scnt")
+			http.SetCookie(w, &http.Cookie{Name: "probe", Value: "ok", Path: "/"})
+			_, _ = w.Write([]byte(`{"forwardToEmail":"receiver@icloud.com"}`))
+		case "/bootstrap/portal":
+			if !strings.Contains(r.Header.Get("Cookie"), "probe=ok") {
+				t.Fatalf("bootstrap cookie = %q", r.Header.Get("Cookie"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("scnt", "bootstrap-scnt")
+			_, _ = w.Write([]byte(`{"timeOutInterval":15}`))
+		default:
+			t.Fatalf("unexpected request %s", r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+	state, err := (&ICloudClient{client: ts.Client()}).KeepAliveAppleAccountManageState(t.Context(), LoginState{
+		Kind: LoginStateAppleAccount, Origin: ts.URL, Scnt: "old-scnt", APIKey: "working-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(paths, "\n"), "GET /account/manage/forwardemail\nGET /bootstrap/portal"; got != want {
+		t.Fatalf("paths = %q, want %q", got, want)
+	}
+	if !state.LastCheckOK || state.Scnt != "bootstrap-scnt" || state.KeepAliveLastSuccessAt.IsZero() || state.ManageExpiresAt.Before(time.Now().Add(14*time.Minute)) {
+		t.Fatalf("light keepalive state = %+v", state)
+	}
+}
+
+func TestAppleAccountRedirectPreservesCookieAndDetectsLoginPage(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/account/manage/forwardemail":
+			http.SetCookie(w, &http.Cookie{Name: "rotated", Value: "yes", Path: "/"})
+			http.Redirect(w, r, "/sign-in", http.StatusFound)
+		case "/sign-in":
+			if !strings.Contains(r.Header.Get("Cookie"), "rotated=yes") {
+				t.Fatalf("redirect cookie = %q", r.Header.Get("Cookie"))
+			}
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<html><body>Sign in with your Apple Account</body></html>`))
+		default:
+			t.Fatalf("unexpected request %s", r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+	state := LoginState{Kind: LoginStateAppleAccount, Origin: ts.URL, Scnt: "scnt", APIKey: "key"}
+	_, err := (&ICloudClient{client: ts.Client()}).callAppleAccountRaw(t.Context(), &state, state.APIKey, http.MethodGet, "/account/manage/forwardemail", nil, nil)
+	if !isCodedError(err, "apple_account_auth_failed") {
+		t.Fatalf("redirect error = %v", err)
+	}
+	if cookie := cookieHeader(state.Cookies, ts.URL+"/account/manage"); !strings.Contains(cookie, "rotated=yes") {
+		t.Fatalf("saved redirect cookie = %q", cookie)
+	}
+}
+
+func TestMergeSessionCookiesRemovesExpiredCookie(t *testing.T) {
+	u, _ := url.Parse("https://account.apple.com/account/manage")
+	cookies := []SessionCookie{{Name: "session", Value: "old", Domain: "account.apple.com", Path: "/"}}
+	mergeSessionCookies(&cookies, u, []*http.Cookie{{Name: "session", Value: "old", Path: "/", MaxAge: -1}})
+	if len(cookies) != 0 {
+		t.Fatalf("expired cookies = %+v, want none", cookies)
 	}
 }
 
@@ -2289,7 +2391,6 @@ func TestCheckSavedLoginStatesChecksAppleAccountState(t *testing.T) {
 		"GET /account/manage/gs/ws/token",
 		"GET /account/manage",
 		"GET /account/manage/forwardemail",
-		"POST /v2/jslogs",
 	}
 	if strings.Join(paths, "\n") != strings.Join(wantPaths, "\n") {
 		t.Fatalf("paths = %#v, want %#v", paths, wantPaths)

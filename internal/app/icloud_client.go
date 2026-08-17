@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -177,10 +176,13 @@ func markAppleAccountManageOK(loginState *LoginState) {
 	if loginState == nil {
 		return
 	}
-	loginState.LastCheckedAt = time.Now()
+	now := time.Now()
+	loginState.LastCheckedAt = now
 	loginState.LastCheckOK = true
 	loginState.LastStatusMessage = "新接口登录态正常"
 	loginState.KeepAliveFailures = 0
+	loginState.KeepAliveAuthFailures = 0
+	loginState.KeepAliveLastSuccessAt = now
 	loginState.KeepAliveRetryAt = time.Time{}
 }
 
@@ -207,7 +209,7 @@ func (c *ICloudClient) CheckAppleAccountManageSession(ctx context.Context, sessi
 	defer release()
 	kept, err := c.keepAliveAppleAccountManageStateUnlocked(ctx, loginState)
 	if err != nil {
-		return session, err
+		return withAppleAccountLoginState(session, kept), err
 	}
 	return withAppleAccountLoginState(session, kept), nil
 }
@@ -386,6 +388,30 @@ func (c *ICloudClient) keepAliveAppleAccountManageStateUnlocked(ctx context.Cont
 	if strings.TrimSpace(loginState.Scnt) == "" {
 		return loginState, errCode("apple_account_session_missing", "当前登录态缺少 Apple Account 管理态，请重新协议登录", true)
 	}
+	// A successful real API request is the strongest proof that this saved state
+	// remains usable. Keep the common path light and rotate the management token
+	// only after the current token is rejected.
+	if strings.TrimSpace(loginState.APIKey) != "" {
+		if _, err := c.callAppleAccountRaw(ctx, &loginState, loginState.APIKey, http.MethodGet, "/account/manage/forwardemail", nil, nil); err == nil {
+			// Portal bootstrap rotates browser cookies when the service offers them.
+			// A temporary Portal failure does not invalidate an API state that was just
+			// proven on the forwarding-email endpoint.
+			if err := c.touchAppleAccountPortal(ctx, &loginState); err != nil {
+				if appleAccountKeepAliveAuthError(err) {
+					return loginState, err
+				}
+				if os.Getenv("IPM_DEBUG_APPLE_ACCOUNT") == "1" {
+					fmt.Fprintf(os.Stderr, "APPLE_ACCOUNT_DEBUG keepalive portal touch ignored err=%v\n", err)
+				}
+			}
+			markAppleAccountManageOK(&loginState)
+			return loginState, nil
+		}
+	}
+
+	// The current API token failed. Re-open the browser portal, preserve rotated
+	// cookies/headers, issue a fresh management token, then validate that token on
+	// the real API before reporting success.
 	if err := c.warmAppleAccountPortal(ctx, &loginState); err != nil {
 		return loginState, err
 	}
@@ -396,35 +422,8 @@ func (c *ICloudClient) keepAliveAppleAccountManageStateUnlocked(ctx context.Cont
 	if _, err := c.callAppleAccountRaw(ctx, &loginState, loginState.APIKey, http.MethodGet, "/account/manage/forwardemail", nil, nil); err != nil {
 		return loginState, err
 	}
-	if _, err := c.callAppleAccountRaw(ctx, &loginState, loginState.APIKey, http.MethodPost, "/v2/jslogs", appleAccountJSLogBody(), nil); err != nil {
-		if os.Getenv("IPM_DEBUG_APPLE_ACCOUNT") == "1" {
-			fmt.Fprintf(os.Stderr, "APPLE_ACCOUNT_DEBUG keepalive jslogs ignored err=%v\n", err)
-		}
-	}
 	markAppleAccountManageOK(&loginState)
 	return loginState, nil
-}
-
-func appleAccountJSLogBody() []map[string]any {
-	return []map[string]any{{
-		"eventId":       appleAccountJSLogEventID(),
-		"timestamp":     time.Now().UnixMilli(),
-		"eventType":     "custom",
-		"componentName": "performance",
-		"action":        "memory",
-		"metadata": map[string]any{
-			"domNodeCount":    0,
-			"usedJSHeapSize":  0,
-			"totalJSHeapSize": 0,
-			"heapUtilization": 0,
-			"createdAt":       0,
-			"elapsedTime":     0,
-			"marks": map[string]any{
-				"startTime": 0,
-			},
-			"eventVersion": 1,
-		},
-	}}
 }
 
 func appleAccountKeepAliveDue(loginState LoginState, now time.Time, interval time.Duration) bool {
@@ -565,6 +564,10 @@ func (c *ICloudClient) warmAppleAccountPortal(ctx context.Context, loginState *L
 	if _, err := c.callAppleAccountPortal(ctx, loginState, "/account/manage/section/privacy", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7", false, "document", "navigate"); err != nil {
 		return err
 	}
+	return c.touchAppleAccountPortal(ctx, loginState)
+}
+
+func (c *ICloudClient) touchAppleAccountPortal(ctx context.Context, loginState *LoginState) error {
 	data, err := c.callAppleAccountPortal(ctx, loginState, "/bootstrap/portal", "application/json, text/plain, */*", true, "empty", "cors")
 	if err != nil {
 		return err
@@ -627,7 +630,7 @@ func (c *ICloudClient) callAppleAccountPortalOnce(ctx context.Context, loginStat
 		req.Header.Set("X-Apple-I-TimeZone", appleAccountManageTimeZone)
 		req.Header.Set("X-Apple-I-FD-Client-Info", appleAccountFDClientInfo(userAgent))
 	}
-	resp, err := c.client.Do(req)
+	resp, err := c.doAppleAccountRequest(req, loginState)
 	if err != nil {
 		return nil, err
 	}
@@ -652,6 +655,12 @@ func (c *ICloudClient) callAppleAccountPortalOnce(ctx context.Context, loginStat
 	updateAppleAccountLoginStateFromHeaders(loginState, resp.Header)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return data, appleAccountAPIError(resp.StatusCode, data, appleAccountRequestStage(http.MethodGet, path))
+	}
+	if appleAccountResponseLooksLoggedOut(rawURL, resp, data) {
+		return data, errCode("apple_account_auth_failed", "Apple Account 管理页面已跳转到登录入口，请重新协议登录", true)
+	}
+	if jsonContent && appleAccountResponseLooksHTML(resp, data) {
+		return data, errCode("apple_account_auth_suspect", "Apple Account 门户返回了登录页面，系统将自动复核登录态", true)
 	}
 	return data, nil
 }
@@ -920,7 +929,7 @@ func (c *ICloudClient) callAppleAccountRawOnce(ctx context.Context, loginState *
 		req.Header.Set("Cookie", cookie)
 	}
 
-	resp, err := c.client.Do(req)
+	resp, err := c.doAppleAccountRequest(req, loginState)
 	if err != nil {
 		return appleAccountRawResponse{}, err
 	}
@@ -951,6 +960,12 @@ func (c *ICloudClient) callAppleAccountRawOnce(ctx context.Context, loginState *
 		}
 		return raw, appleAccountAPIError(resp.StatusCode, data, appleAccountRequestStage(method, path))
 	}
+	if appleAccountResponseLooksLoggedOut(rawURL, resp, data) {
+		return raw, errCode("apple_account_auth_failed", "Apple Account 管理接口已跳转到登录入口，请重新协议登录", true)
+	}
+	if appleAccountResponseLooksHTML(resp, data) {
+		return raw, errCode("apple_account_auth_suspect", "Apple Account 管理接口返回了登录页面，系统将自动复核登录态", true)
+	}
 	if result != nil && len(bytes.TrimSpace(data)) > 0 {
 		if err := json.Unmarshal(data, result); err != nil {
 			return raw, errCode("apple_account_bad_response", "Apple Account 返回无法解析；"+appleAccountRawResponseDetail(appleAccountRequestStage(method, path), raw), true)
@@ -975,20 +990,76 @@ func updateAppleAccountLoginStateFromHeaders(loginState *LoginState, header http
 	loginState.SavedAt = time.Now()
 }
 
-func appleAccountJSLogEventID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("ipm-%d", time.Now().UnixNano())
+func (c *ICloudClient) doAppleAccountRequest(req *http.Request, loginState *LoginState) (*http.Response, error) {
+	client := *c.client
+	previousCheckRedirect := client.CheckRedirect
+	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if next.Response != nil {
+			mergeSessionCookies(&loginState.Cookies, next.Response.Request.URL, next.Response.Cookies())
+			updateAppleAccountLoginStateFromHeaders(loginState, next.Response.Header)
+		}
+		next.Header.Del("Cookie")
+		if cookie := cookieHeader(loginState.Cookies, next.URL.String()); cookie != "" {
+			next.Header.Set("Cookie", cookie)
+		}
+		if previousCheckRedirect != nil {
+			return previousCheckRedirect(next, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
 	}
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		b[0:4],
-		b[4:6],
-		b[6:8],
-		b[8:10],
-		b[10:16],
-	)
+	return client.Do(req)
+}
+
+func appleAccountResponseLooksLoggedOut(requestURL string, resp *http.Response, data []byte) bool {
+	if resp == nil || resp.Request == nil || resp.Request.URL == nil {
+		return false
+	}
+	requested, err := url.Parse(requestURL)
+	if err == nil && requested != nil && !strings.EqualFold(requested.Hostname(), resp.Request.URL.Hostname()) {
+		return appleAccountLoginURL(resp.Request.URL)
+	}
+	return appleAccountLoginURL(resp.Request.URL) || appleAccountLoginHTML(data)
+}
+
+func appleAccountLoginURL(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	path := strings.ToLower(strings.TrimSpace(u.Path))
+	if strings.Contains(host, "idmsa.apple.com") {
+		return true
+	}
+	for _, marker := range []string{"/signin", "/sign-in", "/appleauth/auth", "/auth/authorize"} {
+		if strings.Contains(path, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func appleAccountLoginHTML(data []byte) bool {
+	lower := strings.ToLower(string(bytes.TrimSpace(data)))
+	if lower == "" || !strings.Contains(lower, "<html") {
+		return false
+	}
+	for _, marker := range []string{"idmsa.apple.com/appleauth/auth", "appleid-signin", "signin-init", "sign in with your apple account"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func appleAccountResponseLooksHTML(resp *http.Response, data []byte) bool {
+	if resp != nil && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
+		return true
+	}
+	lower := strings.ToLower(string(bytes.TrimSpace(data)))
+	return strings.HasPrefix(lower, "<!doctype html") || strings.HasPrefix(lower, "<html")
 }
 
 func appleAccountFDClientInfo(userAgent string) string {
@@ -1168,8 +1239,14 @@ func appleAccountAPIError(status int, data []byte, stage string) error {
 	if strings.Contains(lower, "limit") || strings.Contains(lower, "too many") || strings.Contains(lower, "rate") {
 		return errCode("apple_account_hme_limit", "Apple Account 已达到当前隐私邮箱创建上限，请稍后再试；"+detail, true)
 	}
+	if status == http.StatusRequestTimeout || status == http.StatusTooEarly || status == http.StatusTooManyRequests || status >= 500 {
+		return errCode("apple_account_transient", "Apple Account 服务暂时不可用，系统将自动重试；"+detail, true)
+	}
 	if status == appleAccountHTTPStatusSessionTimeout || ((status == http.StatusUnauthorized || status == http.StatusForbidden) && appleAccountBodyLooksAuthExpired(lower)) {
 		return errCode("apple_account_auth_failed", "Apple Account 管理态已失效，请重新协议登录；"+detail, true)
+	}
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return errCode("apple_account_auth_suspect", "Apple Account 认证请求被拒绝，系统将自动复核登录态；"+detail, true)
 	}
 	return errCode("apple_account_api_failed", "Apple Account 接口失败；"+detail, true)
 }
@@ -2395,6 +2472,7 @@ func mergeSessionCookies(cookies *[]SessionCookie, requestURL *url.URL, setCooki
 		if path == "" {
 			path = "/"
 		}
+		deleteCookie := c.Value == "" || c.MaxAge < 0 || (!c.Expires.IsZero() && !c.Expires.After(time.Now()))
 		next := SessionCookie{
 			Name:     c.Name,
 			Value:    c.Value,
@@ -2409,7 +2487,7 @@ func mergeSessionCookies(cookies *[]SessionCookie, requestURL *url.URL, setCooki
 		replaced := false
 		for i, old := range *cookies {
 			if old.Name == next.Name && strings.EqualFold(strings.TrimPrefix(old.Domain, "."), strings.TrimPrefix(next.Domain, ".")) && old.Path == next.Path {
-				if next.Value == "" {
+				if deleteCookie {
 					*cookies = append((*cookies)[:i], (*cookies)[i+1:]...)
 				} else {
 					(*cookies)[i] = next
@@ -2418,7 +2496,7 @@ func mergeSessionCookies(cookies *[]SessionCookie, requestURL *url.URL, setCooki
 				break
 			}
 		}
-		if !replaced && next.Value != "" {
+		if !replaced && !deleteCookie {
 			*cookies = append(*cookies, next)
 		}
 	}

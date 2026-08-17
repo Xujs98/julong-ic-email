@@ -1703,20 +1703,24 @@ func checkSavedLoginStatesWithIMAP(ctx context.Context, client *ICloudClient, se
 	if appleAccountLoginSaved(session) {
 		checks++
 		updated, err := client.CheckAppleAccountManageSession(ctx, session)
-		state, _ := appleAccountLoginState(session)
+		state, _ := appleAccountLoginState(updated)
 		if err != nil {
 			lastErr = err
-			state.LastCheckedAt = checkedAt
-			state.LastCheckOK = false
-			state.LastStatusMessage = "新接口登录态异常：" + err.Error()
-			session = withAppleAccountLoginState(session, state)
-			parts = append(parts, "新接口异常")
+			previous, _ := appleAccountLoginState(session)
+			state = appleAccountKeepAliveFailureState(previous, state, checkedAt, err)
+			session = withAppleAccountLoginState(updated, state)
+			if state.LastCheckOK {
+				successes++
+				parts = append(parts, "新接口恢复中")
+			} else {
+				parts = append(parts, "新接口异常")
+			}
 		} else {
 			session = updated
 			state, _ = appleAccountLoginState(session)
+			markAppleAccountManageOK(&state)
 			state.LastCheckedAt = checkedAt
-			state.LastCheckOK = true
-			state.LastStatusMessage = "新接口登录态正常"
+			state.KeepAliveLastSuccessAt = checkedAt
 			session = withAppleAccountLoginState(session, state)
 			successes++
 			parts = append(parts, "新接口正常")
@@ -3623,26 +3627,8 @@ func (s *Server) keepAliveAppleAccountRound(ctx context.Context) {
 		release()
 		cancel()
 		if err != nil {
-			if strings.TrimSpace(next.Scnt) == "" {
-				next = state
-			}
-			if strings.TrimSpace(next.APIKey) == "" {
-				next.APIKey = state.APIKey
-			}
-			if len(next.Cookies) == 0 {
-				next.Cookies = append([]SessionCookie(nil), state.Cookies...)
-			}
 			failedAt := time.Now()
-			failures := state.KeepAliveFailures + 1
-			if next.KeepAliveFailures >= failures {
-				failures = next.KeepAliveFailures + 1
-			}
-			retryDelay := appleAccountKeepAliveRetryDelay(failures)
-			next.KeepAliveFailures = failures
-			next.KeepAliveRetryAt = failedAt.Add(retryDelay)
-			next.LastCheckedAt = failedAt
-			next.LastCheckOK = false
-			next.LastStatusMessage = fmt.Sprintf("新接口保活连续失败 %d 次，%s后自动重试：%s", failures, appleAccountKeepAliveRetryText(retryDelay), err.Error())
+			next = appleAccountKeepAliveFailureState(state, next, failedAt, err)
 			session = withAppleAccountLoginState(session, next)
 			if saveErr := s.store.SaveICloudSessionForOwner(session.OwnerID, session); saveErr != nil && s.logger != nil {
 				s.logger.Warn("apple account keepalive save failed", "owner", s.ownerName(session.OwnerID), "account_id", session.AccountID, "err", saveErr)
@@ -3687,13 +3673,69 @@ func appleAccountKeepAliveEligible(session ICloudSession) bool {
 
 func appleAccountKeepAliveRetryDelay(failures int) time.Duration {
 	if failures <= 1 {
-		return 30 * time.Second
+		return 10 * time.Second
 	}
-	delay := 30 * time.Second * time.Duration(1<<min(failures-1, 4))
+	delay := 30 * time.Second * time.Duration(1<<min(failures-2, 4))
 	if delay > 5*time.Minute {
 		return 5 * time.Minute
 	}
 	return delay
+}
+
+const appleAccountKeepAliveHealthyGrace = 30 * time.Minute
+
+func appleAccountKeepAliveFailureState(previous, next LoginState, failedAt time.Time, err error) LoginState {
+	if strings.TrimSpace(next.Scnt) == "" {
+		next.Scnt = previous.Scnt
+	}
+	if strings.TrimSpace(next.APIKey) == "" {
+		next.APIKey = previous.APIKey
+	}
+	if strings.TrimSpace(next.SessionID) == "" {
+		next.SessionID = previous.SessionID
+	}
+	if strings.TrimSpace(next.DataAccessToken) == "" {
+		next.DataAccessToken = previous.DataAccessToken
+	}
+	if len(next.Cookies) == 0 {
+		next.Cookies = append([]SessionCookie(nil), previous.Cookies...)
+	}
+	lastSuccessAt := previous.KeepAliveLastSuccessAt
+	if lastSuccessAt.IsZero() && previous.LastCheckOK {
+		lastSuccessAt = previous.LastCheckedAt
+	}
+	failures := previous.KeepAliveFailures + 1
+	if next.KeepAliveFailures >= failures {
+		failures = next.KeepAliveFailures + 1
+	}
+	authFailures := 0
+	if appleAccountKeepAliveAuthError(err) {
+		authFailures = previous.KeepAliveAuthFailures + 1
+		if next.KeepAliveAuthFailures >= authFailures {
+			authFailures = next.KeepAliveAuthFailures + 1
+		}
+	}
+	retryDelay := appleAccountKeepAliveRetryDelay(failures)
+	next.KeepAliveFailures = failures
+	next.KeepAliveAuthFailures = authFailures
+	next.KeepAliveLastSuccessAt = lastSuccessAt
+	next.KeepAliveRetryAt = failedAt.Add(retryDelay)
+	next.LastCheckedAt = failedAt
+	recentlyHealthy := !lastSuccessAt.IsZero() && failedAt.Sub(lastSuccessAt) <= appleAccountKeepAliveHealthyGrace
+	confirmingAuthFailure := authFailures > 0 && authFailures < 2
+	next.LastCheckOK = previous.LastCheckOK && recentlyHealthy && (!appleAccountKeepAliveAuthError(err) || confirmingAuthFailure)
+	if next.LastCheckOK {
+		next.LastStatusMessage = fmt.Sprintf("新接口保活恢复中（连续失败 %d 次，%s后重试）", failures, appleAccountKeepAliveRetryText(retryDelay))
+	} else {
+		next.LastStatusMessage = fmt.Sprintf("新接口登录态异常（连续失败 %d 次，%s后自动复核）：%s", failures, appleAccountKeepAliveRetryText(retryDelay), err.Error())
+	}
+	return next
+}
+
+func appleAccountKeepAliveAuthError(err error) bool {
+	return isCodedError(err, "apple_account_auth_failed") ||
+		isCodedError(err, "apple_account_auth_suspect") ||
+		isCodedError(err, "apple_account_session_missing")
 }
 
 func appleAccountKeepAliveRetryText(delay time.Duration) string {
@@ -5374,6 +5416,7 @@ func publicSessionWithKeepAliveInterval(session *ICloudSession, keepAliveInterva
 		AppleAccountLoginChecked:      !appleAccountState.LastCheckedAt.IsZero(),
 		AppleAccountLoginOK:           appleAccountState.LastCheckOK,
 		AppleAccountLoginStatus:       loginStatePublicStatus(appleAccountLoginSaved, appleAccountState),
+		AppleAccountLoginDetail:       strings.TrimSpace(appleAccountState.LastStatusMessage),
 		AppleAccountNextRefreshAt:     formatTime(appleAccountNextRefreshAt),
 		AppleAccountManageExpiresAt:   formatTime(appleAccountState.ManageExpiresAt),
 		AppleAccountKeepAliveFailures: appleAccountState.KeepAliveFailures,
@@ -5400,6 +5443,9 @@ func loginStatePublicStatus(saved bool, state LoginState) string {
 		return "已登录"
 	}
 	if state.LastCheckOK {
+		if state.KeepAliveFailures > 0 {
+			return "保活恢复中"
+		}
 		return "登录态正常"
 	}
 	return "登录态异常"

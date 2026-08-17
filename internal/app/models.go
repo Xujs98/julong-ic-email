@@ -157,30 +157,32 @@ type ICloudSession struct {
 }
 
 type LoginState struct {
-	Kind              string          `json:"kind"`
-	Host              string          `json:"host,omitempty"`
-	Origin            string          `json:"origin,omitempty"`
-	SavedAt           time.Time       `json:"saved_at,omitempty"`
-	Cookies           []SessionCookie `json:"cookies,omitempty"`
-	Scnt              string          `json:"scnt,omitempty"`
-	SessionID         string          `json:"session_id,omitempty"`
-	APIKey            string          `json:"api_key,omitempty"`
-	DataAccessToken   string          `json:"data_access_token,omitempty"`
-	UserAgent         string          `json:"user_agent,omitempty"`
-	Note              string          `json:"note,omitempty"`
-	IMAPEmail         string          `json:"imap_email,omitempty"`
-	IMAPUsername      string          `json:"imap_username,omitempty"`
-	IMAPHost          string          `json:"imap_host,omitempty"`
-	IMAPPort          int             `json:"imap_port,omitempty"`
-	IMAPAppPassword   string          `json:"imap_app_password,omitempty"`
-	IMAPLastSyncAt    time.Time       `json:"imap_last_sync_at,omitempty"`
-	IMAPLastSyncUID   string          `json:"imap_last_sync_uid,omitempty"`
-	ManageExpiresAt   time.Time       `json:"manage_expires_at,omitempty"`
-	KeepAliveFailures int             `json:"keep_alive_failures,omitempty"`
-	KeepAliveRetryAt  time.Time       `json:"keep_alive_retry_at,omitempty"`
-	LastCheckedAt     time.Time       `json:"last_checked_at,omitempty"`
-	LastCheckOK       bool            `json:"last_check_ok,omitempty"`
-	LastStatusMessage string          `json:"last_status_message,omitempty"`
+	Kind                   string          `json:"kind"`
+	Host                   string          `json:"host,omitempty"`
+	Origin                 string          `json:"origin,omitempty"`
+	SavedAt                time.Time       `json:"saved_at,omitempty"`
+	Cookies                []SessionCookie `json:"cookies,omitempty"`
+	Scnt                   string          `json:"scnt,omitempty"`
+	SessionID              string          `json:"session_id,omitempty"`
+	APIKey                 string          `json:"api_key,omitempty"`
+	DataAccessToken        string          `json:"data_access_token,omitempty"`
+	UserAgent              string          `json:"user_agent,omitempty"`
+	Note                   string          `json:"note,omitempty"`
+	IMAPEmail              string          `json:"imap_email,omitempty"`
+	IMAPUsername           string          `json:"imap_username,omitempty"`
+	IMAPHost               string          `json:"imap_host,omitempty"`
+	IMAPPort               int             `json:"imap_port,omitempty"`
+	IMAPAppPassword        string          `json:"imap_app_password,omitempty"`
+	IMAPLastSyncAt         time.Time       `json:"imap_last_sync_at,omitempty"`
+	IMAPLastSyncUID        string          `json:"imap_last_sync_uid,omitempty"`
+	ManageExpiresAt        time.Time       `json:"manage_expires_at,omitempty"`
+	KeepAliveFailures      int             `json:"keep_alive_failures,omitempty"`
+	KeepAliveAuthFailures  int             `json:"keep_alive_auth_failures,omitempty"`
+	KeepAliveLastSuccessAt time.Time       `json:"keep_alive_last_success_at,omitempty"`
+	KeepAliveRetryAt       time.Time       `json:"keep_alive_retry_at,omitempty"`
+	LastCheckedAt          time.Time       `json:"last_checked_at,omitempty"`
+	LastCheckOK            bool            `json:"last_check_ok,omitempty"`
+	LastStatusMessage      string          `json:"last_status_message,omitempty"`
 }
 
 type CreateSettings struct {
@@ -420,6 +422,7 @@ type publicICloudSession struct {
 	AppleAccountLoginChecked      bool   `json:"apple_account_login_checked"`
 	AppleAccountLoginOK           bool   `json:"apple_account_login_ok"`
 	AppleAccountLoginStatus       string `json:"apple_account_login_status,omitempty"`
+	AppleAccountLoginDetail       string `json:"apple_account_login_detail,omitempty"`
 	AppleAccountNextRefreshAt     string `json:"apple_account_next_refresh_at,omitempty"`
 	AppleAccountManageExpiresAt   string `json:"apple_account_manage_expires_at,omitempty"`
 	AppleAccountKeepAliveFailures int    `json:"apple_account_keep_alive_failures,omitempty"`

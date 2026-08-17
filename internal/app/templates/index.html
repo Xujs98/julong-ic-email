@@ -2798,12 +2798,13 @@
       if (!appleAccountLoginSaved(session)) return '';
       const refreshAt = session.apple_account_next_refresh_at || '';
       const expiresAt = session.apple_account_manage_expires_at || '';
-      const retrying = !!(session.apple_account_login_checked && !session.apple_account_login_ok);
       const failureCount = Number(session.apple_account_keep_alive_failures || 0);
+      const retrying = failureCount > 0;
       const loginOK = session.apple_account_login_checked && session.apple_account_login_ok ? '1' : '0';
       const status = session.apple_account_login_status || '新接口登录态异常';
+      const detail = session.apple_account_login_detail || status;
       const title = retrying
-        ? `${status}${failureCount > 0 ? `；连续失败 ${failureCount} 次` : ''}；系统${refreshAt ? `将在 ${exactTimeText(refreshAt)} 自动重试` : '会继续自动重试'}`
+        ? `${detail}${failureCount > 0 ? `；连续失败 ${failureCount} 次` : ''}；系统${refreshAt ? `将在 ${exactTimeText(refreshAt)} 自动重试` : '会继续自动重试'}`
         : refreshAt
           ? `下次保活：${exactTimeText(refreshAt)}${expiresAt ? `；管理 token 到期：${exactTimeText(expiresAt)}` : ''}`
           : '新接口已登录，等待下次检测后显示保活时间';
@@ -2813,9 +2814,10 @@
       return `<span class="manage-refresh-clock${retrying ? ' retrying' : ''}" data-account-id="${esc(session.account_id || '')}" data-login-ok="${loginOK}" data-retrying="${retrying ? '1' : '0'}" data-refresh-at="${esc(refreshAt)}" data-expires-at="${esc(expiresAt)}" title="${esc(title)}">${prefix}：${esc(refreshText)}</span>`;
     }
 
-    function loginStateChipMode(saved, checked, ok) {
+    function loginStateChipMode(saved, checked, ok, recovering) {
       if (!saved) return 'off';
       if (!checked) return 'warn';
+      if (recovering) return 'warn';
       return ok ? 'on' : 'warn';
     }
 
@@ -2827,7 +2829,7 @@
       const oldText = session.icloud_web_login_status || (oldLogged ? '已登录' : '未登录');
       const imapText = session.icloud_imap_login_status || (imapLogged ? '已保存' : '未保存');
       return [
-        loginChip('新接口', newText, loginStateChipMode(newLogged, session.apple_account_login_checked, session.apple_account_login_ok)),
+        loginChip('新接口', newText, loginStateChipMode(newLogged, session.apple_account_login_checked, session.apple_account_login_ok, Number(session.apple_account_keep_alive_failures || 0) > 0)),
         loginChip('旧接口', oldText, loginStateChipMode(oldLogged, session.icloud_web_login_checked, session.icloud_web_login_ok)),
         loginChip('取码登录', imapText, loginStateChipMode(imapLogged, session.icloud_imap_login_checked, session.icloud_imap_login_ok))
       ].join('');
