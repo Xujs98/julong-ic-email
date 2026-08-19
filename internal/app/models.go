@@ -44,14 +44,19 @@ type State struct {
 // administrator entry point, and the lifetime of mailbox HTML code pages. API
 // tokens are independent.
 type SystemSettings struct {
-	RegistrationEnabled    bool   `json:"registration_enabled"`
-	StoreAllMessages       bool   `json:"store_all_messages,omitempty"`
-	AdminPath              string `json:"admin_path"`
-	Theme                  string `json:"theme,omitempty"`
-	HTMLLinkTTLSeconds     int    `json:"html_link_ttl_seconds,omitempty"`
-	HTMLLinkTTLDays        int    `json:"html_link_ttl_days,omitempty"`
-	HTMLPageMessageLimit   int    `json:"html_page_message_limit"`
-	HTMLPageRefreshSeconds int    `json:"html_page_refresh_seconds"`
+	RegistrationEnabled       bool   `json:"registration_enabled"`
+	StoreAllMessages          bool   `json:"store_all_messages,omitempty"`
+	AdminPath                 string `json:"admin_path"`
+	Theme                     string `json:"theme,omitempty"`
+	DomainSMTPEnabled         bool   `json:"domain_smtp_enabled,omitempty"`
+	DomainSMTPConfigured      bool   `json:"domain_smtp_configured,omitempty"`
+	DomainSMTPHost            string `json:"domain_smtp_host,omitempty"`
+	DomainSMTPPort            int    `json:"domain_smtp_port,omitempty"`
+	DomainSMTPMaxMessageBytes int64  `json:"domain_smtp_max_message_bytes,omitempty"`
+	HTMLLinkTTLSeconds        int    `json:"html_link_ttl_seconds,omitempty"`
+	HTMLLinkTTLDays           int    `json:"html_link_ttl_days,omitempty"`
+	HTMLPageMessageLimit      int    `json:"html_page_message_limit"`
+	HTMLPageRefreshSeconds    int    `json:"html_page_refresh_seconds"`
 	// Existing installations remain enabled by default because this field is a
 	// disabled flag; administrators can turn the lifecycle off explicitly.
 	HTMLLinkLifecycleDisabled bool      `json:"html_link_lifecycle_disabled,omitempty"`

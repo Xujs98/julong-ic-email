@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -82,6 +83,22 @@ func TestBrandAssetsAreServed(t *testing.T) {
 		}
 		if !strings.Contains(string(data), `rel="icon"`) {
 			t.Fatalf("%s does not reference favicon", name)
+		}
+	}
+}
+
+func TestComposeDefaultsToRollingLatestImage(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "compose.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`docker.io/qq1371446705/julong-ic-email:latest`,
+		`pull_policy: always`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("compose rolling update configuration missing %q", want)
 		}
 	}
 }
@@ -361,6 +378,10 @@ func TestSystemSettingsTemplateIncludesMailRetentionAndExpiryDeleteSwitches(t *t
 		`id="htmlPageRefreshSeconds"`,
 		`id="htmlLinkTTLSeconds"`,
 		`id="htmlLinkTTLPreview"`,
+		`id="domainSMTPEnabled"`,
+		`id="domainSMTPHost"`,
+		`id="domainSMTPPort"`,
+		`id="domainSMTPMaxMessageBytes"`,
 		`markSystemSettingsDirty`,
 		`updateSystemSettingsPreview`,
 		`applySystemSettings`,
@@ -370,6 +391,8 @@ func TestSystemSettingsTemplateIncludesMailRetentionAndExpiryDeleteSwitches(t *t
 		`html_page_refresh_seconds:`,
 		`html_expiry_delete_mailbox:`,
 		`html_link_lifecycle_enabled:`,
+		`domain_smtp_enabled:`,
+		`domain_smtp_port:`,
 		`formatTTLDuration`,
 	} {
 		if !strings.Contains(source, want) {
@@ -6217,6 +6240,48 @@ func TestSystemSettingsMessageRetentionAndExpiryDeleteSwitches(t *testing.T) {
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("save refresh %d seconds = %d body=%s, want 400", invalid, rr.Code, rr.Body.String())
 		}
+	}
+}
+
+func TestSystemSettingsCanConfigureDomainSMTPFromAdmin(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{DomainSMTPHost: "127.0.0.1"}, store, discardLogger())
+	panel, ok := handler.(*Server)
+	if !ok {
+		t.Fatal("NewServer did not return *Server")
+	}
+	defer panel.StopDomainSMTP()
+	adminCookie, _ := registerTestUser(t, handler, "smtp-settings-admin", "admin123")
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := probe.Addr().(*net.TCPAddr).Port
+	_ = probe.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(fmt.Sprintf(`{"registration_enabled":true,"admin_path":"/manage","domain_smtp_enabled":true,"domain_smtp_host":"127.0.0.1","domain_smtp_port":%d,"domain_smtp_max_message_bytes":1048576}`, port)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(adminCookie)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save SMTP settings = %d body=%s", rr.Code, rr.Body.String())
+	}
+	settings := store.SystemSettings()
+	if !settings.DomainSMTPEnabled || settings.DomainSMTPHost != "127.0.0.1" || settings.DomainSMTPPort != port || settings.DomainSMTPMaxMessageBytes != 1048576 {
+		t.Fatalf("stored SMTP settings = %+v", settings)
+	}
+	if !strings.Contains(rr.Body.String(), `"enabled":true`) {
+		t.Fatalf("SMTP runtime status missing from save response: %s", rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(fmt.Sprintf(`{"registration_enabled":true,"admin_path":"/manage","domain_smtp_enabled":false,"domain_smtp_host":"127.0.0.1","domain_smtp_port":%d,"domain_smtp_max_message_bytes":1048576}`, port)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(adminCookie)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || strings.Contains(rr.Body.String(), `"enabled":true`) {
+		t.Fatalf("disable SMTP settings = %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 

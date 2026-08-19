@@ -49,16 +49,12 @@ func main() {
 	defer stop()
 
 	handler := app.NewServer(cfg, store, logger)
-	var domainSMTP *app.DomainSMTPService
-	if cfg.DomainSMTPEnabled {
-		domainSMTP, err = app.StartDomainSMTP(cfg, store, logger)
-		if err != nil {
+	if panel, ok := handler.(*app.Server); ok {
+		if err := panel.InitializeDomainSMTP(); err != nil {
 			logger.Error("start domain SMTP", "err", err)
 			os.Exit(1)
 		}
-		defer domainSMTP.Close()
-	}
-	if panel, ok := handler.(*app.Server); ok {
+		defer panel.StopDomainSMTP()
 		panel.StartMailWatcher(ctx)
 		panel.StartHTMLExpiryMailboxCleaner(ctx)
 		panel.StartAppleAccountKeepAlive(ctx)

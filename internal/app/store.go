@@ -27,6 +27,13 @@ var supportedUIThemes = map[string]struct{}{
 
 const (
 	defaultAdminPath            = "/manage"
+	defaultDomainSMTPHost       = "0.0.0.0"
+	defaultDomainSMTPPort       = 2525
+	defaultDomainSMTPMaxBytes   = 10 * 1024 * 1024
+	minDomainSMTPPort           = 1024
+	maxDomainSMTPPort           = 65535
+	minDomainSMTPMaxBytes       = 64 * 1024
+	maxDomainSMTPMaxBytes       = 100 * 1024 * 1024
 	secondsPerDay               = 24 * 60 * 60
 	defaultHTMLLinkTTLSeconds   = 7 * secondsPerDay
 	maxHTMLLinkTTLSeconds       = 3650 * secondsPerDay
@@ -39,12 +46,15 @@ const (
 
 func defaultSystemSettings() SystemSettings {
 	return SystemSettings{
-		RegistrationEnabled:    true,
-		AdminPath:              defaultAdminPath,
-		Theme:                  "sky",
-		HTMLLinkTTLSeconds:     defaultHTMLLinkTTLSeconds,
-		HTMLPageMessageLimit:   defaultHTMLPageMessageLimit,
-		HTMLPageRefreshSeconds: defaultHTMLPageRefresh,
+		RegistrationEnabled:       true,
+		AdminPath:                 defaultAdminPath,
+		Theme:                     "sky",
+		DomainSMTPHost:            defaultDomainSMTPHost,
+		DomainSMTPPort:            defaultDomainSMTPPort,
+		DomainSMTPMaxMessageBytes: defaultDomainSMTPMaxBytes,
+		HTMLLinkTTLSeconds:        defaultHTMLLinkTTLSeconds,
+		HTMLPageMessageLimit:      defaultHTMLPageMessageLimit,
+		HTMLPageRefreshSeconds:    defaultHTMLPageRefresh,
 	}
 }
 
@@ -62,6 +72,21 @@ func normalizeSystemSettings(settings SystemSettings) SystemSettings {
 	settings.Theme = strings.TrimSpace(settings.Theme)
 	if _, ok := supportedUIThemes[settings.Theme]; !ok {
 		settings.Theme = "sky"
+	}
+	if strings.TrimSpace(settings.DomainSMTPHost) == "" {
+		settings.DomainSMTPHost = defaultDomainSMTPHost
+	}
+	if settings.DomainSMTPPort <= 0 {
+		settings.DomainSMTPPort = defaultDomainSMTPPort
+	}
+	if settings.DomainSMTPPort > maxDomainSMTPPort {
+		settings.DomainSMTPPort = maxDomainSMTPPort
+	}
+	if settings.DomainSMTPMaxMessageBytes <= 0 {
+		settings.DomainSMTPMaxMessageBytes = defaultDomainSMTPMaxBytes
+	}
+	if settings.DomainSMTPMaxMessageBytes > maxDomainSMTPMaxBytes {
+		settings.DomainSMTPMaxMessageBytes = maxDomainSMTPMaxBytes
 	}
 	if settings.HTMLLinkTTLSeconds <= 0 {
 		legacyDays := settings.HTMLLinkTTLDays

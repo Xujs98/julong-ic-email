@@ -2528,6 +2528,35 @@
                 </label>
               </div>
             </section>
+
+            <section class="settings-card settings-card-wide">
+              <header class="settings-card-head">
+                <span class="settings-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5h16v9H4z"/><path d="m5 8.5 7 5 7-5"/><path d="M7 4.5h10"/></svg></span>
+                <div><h3>域名邮箱 SMTP 收件</h3><p>直接在后台启停域名邮箱收件服务，保存后立即应用，无需编辑环境文件。</p></div>
+              </header>
+              <div class="settings-card-body settings-smtp-body">
+                <label class="settings-toggle">
+                  <input id="domainSMTPEnabled" type="checkbox" onchange="markSystemSettingsDirty()">
+                  <span class="settings-toggle-track" aria-hidden="true"><span></span></span>
+                  <span class="settings-toggle-copy"><strong>启用域名邮箱 SMTP 收件</strong><small>关闭后域名邮箱仍可生成，重新开启后继续接收新邮件。</small></span>
+                </label>
+                <div class="field-grid settings-smtp-fields">
+                  <label class="settings-field">监听地址
+                    <span>Docker 部署保持 0.0.0.0 以接收公网 MX 邮件。</span>
+                    <input id="domainSMTPHost" placeholder="0.0.0.0" oninput="markSystemSettingsDirty()">
+                  </label>
+                  <label class="settings-field">容器监听端口
+                    <span>建议使用 2525；公网 TCP 25 由 Docker 映射到此端口。</span>
+                    <input id="domainSMTPPort" type="number" min="1024" max="65535" value="2525" oninput="markSystemSettingsDirty()">
+                  </label>
+                  <label class="settings-field">单封邮件上限（字节）
+                    <span>范围 65536–104857600，默认 10485760。</span>
+                    <input id="domainSMTPMaxMessageBytes" type="number" min="65536" max="104857600" value="10485760" oninput="markSystemSettingsDirty()">
+                  </label>
+                  <div class="settings-inline-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 10.5v5M12 7.5h.01"/></svg><span>公网 SMTP 端口固定使用 TCP 25；请在服务器安全组放行 25。Docker 的端口映射属于部署层配置。</span></div>
+                </div>
+              </div>
+            </section>
           </div>
 
           <div class="settings-save-bar">
@@ -3077,6 +3106,8 @@
       const ttlSeconds = Math.max(0, Number.parseInt(($('htmlLinkTTLSeconds') || {}).value, 10) || 0);
       const messageLimit = Math.max(1, Number.parseInt(($('htmlPageMessageLimit') || {}).value, 10) || 50);
       const refreshSeconds = Math.max(1, Number.parseInt(($('htmlPageRefreshSeconds') || {}).value, 10) || 20);
+      const domainSMTPEnabled = !!($('domainSMTPEnabled') && $('domainSMTPEnabled').checked);
+      const domainSMTPPort = Math.max(1024, Number.parseInt(($('domainSMTPPort') || {}).value, 10) || 2525);
       setSystemSettingsText('settingsAccessMetric', adminPath);
       setSystemSettingsText('settingsRegistrationMetric', registrationEnabled ? '注册已开放' : '暂停新用户注册');
       setSystemSettingsText('settingsRetentionMetric', verificationOnly ? '验证码邮件' : '全部邮件');
@@ -3088,7 +3119,7 @@
       setSystemSettingsText('settingsExpiryMetric', !lifecycleEnabled ? '生命周期已关闭' : (expiryDeleteMailbox ? '到期后自动清理邮箱' : '到期后保留状态'));
       setSystemSettingsText('settingsRefreshMetric', `${refreshSeconds} 秒`);
       setSystemSettingsText('settingsMessageLimitMetric', `最近 ${messageLimit} 封邮件`);
-      setSystemSettingsText('systemSettingsNotice', `唯一入口 ${adminPath} · ${registrationEnabled ? '开放注册' : '暂停注册'} · ${verificationOnly ? '仅留验证码邮件' : '保留全部邮件'} · ${!lifecycleEnabled ? 'HTML 地址永不过期' : `HTML 地址 ${formatTTLDuration(ttlSeconds)} 后${expiryDeleteMailbox ? '自动清理邮箱' : '保留过期状态'}`}。`);
+      setSystemSettingsText('systemSettingsNotice', `唯一入口 ${adminPath} · ${registrationEnabled ? '开放注册' : '暂停注册'} · ${verificationOnly ? '仅留验证码邮件' : '保留全部邮件'} · ${!lifecycleEnabled ? 'HTML 地址永不过期' : `HTML 地址 ${formatTTLDuration(ttlSeconds)} 后${expiryDeleteMailbox ? '自动清理邮箱' : '保留过期状态'}`} · SMTP ${domainSMTPEnabled ? `已启用（${domainSMTPPort}）` : '已关闭'}。`);
     }
 
     function applySystemSettings(settings = {}) {
@@ -3102,6 +3133,10 @@
       if ($('htmlLinkTTLSeconds')) $('htmlLinkTTLSeconds').value = String(settings.html_link_ttl_seconds || 604800);
       if ($('htmlPageMessageLimit')) $('htmlPageMessageLimit').value = String(settings.html_page_message_limit || 50);
       if ($('htmlPageRefreshSeconds')) $('htmlPageRefreshSeconds').value = String(settings.html_page_refresh_seconds || 20);
+      if ($('domainSMTPEnabled')) $('domainSMTPEnabled').checked = !!settings.domain_smtp_enabled;
+      if ($('domainSMTPHost')) $('domainSMTPHost').value = settings.domain_smtp_host || '0.0.0.0';
+      if ($('domainSMTPPort')) $('domainSMTPPort').value = String(settings.domain_smtp_port || 2525);
+      if ($('domainSMTPMaxMessageBytes')) $('domainSMTPMaxMessageBytes').value = String(settings.domain_smtp_max_message_bytes || 10485760);
       updateHTMLTTLPreview();
       updateSystemSettingsPreview();
       systemSettingsHydrating = false;
@@ -3132,7 +3167,11 @@
         html_page_message_limit: boundedInt('htmlPageMessageLimit', 50, 1, 500),
         html_page_refresh_seconds: boundedInt('htmlPageRefreshSeconds', 20, 5, 3600),
         html_link_lifecycle_enabled: !!($('htmlLinkLifecycleEnabled') && $('htmlLinkLifecycleEnabled').checked),
-        html_expiry_delete_mailbox: !!($('htmlExpiryDeleteMailbox') && $('htmlExpiryDeleteMailbox').checked)
+        html_expiry_delete_mailbox: !!($('htmlExpiryDeleteMailbox') && $('htmlExpiryDeleteMailbox').checked),
+        domain_smtp_enabled: !!($('domainSMTPEnabled') && $('domainSMTPEnabled').checked),
+        domain_smtp_host: (($('domainSMTPHost') && $('domainSMTPHost').value) || '0.0.0.0').trim(),
+        domain_smtp_port: boundedInt('domainSMTPPort', 2525, 1024, 65535),
+        domain_smtp_max_message_bytes: boundedInt('domainSMTPMaxMessageBytes', 10485760, 65536, 104857600)
       };
       setSystemSettingsStatus('正在保存策略…');
       const data = await api('/api/system-settings', {method:'POST', body: JSON.stringify(payload)});
@@ -3140,6 +3179,7 @@
       applySystemSettings(settings);
       setSystemSettingsStatus('策略已保存', 'saved');
       log('系统设置已保存');
+      await loadDomains({silent: true}).catch(err => log('刷新 SMTP 状态失败：' + err.message));
       showToast('系统设置已保存');
     }
 

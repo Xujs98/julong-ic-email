@@ -11,6 +11,7 @@ import (
 	"hash/fnv"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -100,6 +101,8 @@ type Server struct {
 	updateApplyMu                  sync.Mutex
 	updateCache                    updateCandidate
 	updateCacheAt                  time.Time
+	domainSMTPMu                   sync.Mutex
+	domainSMTPService              *DomainSMTPService
 }
 
 type createMailboxFailure struct {
@@ -274,6 +277,116 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 	s.checkIMAPLogin = CheckICloudIMAPLogin
 	s.routes()
 	return s
+}
+
+// InitializeDomainSMTP migrates the startup environment configuration into
+// persisted system settings for existing installations, then starts the
+// receive-only SMTP listener according to the saved policy.
+func (s *Server) InitializeDomainSMTP() error {
+	settings := s.store.SystemSettings()
+	if !settings.DomainSMTPConfigured {
+		settings.DomainSMTPEnabled = s.cfg.DomainSMTPEnabled
+		if strings.TrimSpace(s.cfg.DomainSMTPHost) != "" {
+			settings.DomainSMTPHost = s.cfg.DomainSMTPHost
+		}
+		if s.cfg.DomainSMTPPort > 0 {
+			settings.DomainSMTPPort = s.cfg.DomainSMTPPort
+		}
+		if s.cfg.DomainSMTPMaxMessageBytes > 0 {
+			settings.DomainSMTPMaxMessageBytes = s.cfg.DomainSMTPMaxMessageBytes
+		}
+		settings.DomainSMTPConfigured = true
+		var err error
+		settings, err = s.store.SaveSystemSettings(settings)
+		if err != nil {
+			return err
+		}
+	}
+	return s.applyDomainSMTPSettings(settings)
+}
+
+func (s *Server) applyDomainSMTPSettings(settings SystemSettings) error {
+	settings = normalizeSystemSettings(settings)
+	host := strings.TrimSpace(settings.DomainSMTPHost)
+	if host == "" {
+		host = defaultDomainSMTPHost
+	}
+	port := settings.DomainSMTPPort
+	if port < minDomainSMTPPort || port > maxDomainSMTPPort {
+		return errCode("invalid_domain_smtp_port", "SMTP 监听端口必须是 1024-65535", false)
+	}
+	maxBytes := settings.DomainSMTPMaxMessageBytes
+	if maxBytes < minDomainSMTPMaxBytes || maxBytes > maxDomainSMTPMaxBytes {
+		return errCode("invalid_domain_smtp_size", "SMTP 单封邮件大小必须是 64KB-100MB", false)
+	}
+
+	s.domainSMTPMu.Lock()
+	defer s.domainSMTPMu.Unlock()
+
+	updatedCfg := s.cfg
+	updatedCfg.DomainSMTPEnabled = settings.DomainSMTPEnabled
+	updatedCfg.DomainSMTPHost = host
+	updatedCfg.DomainSMTPPort = port
+	updatedCfg.DomainSMTPMaxMessageBytes = maxBytes
+	current := s.domainSMTPService
+	if !settings.DomainSMTPEnabled {
+		s.domainSMTPService = nil
+		s.cfg = updatedCfg
+		if current != nil {
+			return current.Close()
+		}
+		return nil
+	}
+
+	desiredAddr := net.JoinHostPort(host, strconv.Itoa(port))
+	if current != nil && current.Addr() != nil && current.Addr().String() == desiredAddr {
+		s.cfg = updatedCfg
+		return nil
+	}
+	service, err := StartDomainSMTP(updatedCfg, s.store, s.logger)
+	if err != nil {
+		return err
+	}
+	s.domainSMTPService = service
+	s.cfg = updatedCfg
+	if current != nil {
+		_ = current.Close()
+	}
+	return nil
+}
+
+// ApplyDomainSMTPSettings applies the administrator's persisted SMTP policy
+// immediately, without requiring a process restart.
+func (s *Server) ApplyDomainSMTPSettings(settings SystemSettings) error {
+	settings.DomainSMTPConfigured = true
+	return s.applyDomainSMTPSettings(settings)
+}
+
+func (s *Server) StopDomainSMTP() {
+	s.domainSMTPMu.Lock()
+	service := s.domainSMTPService
+	s.domainSMTPService = nil
+	s.domainSMTPMu.Unlock()
+	if service != nil {
+		_ = service.Close()
+	}
+}
+
+func (s *Server) domainSMTPStatus() map[string]any {
+	settings := s.store.SystemSettings()
+	s.domainSMTPMu.Lock()
+	running := s.domainSMTPService != nil
+	configured := s.cfg
+	s.domainSMTPMu.Unlock()
+	return map[string]any{
+		"enabled":            running,
+		"configured":         settings.DomainSMTPEnabled,
+		"host":               configured.DomainSMTPHost,
+		"port":               configured.DomainSMTPPort,
+		"max_message_bytes":  configured.DomainSMTPMaxMessageBytes,
+		"public_port":        25,
+		"configured_from_ui": settings.DomainSMTPConfigured,
+	}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -556,17 +669,22 @@ func (s *Server) handleManagePage(w http.ResponseWriter, r *http.Request) {
 func publicSystemSettings(settings SystemSettings) map[string]any {
 	settings = normalizeSystemSettings(settings)
 	return map[string]any{
-		"registration_enabled":        settings.RegistrationEnabled,
-		"verification_only":           !settings.StoreAllMessages,
-		"admin_path":                  settings.AdminPath,
-		"theme":                       settings.Theme,
-		"html_link_ttl_seconds":       settings.HTMLLinkTTLSeconds,
-		"html_link_ttl_days":          htmlLinkTTLDays(settings.HTMLLinkTTLSeconds),
-		"html_page_message_limit":     settings.HTMLPageMessageLimit,
-		"html_page_refresh_seconds":   settings.HTMLPageRefreshSeconds,
-		"html_link_lifecycle_enabled": !settings.HTMLLinkLifecycleDisabled,
-		"html_expiry_delete_mailbox":  settings.HTMLExpiryDeleteMailbox,
-		"updated_at":                  formatTime(settings.UpdatedAt),
+		"registration_enabled":          settings.RegistrationEnabled,
+		"verification_only":             !settings.StoreAllMessages,
+		"admin_path":                    settings.AdminPath,
+		"theme":                         settings.Theme,
+		"domain_smtp_enabled":           settings.DomainSMTPEnabled,
+		"domain_smtp_configured":        settings.DomainSMTPConfigured,
+		"domain_smtp_host":              settings.DomainSMTPHost,
+		"domain_smtp_port":              settings.DomainSMTPPort,
+		"domain_smtp_max_message_bytes": settings.DomainSMTPMaxMessageBytes,
+		"html_link_ttl_seconds":         settings.HTMLLinkTTLSeconds,
+		"html_link_ttl_days":            htmlLinkTTLDays(settings.HTMLLinkTTLSeconds),
+		"html_page_message_limit":       settings.HTMLPageMessageLimit,
+		"html_page_refresh_seconds":     settings.HTMLPageRefreshSeconds,
+		"html_link_lifecycle_enabled":   !settings.HTMLLinkLifecycleDisabled,
+		"html_expiry_delete_mailbox":    settings.HTMLExpiryDeleteMailbox,
+		"updated_at":                    formatTime(settings.UpdatedAt),
 	}
 }
 
@@ -584,7 +702,7 @@ func (s *Server) handleSystemSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, errCode("admin_required", "需要管理员账号", false))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "settings": publicSystemSettings(s.store.SystemSettings())})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "settings": publicSystemSettings(s.store.SystemSettings()), "domain_smtp": s.domainSMTPStatus()})
 }
 
 func (s *Server) handleSaveSystemTheme(w http.ResponseWriter, r *http.Request) {
@@ -620,16 +738,20 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var payload struct {
-		RegistrationEnabled      bool    `json:"registration_enabled"`
-		VerificationOnly         *bool   `json:"verification_only"`
-		AdminPath                string  `json:"admin_path"`
-		Theme                    *string `json:"theme"`
-		HTMLLinkTTLSeconds       *int    `json:"html_link_ttl_seconds"`
-		HTMLLinkTTLDays          *int    `json:"html_link_ttl_days"`
-		HTMLPageMessageLimit     *int    `json:"html_page_message_limit"`
-		HTMLPageRefreshSeconds   *int    `json:"html_page_refresh_seconds"`
-		HTMLLinkLifecycleEnabled *bool   `json:"html_link_lifecycle_enabled"`
-		HTMLExpiryDeleteMailbox  *bool   `json:"html_expiry_delete_mailbox"`
+		RegistrationEnabled       bool    `json:"registration_enabled"`
+		VerificationOnly          *bool   `json:"verification_only"`
+		AdminPath                 string  `json:"admin_path"`
+		Theme                     *string `json:"theme"`
+		HTMLLinkTTLSeconds        *int    `json:"html_link_ttl_seconds"`
+		HTMLLinkTTLDays           *int    `json:"html_link_ttl_days"`
+		HTMLPageMessageLimit      *int    `json:"html_page_message_limit"`
+		HTMLPageRefreshSeconds    *int    `json:"html_page_refresh_seconds"`
+		HTMLLinkLifecycleEnabled  *bool   `json:"html_link_lifecycle_enabled"`
+		HTMLExpiryDeleteMailbox   *bool   `json:"html_expiry_delete_mailbox"`
+		DomainSMTPEnabled         *bool   `json:"domain_smtp_enabled"`
+		DomainSMTPHost            *string `json:"domain_smtp_host"`
+		DomainSMTPPort            *int    `json:"domain_smtp_port"`
+		DomainSMTPMaxMessageBytes *int64  `json:"domain_smtp_max_message_bytes"`
 	}
 	if err := decodeJSON(r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -692,22 +814,59 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 	if payload.HTMLLinkLifecycleEnabled != nil {
 		htmlLinkLifecycleDisabled = !*payload.HTMLLinkLifecycleEnabled
 	}
-	settings, err := s.store.SaveSystemSettings(SystemSettings{
+	domainSMTPEnabled := current.DomainSMTPEnabled
+	if payload.DomainSMTPEnabled != nil {
+		domainSMTPEnabled = *payload.DomainSMTPEnabled
+	}
+	domainSMTPHost := current.DomainSMTPHost
+	if payload.DomainSMTPHost != nil {
+		domainSMTPHost = strings.TrimSpace(*payload.DomainSMTPHost)
+	}
+	if domainSMTPHost == "" {
+		domainSMTPHost = defaultDomainSMTPHost
+	}
+	domainSMTPPort := current.DomainSMTPPort
+	if payload.DomainSMTPPort != nil {
+		domainSMTPPort = *payload.DomainSMTPPort
+	}
+	if domainSMTPPort < minDomainSMTPPort || domainSMTPPort > maxDomainSMTPPort {
+		writeError(w, http.StatusBadRequest, errCode("invalid_domain_smtp_port", "SMTP 监听端口必须是 1024-65535", false))
+		return
+	}
+	domainSMTPMaxMessageBytes := current.DomainSMTPMaxMessageBytes
+	if payload.DomainSMTPMaxMessageBytes != nil {
+		domainSMTPMaxMessageBytes = *payload.DomainSMTPMaxMessageBytes
+	}
+	if domainSMTPMaxMessageBytes < minDomainSMTPMaxBytes || domainSMTPMaxMessageBytes > maxDomainSMTPMaxBytes {
+		writeError(w, http.StatusBadRequest, errCode("invalid_domain_smtp_size", "SMTP 单封邮件大小必须是 64KB-100MB", false))
+		return
+	}
+	settings := SystemSettings{
 		RegistrationEnabled:       payload.RegistrationEnabled,
 		StoreAllMessages:          !verificationOnly,
 		AdminPath:                 path,
 		Theme:                     theme,
+		DomainSMTPEnabled:         domainSMTPEnabled,
+		DomainSMTPConfigured:      true,
+		DomainSMTPHost:            domainSMTPHost,
+		DomainSMTPPort:            domainSMTPPort,
+		DomainSMTPMaxMessageBytes: domainSMTPMaxMessageBytes,
 		HTMLLinkTTLSeconds:        htmlLinkTTLSeconds,
 		HTMLPageMessageLimit:      htmlPageMessageLimit,
 		HTMLPageRefreshSeconds:    htmlPageRefreshSeconds,
 		HTMLLinkLifecycleDisabled: htmlLinkLifecycleDisabled,
 		HTMLExpiryDeleteMailbox:   htmlExpiryDeleteMailbox,
-	})
+	}
+	if err := s.ApplyDomainSMTPSettings(settings); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	saved, err := s.store.SaveSystemSettings(settings)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "settings": publicSystemSettings(settings)})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "settings": publicSystemSettings(saved), "domain_smtp": s.domainSMTPStatus()})
 }
 
 func (s *Server) handleCreateMailboxHTMLLink(w http.ResponseWriter, r *http.Request) {
@@ -1055,8 +1214,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"messages":            len(state.Messages),
 		"domains":             len(state.Domains),
 		"domain_mailboxes":    domainMailboxCount,
-		"domain_smtp_enabled": s.cfg.DomainSMTPEnabled,
-		"domain_smtp_port":    s.cfg.DomainSMTPPort,
+		"domain_smtp_enabled": s.domainSMTPStatus()["enabled"],
+		"domain_smtp_port":    s.domainSMTPStatus()["port"],
 		"icloud_session":      s.publicSessionForRequest(r),
 		"icloud_sessions":     s.publicSessionsForRequest(r),
 		"version":             currentVersionInfo(),
@@ -2285,7 +2444,7 @@ func (s *Server) handleListDomains(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true, "domains": out,
-		"smtp": map[string]any{"enabled": s.cfg.DomainSMTPEnabled, "host": s.cfg.DomainSMTPHost, "port": s.cfg.DomainSMTPPort},
+		"smtp": s.domainSMTPStatus(),
 	})
 }
 
@@ -2335,7 +2494,8 @@ func (s *Server) handleDomainDNS(w http.ResponseWriter, r *http.Request) {
 	}
 	mailHost := "mail." + domain.Name
 	inboxHost := "inbox." + domain.Name
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "domain": domain.Name, "smtp_port": s.cfg.DomainSMTPPort, "records": []map[string]any{
+	smtp := s.domainSMTPStatus()
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "domain": domain.Name, "smtp_port": smtp["port"], "public_smtp_port": smtp["public_port"], "records": []map[string]any{
 		{"type": "A/AAAA", "name": "mail", "value": "服务器公网 IP", "note": mailHost + " 仅做 DNS 解析，不使用 HTTP 代理"},
 		{"type": "MX", "name": "@", "value": mailHost, "priority": 10, "note": "接收入站邮件"},
 		{"type": "A/AAAA", "name": "inbox", "value": "服务器公网 IP", "note": "网页入口：" + inboxHost},

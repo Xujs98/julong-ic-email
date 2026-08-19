@@ -108,10 +108,10 @@ Copy-Item .\config.example.json .\config.json
 | `update_repository` | 未配置 manifest 时读取的 GitHub 仓库，默认 `Xujs98/julong-ic-email` |
 | `update_manifest_url` | 可选的更新 manifest 地址；配置后优先按 manifest 选择当前系统架构的二进制和 sha256 |
 | `update_asset_name` | 可选的发布资产文件名；不填时自动匹配当前 `os/arch` |
-| `domain_smtp_enabled` | 是否启动域名邮箱 SMTP 收件服务，默认 `false` |
-| `domain_smtp_host` | SMTP 监听地址，默认 `0.0.0.0` |
-| `domain_smtp_port` | SMTP 监听端口，默认 `2525`；生产环境通常由宿主机 TCP 25 映射到此端口 |
-| `domain_smtp_max_message_bytes` | 单封域名邮件最大字节数，默认 `10485760`（10 MiB） |
+| `domain_smtp_enabled` | 首次启动时是否启用域名邮箱 SMTP 收件服务，默认 `false`；管理员之后可在系统设置中可视化修改 |
+| `domain_smtp_host` | 首次启动时的 SMTP 监听地址，默认 `0.0.0.0`；管理员之后可在系统设置中可视化修改 |
+| `domain_smtp_port` | 首次启动时的容器监听端口，默认 `2525`；管理员之后可在系统设置中可视化修改 |
+| `domain_smtp_max_message_bytes` | 首次启动时的单封域名邮件最大字节数，默认 `10485760`（10 MiB）；管理员之后可在系统设置中可视化修改 |
 
 示例：
 
@@ -141,10 +141,11 @@ Copy-Item .\config.example.json .\config.json
 
 ### 域名邮箱部署
 
-1. 在 `config.json` 中把 `domain_smtp_enabled` 设为 `true`；Docker Compose 部署时设置 `IPM_DOMAIN_SMTP_ENABLED=true`。容器默认监听 `2525`，公网 MX 通常需要将宿主机 **TCP 25** 映射到容器 `2525`，例如把 `JULONG_SMTP_PORT=25`。
+1. Docker 默认将宿主机 **TCP 25** 映射到容器 `2525`。登录后台进入 **系统设置 → 域名邮箱 SMTP 收件**，可视化配置启用开关、监听地址、容器端口和单封邮件大小；保存后立即启停服务，无需编辑环境文件。环境变量和 `config.json` 仅作为首次启动兼容引导值。
 2. 登录矩龙邮箱，在左侧 **域名邮箱** 中接入域名并查看“DNS 指引”。为 `mail.<你的域名>` 设置公网 A/AAAA，根域名 MX 指向该主机；`mail` 记录仅做 DNS 解析，不走 HTTP/CDN 代理。
 3. 在同一页面生成域名邮箱。SMTP 服务只接受已经生成且启用的精确收件地址；收到的邮件会直接显示在“全部邮箱”中，邮箱类型标记为“域名邮箱”。
-4. 访问生成邮箱的 API 或 HTML 接码地址时，仍使用该邮箱独立的 API key/token；域名邮箱没有 iCloud 远端同步或远端清理步骤。
+4. 服务器安全组和防火墙仍需放行 TCP 25；`JULONG_SMTP_PORT` 属于 Docker 宿主机端口映射，默认值为 25，只有更换公网端口时才需要调整部署配置。
+5. 访问生成邮箱的 API 或 HTML 接码地址时，仍使用该邮箱独立的 API key/token；域名邮箱没有 iCloud 远端同步或远端清理步骤。
 
 本地联调可继续使用 `2525`；公网收件还需确保服务器与云厂商允许 TCP 25 入站。若同一域名还要发信，需自行补齐 SPF、DKIM、DMARC 与 PTR/rDNS。
 
@@ -486,9 +487,11 @@ Compose 已内置 Docker Hub 默认镜像，服务器即使不创建 `.env` 也�
 
 ```bash
 git pull --ff-only
-docker compose pull
-docker compose up -d
+docker compose pull app
+docker compose up -d --force-recreate --remove-orphans app
 ```
+
+`compose.yaml` 默认使用滚动标签 `docker.io/qq1371446705/julong-ic-email:latest` 并设置 `pull_policy: always`，服务器更新时不需要修改版本号。若服务器 `.env` 曾手动写过 `JULONG_IMAGE=...:<旧版本>`，删除该行或改回 `JULONG_IMAGE=docker.io/qq1371446705/julong-ic-email:latest`，之后一直使用上面的两条命令即可。
 
 ## 服务器部署（二进制方式）
 
