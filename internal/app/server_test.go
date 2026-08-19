@@ -364,6 +364,15 @@ func TestManagementWorkbenchCommercialUIAndIndependentLogs(t *testing.T) {
 		`class="commercial-hero"`,
 		`class="commercial-hero-metrics"`,
 		`class="commercial-section-label"`,
+		`id="headerMore" class="header-more"`,
+		`class="header-more-account"`,
+		`class="header-more-links"`,
+		`function closeOpenPopovers(except = null)`,
+		`document.addEventListener('click', event => {`,
+		`class="mailbox-column-grid"`,
+		`id="mailboxColumnVisibleCount"`,
+		`class="mailbox-column-foot"`,
+		`/api/system-settings/theme`,
 		`.app-shell { grid-template-columns: clamp(218px, 12vw, 246px) minmax(0, 1fr);`,
 		`overflow: hidden; scrollbar-width: none;`,
 		`.sidebar::-webkit-scrollbar { display: none; }`,
@@ -378,6 +387,45 @@ func TestManagementWorkbenchCommercialUIAndIndependentLogs(t *testing.T) {
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("commercial workbench/log center source missing %q", want)
+		}
+	}
+}
+
+func TestSystemThemePersistsAndPublicMailboxUsesIt(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	adminCookie, _ := registerTestUser(t, handler, "theme-admin", "admin123")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/system-settings/theme", strings.NewReader(`{"theme":"violet"}`))
+	req.AddCookie(adminCookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || store.SystemSettings().Theme != "violet" {
+		t.Fatalf("save theme = %d body=%s settings=%+v", rr.Code, rr.Body.String(), store.SystemSettings())
+	}
+
+	mailbox, err := store.AddMailbox("", "theme", "theme@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, ok := store.MailboxHTMLLinkForMailbox(mailbox.ID)
+	if !ok {
+		t.Fatal("mailbox HTML link missing")
+	}
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/mailbox/"+link.Token+"/data", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"theme":"violet"`) {
+		t.Fatalf("public mailbox theme = %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	data, err := webFS.ReadFile("templates/mailbox.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{`function applySystemTheme(theme)`, `applySystemTheme(data.theme)`, `document.documentElement.dataset.theme=normalized`} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("public mailbox theme source missing %q", want)
 		}
 	}
 }

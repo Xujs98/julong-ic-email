@@ -466,6 +466,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	s.mux.HandleFunc("GET /api/system-settings", s.handleSystemSettings)
 	s.mux.HandleFunc("POST /api/system-settings", s.handleSaveSystemSettings)
+	s.mux.HandleFunc("POST /api/system-settings/theme", s.handleSaveSystemTheme)
 	s.mux.HandleFunc("DELETE /api/admin/users/{id}", s.handleAdminDeleteUser)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("GET /api/update/status", s.handleUpdateStatus)
@@ -558,6 +559,7 @@ func publicSystemSettings(settings SystemSettings) map[string]any {
 		"registration_enabled":        settings.RegistrationEnabled,
 		"verification_only":           !settings.StoreAllMessages,
 		"admin_path":                  settings.AdminPath,
+		"theme":                       settings.Theme,
 		"html_link_ttl_seconds":       settings.HTMLLinkTTLSeconds,
 		"html_link_ttl_days":          htmlLinkTTLDays(settings.HTMLLinkTTLSeconds),
 		"html_page_message_limit":     settings.HTMLPageMessageLimit,
@@ -585,21 +587,49 @@ func (s *Server) handleSystemSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "settings": publicSystemSettings(s.store.SystemSettings())})
 }
 
+func (s *Server) handleSaveSystemTheme(w http.ResponseWriter, r *http.Request) {
+	if !s.isAdminRequest(r) {
+		writeError(w, http.StatusUnauthorized, errCode("admin_required", "需要管理员账号", false))
+		return
+	}
+	var payload struct {
+		Theme string `json:"theme"`
+	}
+	if err := decodeJSON(r, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	payload.Theme = strings.TrimSpace(payload.Theme)
+	if _, ok := supportedUIThemes[payload.Theme]; !ok {
+		writeError(w, http.StatusBadRequest, errCode("invalid_theme", "界面主题不受支持", false))
+		return
+	}
+	settings := s.store.SystemSettings()
+	settings.Theme = payload.Theme
+	saved, err := s.store.SaveSystemSettings(settings)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "theme": saved.Theme})
+}
+
 func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 	if !s.isAdminRequest(r) {
 		writeError(w, http.StatusUnauthorized, errCode("admin_required", "需要管理员账号", false))
 		return
 	}
 	var payload struct {
-		RegistrationEnabled      bool   `json:"registration_enabled"`
-		VerificationOnly         *bool  `json:"verification_only"`
-		AdminPath                string `json:"admin_path"`
-		HTMLLinkTTLSeconds       *int   `json:"html_link_ttl_seconds"`
-		HTMLLinkTTLDays          *int   `json:"html_link_ttl_days"`
-		HTMLPageMessageLimit     *int   `json:"html_page_message_limit"`
-		HTMLPageRefreshSeconds   *int   `json:"html_page_refresh_seconds"`
-		HTMLLinkLifecycleEnabled *bool  `json:"html_link_lifecycle_enabled"`
-		HTMLExpiryDeleteMailbox  *bool  `json:"html_expiry_delete_mailbox"`
+		RegistrationEnabled      bool    `json:"registration_enabled"`
+		VerificationOnly         *bool   `json:"verification_only"`
+		AdminPath                string  `json:"admin_path"`
+		Theme                    *string `json:"theme"`
+		HTMLLinkTTLSeconds       *int    `json:"html_link_ttl_seconds"`
+		HTMLLinkTTLDays          *int    `json:"html_link_ttl_days"`
+		HTMLPageMessageLimit     *int    `json:"html_page_message_limit"`
+		HTMLPageRefreshSeconds   *int    `json:"html_page_refresh_seconds"`
+		HTMLLinkLifecycleEnabled *bool   `json:"html_link_lifecycle_enabled"`
+		HTMLExpiryDeleteMailbox  *bool   `json:"html_expiry_delete_mailbox"`
 	}
 	if err := decodeJSON(r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -611,6 +641,15 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	current := s.store.SystemSettings()
+	theme := current.Theme
+	if payload.Theme != nil {
+		candidate := strings.TrimSpace(*payload.Theme)
+		if _, ok := supportedUIThemes[candidate]; !ok {
+			writeError(w, http.StatusBadRequest, errCode("invalid_theme", "界面主题不受支持", false))
+			return
+		}
+		theme = candidate
+	}
 	htmlLinkTTLSeconds := current.HTMLLinkTTLSeconds
 	if payload.HTMLLinkTTLSeconds != nil {
 		if *payload.HTMLLinkTTLSeconds < 1 || *payload.HTMLLinkTTLSeconds > maxHTMLLinkTTLSeconds {
@@ -657,6 +696,7 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		RegistrationEnabled:       payload.RegistrationEnabled,
 		StoreAllMessages:          !verificationOnly,
 		AdminPath:                 path,
+		Theme:                     theme,
 		HTMLLinkTTLSeconds:        htmlLinkTTLSeconds,
 		HTMLPageMessageLimit:      htmlPageMessageLimit,
 		HTMLPageRefreshSeconds:    htmlPageRefreshSeconds,
@@ -766,6 +806,7 @@ func (s *Server) handleMailboxHTMLData(w http.ResponseWriter, r *http.Request) {
 		"messages":          out,
 		"message_limit":     messageLimit,
 		"refresh_seconds":   settings.HTMLPageRefreshSeconds,
+		"theme":             settings.Theme,
 		"lifecycle_enabled": !settings.HTMLLinkLifecycleDisabled,
 		"activated_at":      formatTime(link.ActivatedAt),
 		"expires_at":        formatTime(link.ExpiresAt),

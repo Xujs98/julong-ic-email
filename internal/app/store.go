@@ -20,6 +20,11 @@ type FileStore struct {
 
 var managedDomainPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$`)
 
+var supportedUIThemes = map[string]struct{}{
+	"mint": {}, "sky": {}, "graphite": {}, "sunset": {}, "violet": {},
+	"rose": {}, "forest": {}, "midnight": {}, "obsidian": {}, "aurora": {},
+}
+
 const (
 	defaultAdminPath            = "/manage"
 	secondsPerDay               = 24 * 60 * 60
@@ -36,6 +41,7 @@ func defaultSystemSettings() SystemSettings {
 	return SystemSettings{
 		RegistrationEnabled:    true,
 		AdminPath:              defaultAdminPath,
+		Theme:                  "sky",
 		HTMLLinkTTLSeconds:     defaultHTMLLinkTTLSeconds,
 		HTMLPageMessageLimit:   defaultHTMLPageMessageLimit,
 		HTMLPageRefreshSeconds: defaultHTMLPageRefresh,
@@ -52,6 +58,10 @@ func normalizeSystemSettings(settings SystemSettings) SystemSettings {
 	settings.AdminPath = strings.TrimRight(strings.TrimSpace(settings.AdminPath), "/")
 	if settings.AdminPath == "" {
 		settings.AdminPath = defaultAdminPath
+	}
+	settings.Theme = strings.TrimSpace(settings.Theme)
+	if _, ok := supportedUIThemes[settings.Theme]; !ok {
+		settings.Theme = "sky"
 	}
 	if settings.HTMLLinkTTLSeconds <= 0 {
 		legacyDays := settings.HTMLLinkTTLDays

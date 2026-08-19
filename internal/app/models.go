@@ -47,6 +47,7 @@ type SystemSettings struct {
 	RegistrationEnabled    bool   `json:"registration_enabled"`
 	StoreAllMessages       bool   `json:"store_all_messages,omitempty"`
 	AdminPath              string `json:"admin_path"`
+	Theme                  string `json:"theme,omitempty"`
 	HTMLLinkTTLSeconds     int    `json:"html_link_ttl_seconds,omitempty"`
 	HTMLLinkTTLDays        int    `json:"html_link_ttl_days,omitempty"`
 	HTMLPageMessageLimit   int    `json:"html_page_message_limit"`

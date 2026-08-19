@@ -30,6 +30,7 @@
   </main>
   <script>
     const token = location.pathname.split('/').filter(Boolean).pop();
+    const supportedThemes = ['mint','sky','graphite','sunset','violet','rose','forest','midnight','obsidian','aurora'];
     let lastMessageFingerprint = '';
     let ttlSeconds = 0;
     let lifecycleEnabled = true;
@@ -40,6 +41,7 @@
     function setTTL(seconds){ttlSeconds=Math.max(0,Math.floor(Number(seconds)||0));ttlMeasuredAt=Date.now();renderTTL()}
     function renderTTL(){if(!lifecycleEnabled){document.getElementById('expiry').textContent='永不过期';return}const elapsed=Math.floor((Date.now()-ttlMeasuredAt)/1000);document.getElementById('expiry').textContent=formatTTL(Math.max(0,ttlSeconds-elapsed))}
     function setRefreshSeconds(seconds){refreshSeconds=Math.min(3600,Math.max(5,Math.floor(Number(seconds)||20)));document.getElementById('refreshInfo').textContent=`页面每 ${refreshSeconds} 秒自动刷新，API 地址永不过期。`}
+    function applySystemTheme(theme){const normalized=supportedThemes.includes(theme)?theme:'sky';document.documentElement.dataset.theme=normalized;try{localStorage.setItem('julong_mail_theme',normalized)}catch(_){}}
     function scheduleReload(){clearTimeout(refreshTimer);refreshTimer=setTimeout(loadData,refreshSeconds*1000)}
     function formatDateTime(value){if(!value)return'—';const date=new Date(value);if(Number.isNaN(date.getTime()))return String(value);return date.toLocaleString('zh-CN',{hour12:false})}
     function looksLikeHTML(value){const text=String(value||'').trim().toLowerCase();return Boolean(text&&['<!doctype html','<html','<head','<body','<table','<style','<div','<p ','<p>','<span'].some(marker=>text.includes(marker)))}
@@ -61,7 +63,7 @@
     }
     async function loadData(){
       try{const res=await fetch(`/mailbox/${encodeURIComponent(token)}/data`,{cache:'no-store'});const data=await res.json();if(!res.ok)throw new Error(data.message||'链接已过期');
-        document.getElementById('email').textContent=data.mailbox.email||'—';document.getElementById('count').textContent=`${data.messages.length} 封邮件`;lifecycleEnabled=data.lifecycle_enabled!==false;setTTL(data.ttl_seconds);setRefreshSeconds(data.refresh_seconds);document.getElementById('updated').textContent=new Date().toLocaleTimeString();
+        applySystemTheme(data.theme);document.getElementById('email').textContent=data.mailbox.email||'—';document.getElementById('count').textContent=`${data.messages.length} 封邮件`;lifecycleEnabled=data.lifecycle_enabled!==false;setTTL(data.ttl_seconds);setRefreshSeconds(data.refresh_seconds);document.getElementById('updated').textContent=new Date().toLocaleTimeString();
         const latest=data.latest||{};document.getElementById('code').textContent=latest.code||'—';document.getElementById('codeMeta').textContent=latest.code?`${latest.subject||'验证码邮件'} · ${formatDateTime(latest.received_at)}`:'暂未识别到验证码';renderMessages(data.messages||[]);
       }catch(err){setTTL(0);document.getElementById('messages').className='empty';document.getElementById('messages').textContent=err.message||'链接已过期';}finally{scheduleReload()}
     }
