@@ -1308,26 +1308,27 @@
       background: linear-gradient(135deg, var(--dragon-page-a) 0%, var(--dragon-page-b) 52%, var(--dragon-page-c) 100%) !important;
       color: var(--text);
     }
-    .app-shell { grid-template-columns: clamp(270px, 15vw, 320px) minmax(0, 1fr); gap: 0; padding: 0; }
+    .app-shell { grid-template-columns: clamp(218px, 12vw, 246px) minmax(0, 1fr); gap: 0; padding: 0; }
     .sidebar {
-      top: 0; height: 100vh; padding: 30px 26px 24px; border: 0; border-right: 1px solid var(--line);
+      top: 0; height: 100vh; padding: clamp(14px, 2vh, 22px) 16px; border: 0; border-right: 1px solid var(--line);
       border-radius: 0; background: var(--dragon-panel-glass); box-shadow: var(--shadow);
-      display: flex; flex-direction: column; overflow: auto;
+      display: flex; flex-direction: column; overflow: hidden; scrollbar-width: none;
     }
-    .brand { display: flex; align-items: center; gap: 14px; padding: 8px 14px 28px; margin: 0; border: 0; background: transparent; box-shadow: none; }
-    .brand-logo { width: 52px; height: 52px; flex: 0 0 52px; display: grid; place-items: center; border-radius: 16px; color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: var(--dragon-accent-shadow); }
+    .sidebar::-webkit-scrollbar { display: none; }
+    .brand { display: flex; align-items: center; gap: 11px; padding: 3px 8px clamp(12px, 1.8vh, 18px); margin: 0; border: 0; background: transparent; box-shadow: none; }
+    .brand-logo { width: clamp(40px, 5vh, 46px); height: clamp(40px, 5vh, 46px); flex: 0 0 clamp(40px, 5vh, 46px); display: grid; place-items: center; border-radius: 14px; color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: var(--dragon-accent-shadow); }
     .brand-logo img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-    .brand-name { color: var(--text); font-size: 27px; font-weight: 900; letter-spacing: -.04em; white-space: nowrap; }
-    .side-nav { display: grid; gap: 9px; padding: 4px 0; }
+    .brand-name { color: var(--text); font-size: clamp(20px, 2.45vh, 23px); font-weight: 900; letter-spacing: -.04em; white-space: nowrap; }
+    .side-nav { min-height: 0; display: grid; grid-auto-rows: clamp(48px, 6.1vh, 56px); align-content: start; gap: clamp(4px, .65vh, 7px); padding: 2px 0; }
     .nav-item {
-      min-height: 70px; grid-template-columns: 52px minmax(0,1fr) auto; gap: 14px; padding: 10px 14px 10px 12px;
-      border: 1px solid transparent; border-radius: 18px; background: color-mix(in srgb, var(--card) 76%, transparent); box-shadow: var(--shadow);
-      color: var(--muted); font-size: 16px; font-weight: 850;
+      min-height: 0; height: 100%; grid-template-columns: clamp(36px, 4.8vh, 42px) minmax(0,1fr) auto; gap: 10px; padding: 5px 10px 5px 8px;
+      border: 1px solid transparent; border-radius: 15px; background: color-mix(in srgb, var(--card) 76%, transparent); box-shadow: var(--shadow);
+      color: var(--muted); font-size: clamp(13px, 1.7vh, 15px); font-weight: 850;
     }
     .nav-item:hover { transform: translateX(2px); color: var(--text); background: var(--dragon-accent-soft); }
     .nav-item.active { color: var(--green-2); border-color: color-mix(in srgb, var(--green) 34%, var(--line)); background: linear-gradient(110deg, var(--dragon-accent-soft-2), color-mix(in srgb, var(--ok-soft) 45%, var(--panel))); box-shadow: var(--dragon-accent-shadow); }
-    .nav-ico { width: 52px; height: 52px; border: 0; border-radius: 15px; color: var(--green-2); background: var(--dragon-accent-soft); box-shadow: none; }
-    .nav-ico svg { width: 22px; height: 22px; }
+    .nav-ico { width: clamp(36px, 4.8vh, 42px); height: clamp(36px, 4.8vh, 42px); border: 0; border-radius: 12px; color: var(--green-2); background: var(--dragon-accent-soft); box-shadow: none; }
+    .nav-ico svg { width: 19px; height: 19px; }
     .nav-item.active .nav-ico { color: var(--on-accent); border: 0; background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: var(--dragon-accent-shadow); }
     .nav-item .count-dot { background: var(--count-bg); color: var(--muted); }
     .nav-item.active .count-dot { color: var(--green-2); background: var(--panel); }
@@ -1609,7 +1610,7 @@
     .global-log-panel .log { color: var(--log-ink); background: var(--log-bg); }
     .modal { border-color: var(--line); border-radius: 24px; color: var(--text); background: var(--panel); }
     @media (max-width: 1180px) {
-      .app-shell { grid-template-columns: 250px minmax(0,1fr); }
+      .app-shell { grid-template-columns: 220px minmax(0,1fr); }
       .content-head { min-height: 190px; padding: 30px 28px 22px; }
       .content-main { padding: 0 28px 32px; }
       .global-log-panel { margin-left: 28px; margin-right: 28px; }
