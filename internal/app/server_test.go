@@ -128,6 +128,30 @@ func TestMailboxTableHeaderStaysAboveRows(t *testing.T) {
 	}
 }
 
+func TestThemePickerTemplateUsesCommercialCustomControl(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`id="themePicker"`,
+		`toggleThemePicker(event)`,
+		`class="theme-option-grid"`,
+		`data-theme-option="aurora"`,
+		`class="theme-select-native"`,
+		`THEME_LABELS`,
+		`aria-selected`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("theme picker source missing %q", want)
+		}
+	}
+	if strings.Contains(source, `<label class="theme-select"`) {
+		t.Fatal("native theme select wrapper should be replaced by custom picker")
+	}
+}
+
 func TestAppleAccountKeepAliveTemplateShowsAutomaticRetry(t *testing.T) {
 	data, err := webFS.ReadFile("templates/index.html")
 	if err != nil {

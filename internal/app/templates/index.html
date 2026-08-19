@@ -371,6 +371,47 @@
       font-size: 12px;
       font-weight: 800;
     }
+    .theme-picker { position: relative; width: 100%; }
+    .theme-picker-trigger {
+      width: 100%; min-height: 58px; display: flex; align-items: center; gap: 11px;
+      padding: 8px 11px 8px 13px; border: 1px solid var(--line); border-radius: 15px;
+      color: var(--text); background: color-mix(in srgb, var(--panel) 88%, transparent);
+      text-align: left; box-shadow: inset 0 1px 0 rgba(255,255,255,.32);
+    }
+    .theme-picker-trigger:hover { border-color: color-mix(in srgb, var(--green) 48%, var(--line)); background: color-mix(in srgb, var(--dragon-accent-soft) 38%, var(--panel)); }
+    .theme-picker-trigger-copy { min-width: 0; display: grid; gap: 2px; flex: 1; }
+    .theme-picker-kicker { color: var(--faint); font-size: 10px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; }
+    .theme-picker-trigger-copy strong { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 950; text-overflow: ellipsis; white-space: nowrap; }
+    .theme-picker-swatch, .theme-option-swatch { flex: 0 0 auto; border-radius: 10px; background: linear-gradient(135deg, var(--theme-swatch-a), var(--theme-swatch-b)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.34), 0 5px 14px color-mix(in srgb, var(--theme-swatch-b) 24%, transparent); }
+    .theme-picker-swatch { width: 34px; height: 34px; }
+    .theme-picker-chevron { width: 8px; height: 8px; border-right: 1.8px solid currentColor; border-bottom: 1.8px solid currentColor; color: var(--muted); transform: rotate(45deg) translateY(-2px); transition: transform .2s ease; }
+    .theme-picker.open .theme-picker-chevron { transform: rotate(225deg) translate(-2px,-1px); }
+    .theme-picker-menu { position: absolute; z-index: 60; top: calc(100% + 9px); left: 0; right: 0; display: none; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 18px; background: color-mix(in srgb, var(--panel) 97%, transparent); box-shadow: 0 24px 60px color-mix(in srgb, var(--green) 16%, rgba(15,23,42,.24)); backdrop-filter: blur(22px); }
+    .theme-picker.open .theme-picker-menu { display: grid; animation: fadeUp .2s var(--ease-out); }
+    .theme-picker-menu-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 0 3px; }
+    .theme-picker-menu-head strong { color: var(--text); font-size: 13px; font-weight: 950; }
+    .theme-picker-menu-head span { color: var(--faint); font-size: 10px; font-weight: 800; }
+    .theme-option-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .theme-option { position: relative; display: grid; grid-template-columns: 30px minmax(0,1fr) 18px; align-items: center; gap: 9px; min-height: 52px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 13px; color: var(--muted); background: color-mix(in srgb, var(--panel-2) 72%, transparent); text-align: left; }
+    .theme-option:hover { color: var(--text); border-color: color-mix(in srgb, var(--green) 50%, var(--line)); background: color-mix(in srgb, var(--dragon-accent-soft) 58%, var(--panel)); transform: translateY(-1px); }
+    .theme-option.active { border-color: color-mix(in srgb, var(--green) 62%, var(--line)); color: var(--text); background: color-mix(in srgb, var(--dragon-accent-soft) 76%, var(--panel)); box-shadow: 0 8px 18px color-mix(in srgb, var(--green) 12%, transparent); }
+    .theme-option-swatch { width: 30px; height: 30px; border-radius: 9px; }
+    .theme-option-copy { min-width: 0; display: grid; gap: 2px; }
+    .theme-option-copy strong { overflow: hidden; color: currentColor; font-size: 12px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+    .theme-option-copy small { color: var(--faint); font-size: 10px; font-weight: 750; }
+    .theme-option-check { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: transparent; border: 1px solid var(--line); font-size: 11px; font-weight: 950; }
+    .theme-option.active .theme-option-check { color: var(--on-accent); border-color: var(--green); background: var(--green); }
+    .theme-select-native { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important; opacity: 0 !important; pointer-events: none !important; }
+    .theme-option[data-theme-option="mint"], .theme-picker-swatch[data-theme-swatch="mint"] { --theme-swatch-a: #28c7b3; --theme-swatch-b: #0f9f8d; }
+    .theme-option[data-theme-option="sky"], .theme-picker-swatch[data-theme-swatch="sky"] { --theme-swatch-a: #60a5fa; --theme-swatch-b: #2563eb; }
+    .theme-option[data-theme-option="graphite"], .theme-picker-swatch[data-theme-swatch="graphite"] { --theme-swatch-a: #94a3b8; --theme-swatch-b: #475569; }
+    .theme-option[data-theme-option="sunset"], .theme-picker-swatch[data-theme-swatch="sunset"] { --theme-swatch-a: #fb923c; --theme-swatch-b: #ea580c; }
+    .theme-option[data-theme-option="violet"], .theme-picker-swatch[data-theme-swatch="violet"] { --theme-swatch-a: #a78bfa; --theme-swatch-b: #6d28d9; }
+    .theme-option[data-theme-option="rose"], .theme-picker-swatch[data-theme-swatch="rose"] { --theme-swatch-a: #fb7185; --theme-swatch-b: #e11d62; }
+    .theme-option[data-theme-option="forest"], .theme-picker-swatch[data-theme-swatch="forest"] { --theme-swatch-a: #34d399; --theme-swatch-b: #047857; }
+    .theme-option[data-theme-option="midnight"], .theme-picker-swatch[data-theme-swatch="midnight"] { --theme-swatch-a: #38bdf8; --theme-swatch-b: #0f2f75; }
+    .theme-option[data-theme-option="obsidian"], .theme-picker-swatch[data-theme-swatch="obsidian"] { --theme-swatch-a: #67e8f9; --theme-swatch-b: #0e7490; }
+    .theme-option[data-theme-option="aurora"], .theme-picker-swatch[data-theme-swatch="aurora"] { --theme-swatch-a: #5eead4; --theme-swatch-b: #0f766e; }
     .account-dock {
       min-width: 240px;
       display: grid;
@@ -1377,10 +1418,8 @@
     .header-more-links button { min-height: 66px; display: grid; place-items: center; align-content: center; gap: 6px; padding: 9px 6px; color: var(--muted); background: color-mix(in srgb, var(--dragon-accent-soft) 58%, var(--panel)); }
     .header-more-links button:hover { color: var(--green-2); background: var(--dragon-accent-soft-2); }
     .header-more-links svg { width: 20px; height: 20px; }
-    .header-more-menu .theme-select, .header-more-menu .segmented, .header-more-menu .version-dock { width: 100%; border-radius: 14px; }
-    .header-more-menu .theme-select { min-height: 50px; justify-content: space-between; padding: 7px 8px 7px 13px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 86%, transparent); }
-    .header-more-menu .theme-select select { flex: 1; color: var(--text); background: var(--input-bg); }
-    .header-more-menu .theme-select option { color: var(--text); background: var(--panel); }
+    .header-more-menu .theme-picker, .header-more-menu .segmented, .header-more-menu .version-dock { width: 100%; border-radius: 14px; }
+    .header-more-menu .theme-picker-menu { width: 100%; }
     .header-more-menu .segmented button { width: 50%; }
     .header-more-menu .version-dock { justify-content: space-between; }
     .content-main { padding: 4px 48px 42px; }
@@ -2026,9 +2065,30 @@
                 <button onclick="openAdminPage()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg>账号数据</button>
               </div></div>
               <div class="header-more-group"><span class="header-more-group-title">界面偏好</span>
-                <label class="theme-select" aria-label="界面风格"><span>主题</span><select id="themeSelect" onchange="setTheme(this.value, true)">
-                  <option value="sky">矩龙蓝</option><option value="mint">清透薄荷</option><option value="graphite">灰阶</option><option value="sunset">暖橘</option><option value="violet">紫晶</option><option value="rose">绯樱</option><option value="forest">森野</option><option value="midnight">暗夜</option><option value="obsidian">曜石</option><option value="aurora">极光</option>
-                </select></label>
+                <div id="themePicker" class="theme-picker">
+                  <button type="button" class="theme-picker-trigger" aria-haspopup="listbox" aria-expanded="false" onclick="toggleThemePicker(event)">
+                    <span class="theme-picker-trigger-copy"><span class="theme-picker-kicker">界面主题</span><strong id="themePickerLabel">矩龙蓝</strong></span>
+                    <span id="themePickerSwatch" class="theme-picker-swatch" data-theme-swatch="sky" aria-hidden="true"></span><span class="theme-picker-chevron" aria-hidden="true"></span>
+                  </button>
+                  <div class="theme-picker-menu" role="listbox" aria-label="界面主题选项">
+                    <div class="theme-picker-menu-head"><strong>选择工作台主题</strong><span>即时预览 · 自动保存</span></div>
+                    <div class="theme-option-grid">
+                      <button type="button" class="theme-option" data-theme-option="sky" role="option" aria-selected="false" onclick="setTheme('sky', true)"><span class="theme-option-swatch" data-theme-swatch="sky" aria-hidden="true"></span><span class="theme-option-copy"><strong>矩龙蓝</strong><small>清透 · 专注</small></span><span class="theme-option-check">✓</span></button>
+                      <button type="button" class="theme-option" data-theme-option="mint" role="option" aria-selected="false" onclick="setTheme('mint', true)"><span class="theme-option-swatch" data-theme-swatch="mint" aria-hidden="true"></span><span class="theme-option-copy"><strong>清透薄荷</strong><small>轻盈 · 呼吸感</small></span><span class="theme-option-check">✓</span></button>
+                      <button type="button" class="theme-option" data-theme-option="graphite" role="option" aria-selected="false" onclick="setTheme('graphite', true)"><span class="theme-option-swatch" data-theme-swatch="graphite" aria-hidden="true"></span><span class="theme-option-copy"><strong>灰阶</strong><small>克制 · 稳重</small></span><span class="theme-option-check">✓</span></button>
+                      <button type="button" class="theme-option" data-theme-option="sunset" role="option" aria-selected="false" onclick="setTheme('sunset', true)"><span class="theme-option-swatch" data-theme-swatch="sunset" aria-hidden="true"></span><span class="theme-option-copy"><strong>暖橘</strong><small>活力 · 温暖</small></span><span class="theme-option-check">✓</span></button>
+                      <button type="button" class="theme-option" data-theme-option="violet" role="option" aria-selected="false" onclick="setTheme('violet', true)"><span class="theme-option-swatch" data-theme-swatch="violet" aria-hidden="true"></span><span class="theme-option-copy"><strong>紫晶</strong><small>灵感 · 高级</small></span><span class="theme-option-check">✓</span></button>
+                      <button type="button" class="theme-option" data-theme-option="rose" role="option" aria-selected="false" onclick="setTheme('rose', true)"><span class="theme-option-swatch" data-theme-swatch="rose" aria-hidden="true"></span><span class="theme-option-copy"><strong>绯樱</strong><small>柔和 · 精致</small></span><span class="theme-option-check">✓</span></button>
+                      <button type="button" class="theme-option" data-theme-option="forest" role="option" aria-selected="false" onclick="setTheme('forest', true)"><span class="theme-option-swatch" data-theme-swatch="forest" aria-hidden="true"></span><span class="theme-option-copy"><strong>森野</strong><small>自然 · 平衡</small></span><span class="theme-option-check">✓</span></button>
+                      <button type="button" class="theme-option" data-theme-option="midnight" role="option" aria-selected="false" onclick="setTheme('midnight', true)"><span class="theme-option-swatch" data-theme-swatch="midnight" aria-hidden="true"></span><span class="theme-option-copy"><strong>暗夜</strong><small>深邃 · 沉浸</small></span><span class="theme-option-check">✓</span></button>
+                      <button type="button" class="theme-option" data-theme-option="obsidian" role="option" aria-selected="false" onclick="setTheme('obsidian', true)"><span class="theme-option-swatch" data-theme-swatch="obsidian" aria-hidden="true"></span><span class="theme-option-copy"><strong>曜石</strong><small>冷峻 · 高效</small></span><span class="theme-option-check">✓</span></button>
+                      <button type="button" class="theme-option" data-theme-option="aurora" role="option" aria-selected="false" onclick="setTheme('aurora', true)"><span class="theme-option-swatch" data-theme-swatch="aurora" aria-hidden="true"></span><span class="theme-option-copy"><strong>极光</strong><small>夜航 · 灵动</small></span><span class="theme-option-check">✓</span></button>
+                    </div>
+                  </div>
+                  <select id="themeSelect" class="theme-select-native" aria-hidden="true" tabindex="-1" onchange="setTheme(this.value, true)">
+                    <option value="sky">矩龙蓝</option><option value="mint">清透薄荷</option><option value="graphite">灰阶</option><option value="sunset">暖橘</option><option value="violet">紫晶</option><option value="rose">绯樱</option><option value="forest">森野</option><option value="midnight">暗夜</option><option value="obsidian">曜石</option><option value="aurora">极光</option>
+                  </select>
+                </div>
                 <div class="segmented" role="group" aria-label="显示密度"><button type="button" data-density-option="comfortable" onclick="setDensity('comfortable')">舒展</button><button type="button" data-density-option="compact" onclick="setDensity('compact')">紧凑</button></div>
               </div>
               <div class="version-dock"><span class="version-badge" id="versionBadge" title="正在检查最新版本">版本 -</span><button id="updateButton" class="ghost" onclick="applyAppUpdate()" hidden>更新</button></div>
@@ -2721,12 +2781,18 @@
 
     function closeOpenPopovers(except = null) {
       for (const details of document.querySelectorAll('details.header-more[open], details.mailbox-column-picker[open], details.mailbox-more[open]')) {
-        if (details !== except) details.open = false;
+        if (details !== except && !details.contains(except)) details.open = false;
+      }
+      const themePicker = $('themePicker');
+      if (themePicker && themePicker !== except && !themePicker.contains(except)) {
+        themePicker.classList.remove('open');
+        const trigger = themePicker.querySelector('.theme-picker-trigger');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
       }
     }
 
     document.addEventListener('click', event => {
-      const popover = event.target.closest('details.header-more, details.mailbox-column-picker, details.mailbox-more');
+      const popover = event.target.closest('details.header-more, details.mailbox-column-picker, details.mailbox-more, .theme-picker');
       closeOpenPopovers(popover);
     });
 
@@ -2855,6 +2921,20 @@
     }
 
     const THEME_SLUGS = ['mint', 'sky', 'graphite', 'sunset', 'violet', 'rose', 'forest', 'midnight', 'obsidian', 'aurora'];
+    const THEME_LABELS = {
+      sky: '矩龙蓝', mint: '清透薄荷', graphite: '灰阶', sunset: '暖橘', violet: '紫晶',
+      rose: '绯樱', forest: '森野', midnight: '暗夜', obsidian: '曜石', aurora: '极光'
+    };
+    function toggleThemePicker(event) {
+      if (event) event.stopPropagation();
+      const picker = $('themePicker');
+      if (!picker) return;
+      const willOpen = !picker.classList.contains('open');
+      closeOpenPopovers(picker);
+      picker.classList.toggle('open', willOpen);
+      const trigger = picker.querySelector('.theme-picker-trigger');
+      if (trigger) trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    }
     function setTheme(theme, persistSystem = false) {
       const normalized = THEME_SLUGS.includes(theme) ? theme : 'sky';
       document.documentElement.dataset.theme = normalized;
@@ -2863,6 +2943,15 @@
       if (themeSelect && themeSelect.value !== normalized) {
         themeSelect.value = normalized;
       }
+      const themePickerLabel = $('themePickerLabel');
+      if (themePickerLabel) themePickerLabel.textContent = THEME_LABELS[normalized] || normalized;
+      const themePickerSwatch = $('themePickerSwatch');
+      if (themePickerSwatch) themePickerSwatch.dataset.themeSwatch = normalized;
+      for (const option of document.querySelectorAll('[data-theme-option]')) {
+        const active = option.dataset.themeOption === normalized;
+        option.classList.toggle('active', active);
+        option.setAttribute('aria-selected', active ? 'true' : 'false');
+      }
       try {
         localStorage.setItem(themeStorageKey, normalized);
       } catch (_) {}
@@ -2870,6 +2959,14 @@
         api('/api/system-settings/theme', {method: 'POST', body: JSON.stringify({theme: normalized})})
           .then(() => showToast('主题已同步到公开接码页面'))
           .catch(err => log('保存系统主题失败：' + err.message));
+      }
+      if (persistSystem) {
+        const picker = $('themePicker');
+        if (picker) {
+          picker.classList.remove('open');
+          const trigger = picker.querySelector('.theme-picker-trigger');
+          if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        }
       }
     }
 
