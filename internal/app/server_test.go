@@ -369,6 +369,11 @@ func TestMailboxTableSupportsOutboundWorkflow(t *testing.T) {
 		`.join('----')`,
 		`outboundExportJSON`,
 		`outboundExportContent`,
+		`copyOutboundMailboxes`,
+		`mailboxExportCopy`,
+		`inventoryMailboxSearch`,
+		`outboundMailboxSearch`,
+		`activeMailboxSearchValue`,
 		`name="mailboxExportFormat" value="txt"`,
 		`name="mailboxExportFormat" value="csv"`,
 		`name="mailboxExportFormat" value="json"`,
@@ -414,27 +419,26 @@ func TestMailboxOutboundBatchSearchAndColumnPickerTemplate(t *testing.T) {
 	}
 }
 
-func TestMailboxTableUsesCreationTime(t *testing.T) {
+func TestMailboxTableUsesViewSpecificTime(t *testing.T) {
 	data, err := webFS.ReadFile("templates/index.html")
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := string(data)
 	for _, want := range []string{
-		`<th data-mailbox-column="created">创建时间</th>`,
+		`id="mailboxCreatedColumnTitle">创建时间</th>`,
+		`id="mailboxCreatedColumnLabel">创建时间`,
 		`class="mailbox-created-cell"`,
-		`formatMailboxDate(row.created_at)`,
+		`activeView === 'outbound' ? row.updated_at : row.created_at`,
+		`createdColumnTitle = outbound ? '更新时间' : '创建时间'`,
 	} {
 		if !strings.Contains(source, want) {
-			t.Fatalf("mailbox creation time source missing %q", want)
+			t.Fatalf("mailbox view-specific time source missing %q", want)
 		}
-	}
-	if strings.Contains(source, `formatMailboxDate(row.updated_at || row.created_at)`) {
-		t.Fatal("mailbox table should not display the mutable updated_at value")
 	}
 }
 
-func TestMailboxListSortsNewestCreationFirstAndKeepsCreatedAt(t *testing.T) {
+func TestMailboxListSortsByViewTimeAndKeepsCreatedAt(t *testing.T) {
 	base := time.Date(2026, 8, 15, 12, 0, 0, 0, time.Local)
 	mailboxes := []Mailbox{
 		{ID: "mbx_000001", Email: "older@icloud.com", CreatedAt: base, UpdatedAt: base.Add(2 * time.Hour)},
@@ -443,6 +447,14 @@ func TestMailboxListSortsNewestCreationFirstAndKeepsCreatedAt(t *testing.T) {
 	sortMailboxesForList(mailboxes)
 	if mailboxes[0].ID != "mbx_000002" || mailboxes[1].ID != "mbx_000001" {
 		t.Fatalf("mailbox order = [%s %s], want newest creation first", mailboxes[0].ID, mailboxes[1].ID)
+	}
+	outbound := []Mailbox{
+		{ID: "mbx_000003", Email: "older-outbound@icloud.com", Status: StatusOutbound, CreatedAt: base.Add(3 * time.Hour), UpdatedAt: base.Add(3 * time.Hour)},
+		{ID: "mbx_000004", Email: "newly-updated-outbound@icloud.com", Status: StatusOutbound, CreatedAt: base, UpdatedAt: base.Add(4 * time.Hour)},
+	}
+	sortOutboundMailboxesForList(outbound)
+	if outbound[0].ID != "mbx_000004" || outbound[1].ID != "mbx_000003" {
+		t.Fatalf("outbound order = [%s %s], want newest update first", outbound[0].ID, outbound[1].ID)
 	}
 
 	store := newTestStore(t)
@@ -457,6 +469,70 @@ func TestMailboxListSortsNewestCreationFirstAndKeepsCreatedAt(t *testing.T) {
 	}
 	if !updated.CreatedAt.Equal(originalCreatedAt) {
 		t.Fatalf("created_at changed after status update: got %s want %s", updated.CreatedAt, originalCreatedAt)
+	}
+}
+
+func TestMailboxListSearchCountsAndOutboundSorting(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	cookie, _ := registerTestUser(t, handler, "list-search-owner", "search123")
+	older := createTestMailboxWithCookie(t, handler, cookie, "older", "older-search@icloud.com")
+	newer := createTestMailboxWithCookie(t, handler, cookie, "newer", "newer-search@icloud.com")
+	other := createTestMailboxWithCookie(t, handler, cookie, "other", "other@icloud.com")
+
+	if _, err := store.SetMailboxesOutbound([]string{older.ID, newer.ID}, "search-sort", "test outbound"); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.Local)
+	store.mu.Lock()
+	for i := range store.state.Mailboxes {
+		switch store.state.Mailboxes[i].ID {
+		case older.ID:
+			store.state.Mailboxes[i].CreatedAt = base.Add(2 * time.Hour)
+			store.state.Mailboxes[i].UpdatedAt = base.Add(time.Hour)
+		case newer.ID:
+			store.state.Mailboxes[i].CreatedAt = base
+			store.state.Mailboxes[i].UpdatedAt = base.Add(3 * time.Hour)
+		}
+	}
+	err := store.saveLocked()
+	store.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list := func(query url.Values) (struct {
+		Mailboxes  []publicMailbox      `json:"mailboxes"`
+		Groups     []publicMailboxGroup `json:"groups"`
+		Pagination publicPagination     `json:"pagination"`
+	}, string) {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/mailboxes?"+query.Encode(), nil)
+		req.AddCookie(cookie)
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("list %s = %d body=%s", query.Encode(), rr.Code, rr.Body.String())
+		}
+		var body struct {
+			Mailboxes  []publicMailbox      `json:"mailboxes"`
+			Groups     []publicMailboxGroup `json:"groups"`
+			Pagination publicPagination     `json:"pagination"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body, rr.Body.String()
+	}
+
+	searchBody, _ := list(url.Values{"exclude_status": {StatusOutbound}, "search": {"other"}, "page": {"1"}, "page_size": {"10"}})
+	if searchBody.Pagination.Total != 1 || searchBody.Pagination.TotalAll != 1 || len(searchBody.Groups) != 1 || searchBody.Groups[0].Count != 1 || len(searchBody.Mailboxes) != 1 || searchBody.Mailboxes[0].ID != other.ID {
+		t.Fatalf("search list = %+v, want one matching mailbox", searchBody)
+	}
+
+	outboundBody, _ := list(url.Values{"status": {StatusOutbound}, "page": {"1"}, "page_size": {"10"}})
+	if len(outboundBody.Mailboxes) != 2 || outboundBody.Mailboxes[0].ID != newer.ID || outboundBody.Mailboxes[1].ID != older.ID {
+		t.Fatalf("outbound list order = %+v, want newest update first", outboundBody.Mailboxes)
 	}
 }
 

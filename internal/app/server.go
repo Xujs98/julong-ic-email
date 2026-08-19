@@ -2342,9 +2342,20 @@ func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 	htmlLinks := s.store.Snapshot().MailboxHTMLLinks
 	htmlStates := mailboxHTMLStates(htmlLinks, now)
 	htmlScopedBase := filterMailboxesByHTMLState(scopedBase, htmlLinks, r.URL.Query().Get("html_state"), now)
-	groups := publicMailboxGroups(htmlScopedBase, accountsByID, domainsByID)
 	filtered := filterMailboxesForList(htmlScopedBase, accountsByID, domainsByID, htmlStates, r.URL.Query())
-	sortMailboxesForList(filtered)
+	groupValues := make(url.Values, len(r.URL.Query()))
+	for key, values := range r.URL.Query() {
+		groupValues[key] = append([]string(nil), values...)
+	}
+	groupValues.Del("account_key")
+	groupValues.Del("account_id")
+	groupFiltered := filterMailboxesForList(htmlScopedBase, accountsByID, domainsByID, htmlStates, groupValues)
+	groups := publicMailboxGroups(groupFiltered, accountsByID, domainsByID)
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("status")), StatusOutbound) {
+		sortOutboundMailboxesForList(filtered)
+	} else {
+		sortMailboxesForList(filtered)
+	}
 
 	page, pageSize, paged := mailboxListPagination(r)
 	pageRows := filtered
@@ -2620,6 +2631,21 @@ func mailboxListMatchesSearch(mailbox Mailbox, accountsByID map[string]Account, 
 
 func sortMailboxesForList(mailboxes []Mailbox) {
 	sort.Slice(mailboxes, func(i, j int) bool {
+		if !mailboxes[i].CreatedAt.Equal(mailboxes[j].CreatedAt) {
+			return mailboxes[i].CreatedAt.After(mailboxes[j].CreatedAt)
+		}
+		if mailboxes[i].ID != mailboxes[j].ID {
+			return mailboxes[i].ID > mailboxes[j].ID
+		}
+		return strings.ToLower(mailboxes[i].Email) < strings.ToLower(mailboxes[j].Email)
+	})
+}
+
+func sortOutboundMailboxesForList(mailboxes []Mailbox) {
+	sort.Slice(mailboxes, func(i, j int) bool {
+		if !mailboxes[i].UpdatedAt.Equal(mailboxes[j].UpdatedAt) {
+			return mailboxes[i].UpdatedAt.After(mailboxes[j].UpdatedAt)
+		}
 		if !mailboxes[i].CreatedAt.Equal(mailboxes[j].CreatedAt) {
 			return mailboxes[i].CreatedAt.After(mailboxes[j].CreatedAt)
 		}
