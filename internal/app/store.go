@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,8 @@ type FileStore struct {
 	path  string
 	state State
 }
+
+var managedDomainPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$`)
 
 const (
 	defaultAdminPath            = "/manage"
@@ -93,6 +96,7 @@ type DeleteUserResult struct {
 	UserID         string `json:"user_id"`
 	Username       string `json:"username"`
 	Accounts       int    `json:"accounts"`
+	Domains        int    `json:"domains"`
 	Mailboxes      int    `json:"mailboxes"`
 	Messages       int    `json:"messages"`
 	ICloudSessions int    `json:"icloud_sessions"`
@@ -148,6 +152,9 @@ func (s *FileStore) load() error {
 		changed = true
 	}
 	if s.migrateLegacyMailboxAccountIDsLocked() {
+		changed = true
+	}
+	if s.migrateMailboxProvidersLocked() {
 		changed = true
 	}
 	linksChanged, err := s.ensureMailboxHTMLLinksLocked(now)
@@ -560,6 +567,16 @@ func (s *FileStore) DeleteUser(id string) (DeleteUserResult, error) {
 	}
 	s.state.Accounts = accounts
 
+	domains := s.state.Domains[:0]
+	for _, domain := range s.state.Domains {
+		if constantTimeEqual(id, domain.OwnerID) {
+			result.Domains++
+			continue
+		}
+		domains = append(domains, domain)
+	}
+	s.state.Domains = domains
+
 	deletedMailboxIDs := make(map[string]struct{})
 	mailboxes := s.state.Mailboxes[:0]
 	for _, mailbox := range s.state.Mailboxes {
@@ -750,6 +767,190 @@ func (s *FileStore) AddAccountForOwner(ownerID, label, appleID, note string) (Ac
 	}
 	s.state.Accounts = append(s.state.Accounts, account)
 	return account, s.saveLocked()
+}
+
+func normalizeManagedDomainName(value string) string {
+	value = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(value, "@")))
+	if value == "localhost" || managedDomainPattern.MatchString(value) {
+		return value
+	}
+	return ""
+}
+
+func (s *FileStore) AddDomainForOwner(ownerID, label, name string) (Domain, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	name = normalizeManagedDomainName(name)
+	if name == "" {
+		return Domain{}, errCode("invalid_domain", "域名格式不正确", false)
+	}
+	for _, domain := range s.state.Domains {
+		if strings.EqualFold(domain.Name, name) {
+			return Domain{}, errCode("domain_exists", "域名已存在", false)
+		}
+	}
+	now := time.Now()
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = name
+	}
+	domain := Domain{
+		ID:        s.nextIDLocked("dom"),
+		OwnerID:   strings.TrimSpace(ownerID),
+		Label:     label,
+		Name:      name,
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	s.state.Domains = append(s.state.Domains, domain)
+	return domain, s.saveLocked()
+}
+
+func (s *FileStore) FindDomainByID(id string) (Domain, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id = strings.TrimSpace(id)
+	for _, domain := range s.state.Domains {
+		if constantTimeEqual(domain.ID, id) {
+			return domain, true
+		}
+	}
+	return Domain{}, false
+}
+
+func (s *FileStore) FindEnabledDomainByName(name string) (Domain, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name = normalizeManagedDomainName(name)
+	if name == "" {
+		return Domain{}, false
+	}
+	for _, domain := range s.state.Domains {
+		if domain.Enabled && strings.EqualFold(domain.Name, name) {
+			return domain, true
+		}
+	}
+	return Domain{}, false
+}
+
+func (s *FileStore) SetDomainEnabled(id string, enabled bool) (Domain, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id = strings.TrimSpace(id)
+	for i := range s.state.Domains {
+		if !constantTimeEqual(s.state.Domains[i].ID, id) {
+			continue
+		}
+		s.state.Domains[i].Enabled = enabled
+		s.state.Domains[i].UpdatedAt = time.Now()
+		return s.state.Domains[i], s.saveLocked()
+	}
+	return Domain{}, errCode("domain_not_found", "域名不存在", false)
+}
+
+func (s *FileStore) DeleteDomain(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id = strings.TrimSpace(id)
+	for _, mailbox := range s.state.Mailboxes {
+		if mailbox.ProviderKind() == MailboxProviderDomain && constantTimeEqual(mailbox.DomainID, id) {
+			return errCode("domain_has_mailboxes", "域名仍有关联邮箱，请先删除域名邮箱", false)
+		}
+	}
+	for i := range s.state.Domains {
+		if !constantTimeEqual(s.state.Domains[i].ID, id) {
+			continue
+		}
+		s.state.Domains = append(s.state.Domains[:i], s.state.Domains[i+1:]...)
+		return s.saveLocked()
+	}
+	return errCode("domain_not_found", "域名不存在", false)
+}
+
+func (s *FileStore) AddDomainMailboxesForOwner(ownerID, domainID, label, note string, count int) ([]Mailbox, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if count < 1 {
+		count = 1
+	}
+	if count > 500 {
+		count = 500
+	}
+	domainID = strings.TrimSpace(domainID)
+	var domain Domain
+	found := false
+	for _, item := range s.state.Domains {
+		if constantTimeEqual(item.ID, domainID) {
+			domain = item
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, errCode("domain_not_found", "域名不存在", false)
+	}
+	if !domain.Enabled {
+		return nil, errCode("domain_disabled", "域名已停用，不能生成邮箱", false)
+	}
+	if strings.TrimSpace(ownerID) != "" && strings.TrimSpace(domain.OwnerID) != "" && !constantTimeEqual(ownerID, domain.OwnerID) {
+		return nil, errCode("domain_access_denied", "无权使用该域名", false)
+	}
+	now := time.Now()
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = "域名邮箱"
+	}
+	note = strings.TrimSpace(note)
+	mailboxes := make([]Mailbox, 0, count)
+	for len(mailboxes) < count {
+		local, err := randomToken(9)
+		if err != nil {
+			return nil, err
+		}
+		email := strings.ToLower("mail-" + local + "@" + domain.Name)
+		exists := false
+		for _, mailbox := range s.state.Mailboxes {
+			if strings.EqualFold(mailbox.Email, email) {
+				exists = true
+				break
+			}
+		}
+		if exists {
+			continue
+		}
+		apiToken, err := randomToken(24)
+		if err != nil {
+			return nil, err
+		}
+		mailbox := Mailbox{
+			ID:           s.nextIDLocked("mbx"),
+			OwnerID:      strings.TrimSpace(ownerID),
+			Provider:     MailboxProviderDomain,
+			DomainID:     domain.ID,
+			Label:        label,
+			Email:        email,
+			APIToken:     apiToken,
+			APIActive:    true,
+			ICloudActive: true,
+			Status:       StatusAvailable,
+			Note:         note,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		}
+		link, err := s.newMailboxHTMLLinkLocked(mailbox.ID, mailbox.OwnerID, now)
+		if err != nil {
+			return nil, err
+		}
+		s.state.Mailboxes = append(s.state.Mailboxes, mailbox)
+		s.state.MailboxHTMLLinks = append(s.state.MailboxHTMLLinks, link)
+		mailboxes = append(mailboxes, mailbox)
+	}
+	if err := s.saveLocked(); err != nil {
+		return nil, err
+	}
+	return mailboxes, nil
 }
 
 func (s *FileStore) AddMailbox(accountID, label, email string) (Mailbox, error) {
@@ -1577,6 +1778,18 @@ func (s *FileStore) saveLocked() error {
 	return os.Rename(tmp, s.path)
 }
 
+func (s *FileStore) migrateMailboxProvidersLocked() bool {
+	changed := false
+	for i := range s.state.Mailboxes {
+		provider := normalizeMailboxProvider(s.state.Mailboxes[i].Provider)
+		if s.state.Mailboxes[i].Provider != provider {
+			s.state.Mailboxes[i].Provider = provider
+			changed = true
+		}
+	}
+	return changed
+}
+
 func (s *FileStore) migrateLegacyMailboxAccountIDsLocked() bool {
 	accountsByOwner := make(map[string][]Account)
 	for _, account := range s.state.Accounts {
@@ -1587,6 +1800,9 @@ func (s *FileStore) migrateLegacyMailboxAccountIDsLocked() bool {
 	changed := false
 	now := time.Now()
 	for i := range s.state.Mailboxes {
+		if s.state.Mailboxes[i].ProviderKind() == MailboxProviderDomain {
+			continue
+		}
 		if strings.TrimSpace(s.state.Mailboxes[i].AccountID) != "" {
 			continue
 		}
@@ -1609,6 +1825,7 @@ func cloneState(in State) State {
 	out.Users = append([]User(nil), in.Users...)
 	out.WebSessions = append([]WebSession(nil), in.WebSessions...)
 	out.Accounts = append([]Account(nil), in.Accounts...)
+	out.Domains = append([]Domain(nil), in.Domains...)
 	out.Mailboxes = append([]Mailbox(nil), in.Mailboxes...)
 	out.Messages = append([]Message(nil), in.Messages...)
 	if in.ICloudSession != nil {
@@ -1725,6 +1942,11 @@ func filterStateByOwnerLocked(in State, ownerID string) State {
 	for _, account := range in.Accounts {
 		if constantTimeEqual(ownerID, account.OwnerID) {
 			out.Accounts = append(out.Accounts, account)
+		}
+	}
+	for _, domain := range in.Domains {
+		if constantTimeEqual(ownerID, domain.OwnerID) {
+			out.Domains = append(out.Domains, domain)
 		}
 	}
 	allowedMailboxes := make(map[string]struct{})

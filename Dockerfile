@@ -24,7 +24,7 @@ COPY config.docker.json /app/config.json
 RUN mkdir -p /app/data && chown -R julong:julong /app
 
 USER julong
-EXPOSE 8787
+EXPOSE 8787 2525
 
 ENTRYPOINT ["/app/julong-ic-email"]
 CMD ["--config", "/app/config.json"]

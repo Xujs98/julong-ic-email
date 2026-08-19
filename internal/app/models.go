@@ -20,6 +20,9 @@ const (
 	ICloudStatusNoICloudPlus = "no_icloud_plus"
 	ICloudStatusRateLimited  = "rate_limited"
 	ICloudStatusFailed       = "failed"
+
+	MailboxProviderICloud = "icloud"
+	MailboxProviderDomain = "domain"
 )
 
 type State struct {
@@ -27,6 +30,7 @@ type State struct {
 	Users            []User            `json:"users,omitempty"`
 	WebSessions      []WebSession      `json:"web_sessions,omitempty"`
 	Accounts         []Account         `json:"accounts"`
+	Domains          []Domain          `json:"domains,omitempty"`
 	Mailboxes        []Mailbox         `json:"mailboxes"`
 	Messages         []Message         `json:"messages"`
 	ICloudSession    *ICloudSession    `json:"icloud_session,omitempty"`
@@ -98,9 +102,21 @@ type Account struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type Domain struct {
+	ID        string    `json:"id"`
+	OwnerID   string    `json:"owner_id,omitempty"`
+	Label     string    `json:"label"`
+	Name      string    `json:"name"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type Mailbox struct {
 	ID                string    `json:"id"`
 	OwnerID           string    `json:"owner_id,omitempty"`
+	Provider          string    `json:"provider,omitempty"`
+	DomainID          string    `json:"domain_id,omitempty"`
 	AccountID         string    `json:"account_id"`
 	Label             string    `json:"label"`
 	Email             string    `json:"email"`
@@ -117,6 +133,19 @@ type Mailbox struct {
 	LastCodeAt        time.Time `json:"last_code_at,omitempty"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+func normalizeMailboxProvider(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case MailboxProviderDomain:
+		return MailboxProviderDomain
+	default:
+		return MailboxProviderICloud
+	}
+}
+
+func (m Mailbox) ProviderKind() string {
+	return normalizeMailboxProvider(m.Provider)
 }
 
 type Message struct {
@@ -317,12 +346,28 @@ type publicAccount struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+type publicDomain struct {
+	ID        string `json:"id"`
+	OwnerID   string `json:"owner_id,omitempty"`
+	Owner     string `json:"owner,omitempty"`
+	Label     string `json:"label"`
+	Name      string `json:"name"`
+	Enabled   bool   `json:"enabled"`
+	Mailboxes int    `json:"mailboxes"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 type publicMailbox struct {
 	ID                 string `json:"id"`
 	OwnerID            string `json:"owner_id,omitempty"`
 	Owner              string `json:"owner,omitempty"`
 	AccountID          string `json:"account_id"`
 	AccountLabel       string `json:"account_label,omitempty"`
+	Provider           string `json:"provider"`
+	ProviderLabel      string `json:"provider_label"`
+	DomainID           string `json:"domain_id,omitempty"`
+	Domain             string `json:"domain,omitempty"`
 	AccountAppleID     string `json:"account_apple_id,omitempty"`
 	CreateChannel      string `json:"create_channel,omitempty"`
 	CreateChannelLabel string `json:"create_channel_label,omitempty"`

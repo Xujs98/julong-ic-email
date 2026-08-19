@@ -32,6 +32,10 @@ type Config struct {
 	UpdateRepository             string `json:"update_repository"`
 	UpdateManifestURL            string `json:"update_manifest_url"`
 	UpdateAssetName              string `json:"update_asset_name"`
+	DomainSMTPEnabled            bool   `json:"domain_smtp_enabled"`
+	DomainSMTPHost               string `json:"domain_smtp_host"`
+	DomainSMTPPort               int    `json:"domain_smtp_port"`
+	DomainSMTPMaxMessageBytes    int64  `json:"domain_smtp_max_message_bytes"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -58,6 +62,10 @@ func LoadConfig(path string) (Config, error) {
 		UpdateRepository:             firstNonEmptyString(strings.TrimSpace(os.Getenv("IPM_UPDATE_REPOSITORY")), "Xujs98/julong-ic-email"),
 		UpdateManifestURL:            strings.TrimSpace(os.Getenv("IPM_UPDATE_MANIFEST_URL")),
 		UpdateAssetName:              strings.TrimSpace(os.Getenv("IPM_UPDATE_ASSET_NAME")),
+		DomainSMTPEnabled:            envBool("IPM_DOMAIN_SMTP_ENABLED", false),
+		DomainSMTPHost:               firstNonEmptyString(strings.TrimSpace(os.Getenv("IPM_DOMAIN_SMTP_HOST")), "0.0.0.0"),
+		DomainSMTPPort:               envPositiveInt("IPM_DOMAIN_SMTP_PORT", 2525),
+		DomainSMTPMaxMessageBytes:    envPositiveInt64("IPM_DOMAIN_SMTP_MAX_MESSAGE_BYTES", 10*1024*1024),
 	}
 	if path == "" {
 		return cfg, nil
@@ -152,7 +160,42 @@ func LoadConfig(path string) (Config, error) {
 	if strings.TrimSpace(fromFile.UpdateAssetName) != "" {
 		cfg.UpdateAssetName = strings.TrimSpace(fromFile.UpdateAssetName)
 	}
+	if rawValue, ok := raw["domain_smtp_enabled"]; ok {
+		var enabled bool
+		if err := json.Unmarshal(rawValue, &enabled); err != nil {
+			return Config{}, err
+		}
+		cfg.DomainSMTPEnabled = enabled
+	}
+	if strings.TrimSpace(fromFile.DomainSMTPHost) != "" {
+		cfg.DomainSMTPHost = strings.TrimSpace(fromFile.DomainSMTPHost)
+	}
+	if fromFile.DomainSMTPPort > 0 {
+		cfg.DomainSMTPPort = fromFile.DomainSMTPPort
+	}
+	if fromFile.DomainSMTPMaxMessageBytes > 0 {
+		cfg.DomainSMTPMaxMessageBytes = fromFile.DomainSMTPMaxMessageBytes
+	}
+	applyDomainSMTPEnvOverrides(&cfg)
 	return cfg, nil
+}
+
+func applyDomainSMTPEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if _, ok := os.LookupEnv("IPM_DOMAIN_SMTP_ENABLED"); ok {
+		cfg.DomainSMTPEnabled = envBool("IPM_DOMAIN_SMTP_ENABLED", cfg.DomainSMTPEnabled)
+	}
+	if value := strings.TrimSpace(os.Getenv("IPM_DOMAIN_SMTP_HOST")); value != "" {
+		cfg.DomainSMTPHost = value
+	}
+	if _, ok := os.LookupEnv("IPM_DOMAIN_SMTP_PORT"); ok {
+		cfg.DomainSMTPPort = envPositiveInt("IPM_DOMAIN_SMTP_PORT", cfg.DomainSMTPPort)
+	}
+	if _, ok := os.LookupEnv("IPM_DOMAIN_SMTP_MAX_MESSAGE_BYTES"); ok {
+		cfg.DomainSMTPMaxMessageBytes = envPositiveInt64("IPM_DOMAIN_SMTP_MAX_MESSAGE_BYTES", cfg.DomainSMTPMaxMessageBytes)
+	}
 }
 
 func firstNonEmptyString(values ...string) string {
@@ -177,6 +220,18 @@ func envBool(name string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+func envPositiveInt64(name string, fallback int64) int64 {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func envPositiveInt(name string, fallback int) int {

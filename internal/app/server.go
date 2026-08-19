@@ -495,6 +495,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/icloud/scheduler/logs/clear", s.handleClearMailboxSchedulerLogs)
 	s.mux.HandleFunc("GET /api/accounts", s.handleListAccounts)
 	s.mux.HandleFunc("POST /api/accounts", s.handleCreateAccount)
+	s.mux.HandleFunc("GET /api/domains", s.handleListDomains)
+	s.mux.HandleFunc("POST /api/domains", s.handleCreateDomain)
+	s.mux.HandleFunc("POST /api/domains/{id}/status", s.handleSetDomainStatus)
+	s.mux.HandleFunc("GET /api/domains/{id}/dns", s.handleDomainDNS)
+	s.mux.HandleFunc("DELETE /api/domains/{id}", s.handleDeleteDomain)
+	s.mux.HandleFunc("POST /api/domain-mailboxes", s.handleCreateDomainMailboxes)
 	s.mux.HandleFunc("GET /api/mailboxes", s.handleListMailboxes)
 	s.mux.HandleFunc("POST /api/mailboxes", s.handleCreateMailbox)
 	s.mux.HandleFunc("POST /api/mailboxes/batch-outbound", s.handleBatchOutboundMailboxes)
@@ -977,6 +983,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		currentUser = publicUserFromUser(user)
 		currentUser.IsAdmin = session.IsAdmin || user.IsAdmin
 	}
+	domainMailboxCount := 0
+	for _, mailbox := range state.Mailboxes {
+		if mailbox.ProviderKind() == MailboxProviderDomain {
+			domainMailboxCount++
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":             true,
 		"service":             "julong-ic-email",
@@ -990,6 +1002,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"inventory_mailboxes": inventoryMailboxes,
 		"outbound_mailboxes":  outboundMailboxes,
 		"messages":            len(state.Messages),
+		"domains":             len(state.Domains),
+		"domain_mailboxes":    domainMailboxCount,
+		"domain_smtp_enabled": s.cfg.DomainSMTPEnabled,
+		"domain_smtp_port":    s.cfg.DomainSMTPPort,
 		"icloud_session":      s.publicSessionForRequest(r),
 		"icloud_sessions":     s.publicSessionsForRequest(r),
 		"version":             currentVersionInfo(),
@@ -1010,6 +1026,10 @@ func (s *Server) handleManageData(w http.ResponseWriter, r *http.Request) {
 	for _, account := range state.Accounts {
 		accounts = append(accounts, s.publicAccount(account))
 	}
+	domains := make([]publicDomain, 0, len(state.Domains))
+	for _, domain := range state.Domains {
+		domains = append(domains, s.publicDomain(domain, state))
+	}
 	mailboxes := make([]publicMailbox, 0, len(state.Mailboxes))
 	for _, mailbox := range state.Mailboxes {
 		mailboxes = append(mailboxes, s.publicMailbox(r, mailbox))
@@ -1020,6 +1040,7 @@ func (s *Server) handleManageData(w http.ResponseWriter, r *http.Request) {
 		"users":           publicUsers,
 		"user_summaries":  s.publicUserSummaries(users, state),
 		"accounts":        accounts,
+		"domains":         domains,
 		"mailboxes":       mailboxes,
 		"messages":        len(state.Messages),
 		"icloud_session":  s.publicSessionForRequest(r),
@@ -1142,6 +1163,7 @@ func (s *Server) handleExportRuntimeData(w http.ResponseWriter, r *http.Request)
 		DataPath        string          `json:"data_path,omitempty"`
 		NextID          int             `json:"next_id"`
 		Accounts        []Account       `json:"accounts"`
+		Domains         []Domain        `json:"domains"`
 		Mailboxes       []Mailbox       `json:"mailboxes"`
 		ICloudSession   *ICloudSession  `json:"icloud_session,omitempty"`
 		ICloudSessions  []ICloudSession `json:"icloud_sessions,omitempty"`
@@ -1153,6 +1175,7 @@ func (s *Server) handleExportRuntimeData(w http.ResponseWriter, r *http.Request)
 		Scope:           "all",
 		NextID:          state.NextID,
 		Accounts:        state.Accounts,
+		Domains:         state.Domains,
 		Mailboxes:       state.Mailboxes,
 		ICloudSession:   state.ICloudSession,
 		ICloudSessions:  state.ICloudSessions,
@@ -2177,17 +2200,150 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"success": true, "account": account})
 }
 
+func (s *Server) publicDomain(domain Domain, state State) publicDomain {
+	count := 0
+	for _, mailbox := range state.Mailboxes {
+		if mailbox.ProviderKind() == MailboxProviderDomain && constantTimeEqual(mailbox.DomainID, domain.ID) {
+			count++
+		}
+	}
+	return publicDomain{
+		ID: domain.ID, OwnerID: domain.OwnerID, Owner: s.ownerName(domain.OwnerID), Label: domain.Label,
+		Name: domain.Name, Enabled: domain.Enabled, Mailboxes: count,
+		CreatedAt: formatTime(domain.CreatedAt), UpdatedAt: formatTime(domain.UpdatedAt),
+	}
+}
+
+func (s *Server) canAccessDomain(r *http.Request, domain Domain) bool {
+	if s.isAdminRequest(r) {
+		return true
+	}
+	ownerID := scopedOwnerID(r, s.store)
+	if ownerID == "" {
+		return true
+	}
+	return constantTimeEqual(ownerID, domain.OwnerID)
+}
+
+func (s *Server) handleListDomains(w http.ResponseWriter, r *http.Request) {
+	state := s.scopedState(r)
+	out := make([]publicDomain, 0, len(state.Domains))
+	for _, domain := range state.Domains {
+		out = append(out, s.publicDomain(domain, state))
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true, "domains": out,
+		"smtp": map[string]any{"enabled": s.cfg.DomainSMTPEnabled, "host": s.cfg.DomainSMTPHost, "port": s.cfg.DomainSMTPPort},
+	})
+}
+
+func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Name  string `json:"name"`
+		Label string `json:"label"`
+	}
+	if err := decodeJSON(r, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	domain, err := s.store.AddDomainForOwner(requestOwnerID(r, s.store), payload.Label, payload.Name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"success": true, "domain": s.publicDomain(domain, s.scopedState(r))})
+}
+
+func (s *Server) handleSetDomainStatus(w http.ResponseWriter, r *http.Request) {
+	domain, ok := s.store.FindDomainByID(r.PathValue("id"))
+	if !ok || !s.canAccessDomain(r, domain) {
+		writeError(w, http.StatusNotFound, errCode("domain_not_found", "域名不存在", false))
+		return
+	}
+	var payload struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := decodeJSON(r, &payload); err != nil || payload.Enabled == nil {
+		writeError(w, http.StatusBadRequest, errCode("invalid_domain_status", "enabled 必须是布尔值", false))
+		return
+	}
+	updated, err := s.store.SetDomainEnabled(domain.ID, *payload.Enabled)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "domain": s.publicDomain(updated, s.scopedState(r))})
+}
+
+func (s *Server) handleDomainDNS(w http.ResponseWriter, r *http.Request) {
+	domain, ok := s.store.FindDomainByID(r.PathValue("id"))
+	if !ok || !s.canAccessDomain(r, domain) {
+		writeError(w, http.StatusNotFound, errCode("domain_not_found", "域名不存在", false))
+		return
+	}
+	mailHost := "mail." + domain.Name
+	inboxHost := "inbox." + domain.Name
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "domain": domain.Name, "smtp_port": s.cfg.DomainSMTPPort, "records": []map[string]any{
+		{"type": "A/AAAA", "name": "mail", "value": "服务器公网 IP", "note": mailHost + " 仅做 DNS 解析，不使用 HTTP 代理"},
+		{"type": "MX", "name": "@", "value": mailHost, "priority": 10, "note": "接收入站邮件"},
+		{"type": "A/AAAA", "name": "inbox", "value": "服务器公网 IP", "note": "网页入口：" + inboxHost},
+	}})
+}
+
+func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
+	domain, ok := s.store.FindDomainByID(r.PathValue("id"))
+	if !ok || !s.canAccessDomain(r, domain) {
+		writeError(w, http.StatusNotFound, errCode("domain_not_found", "域名不存在", false))
+		return
+	}
+	if err := s.store.DeleteDomain(domain.ID); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "deleted": true, "domain": domain.Name})
+}
+
+func (s *Server) handleCreateDomainMailboxes(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		DomainID string `json:"domain_id"`
+		Count    int    `json:"count"`
+		Label    string `json:"label"`
+		Note     string `json:"note"`
+	}
+	if err := decodeJSON(r, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	domain, ok := s.store.FindDomainByID(payload.DomainID)
+	if !ok || !s.canAccessDomain(r, domain) {
+		writeError(w, http.StatusNotFound, errCode("domain_not_found", "域名不存在", false))
+		return
+	}
+	mailboxes, err := s.store.AddDomainMailboxesForOwner(requestOwnerID(r, s.store), domain.ID, payload.Label, payload.Note, payload.Count)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	out := make([]publicMailbox, 0, len(mailboxes))
+	for _, mailbox := range mailboxes {
+		out = append(out, s.publicMailbox(r, mailbox))
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"success": true, "domain": s.publicDomain(domain, s.scopedState(r)), "count": len(out), "mailboxes": out})
+}
+
 func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 	state := s.scopedState(r)
 	accountsByID := mailboxAccountMap(state.Accounts)
+	domainsByID := mailboxDomainMap(state.Domains)
 	base := filterMailboxesByOwner(state.Mailboxes, strings.TrimSpace(r.URL.Query().Get("owner_id")), scopedOwnerID(r, s.store), s.isAdminRequest(r))
 	scopedBase := filterMailboxesByStatusScope(base, r.URL.Query())
 	now := time.Now()
 	htmlLinks := s.store.Snapshot().MailboxHTMLLinks
 	htmlStates := mailboxHTMLStates(htmlLinks, now)
 	htmlScopedBase := filterMailboxesByHTMLState(scopedBase, htmlLinks, r.URL.Query().Get("html_state"), now)
-	groups := publicMailboxGroups(htmlScopedBase, accountsByID)
-	filtered := filterMailboxesForList(htmlScopedBase, accountsByID, htmlStates, r.URL.Query())
+	groups := publicMailboxGroups(htmlScopedBase, accountsByID, domainsByID)
+	filtered := filterMailboxesForList(htmlScopedBase, accountsByID, domainsByID, htmlStates, r.URL.Query())
 	sortMailboxesForList(filtered)
 
 	page, pageSize, paged := mailboxListPagination(r)
@@ -2234,24 +2390,28 @@ func filterMailboxesByOwner(mailboxes []Mailbox, ownerFilter, scopedOwner string
 	return out
 }
 
-func filterMailboxesForList(mailboxes []Mailbox, accountsByID map[string]Account, htmlStates map[string]string, values url.Values) []Mailbox {
+func filterMailboxesForList(mailboxes []Mailbox, accountsByID map[string]Account, domainsByID map[string]Domain, htmlStates map[string]string, values url.Values) []Mailbox {
 	accountKey := strings.TrimSpace(firstNonEmpty(values.Get("account_key"), values.Get("account_id")))
+	provider := strings.ToLower(strings.TrimSpace(values.Get("provider")))
 	search := parseMailboxSearch(firstNonEmpty(values.Get("search"), values.Get("q")))
 	status := strings.ToLower(strings.TrimSpace(values.Get("status")))
 	excludeStatus := strings.ToLower(strings.TrimSpace(values.Get("exclude_status")))
 	out := make([]Mailbox, 0, len(mailboxes))
 	for _, mailbox := range mailboxes {
 		mailboxStatus := strings.ToLower(strings.TrimSpace(mailbox.Status))
+		if provider != "" && mailbox.ProviderKind() != provider {
+			continue
+		}
 		if status != "" && mailboxStatus != status {
 			continue
 		}
 		if excludeStatus != "" && mailboxStatus == excludeStatus {
 			continue
 		}
-		if len(search) == 0 && accountKey != "" && accountKey != "all" && !constantTimeEqual(mailboxListAccountKey(mailbox, accountsByID), accountKey) {
+		if len(search) == 0 && accountKey != "" && accountKey != "all" && !constantTimeEqual(mailboxListAccountKey(mailbox, accountsByID, domainsByID), accountKey) {
 			continue
 		}
-		if len(search) > 0 && !mailboxListMatchesSearch(mailbox, accountsByID, htmlStates[mailbox.ID], search) {
+		if len(search) > 0 && !mailboxListMatchesSearch(mailbox, accountsByID, domainsByID, htmlStates[mailbox.ID], search) {
 			continue
 		}
 		out = append(out, mailbox)
@@ -2414,11 +2574,12 @@ func mailboxSearchBracketKind(value string) (string, string) {
 	}
 }
 
-func mailboxListMatchesSearch(mailbox Mailbox, accountsByID map[string]Account, htmlState string, terms []mailboxSearchTerm) bool {
+func mailboxListMatchesSearch(mailbox Mailbox, accountsByID map[string]Account, domainsByID map[string]Domain, htmlState string, terms []mailboxSearchTerm) bool {
 	if htmlState == "" {
 		htmlState = "unactivated"
 	}
 	account := accountsByID[strings.TrimSpace(mailbox.AccountID)]
+	domain := domainsByID[strings.TrimSpace(mailbox.DomainID)]
 	haystack := strings.ToLower(strings.Join([]string{
 		mailbox.Email,
 		mailbox.Label,
@@ -2426,6 +2587,9 @@ func mailboxListMatchesSearch(mailbox Mailbox, accountsByID map[string]Account, 
 		mailbox.AccountID,
 		account.Label,
 		account.AppleID,
+		domain.Name,
+		domain.Label,
+		mailbox.ProviderKind(),
 		mailbox.Status,
 		mailbox.OutboundBatch,
 		mailbox.OwnerID,
@@ -2486,7 +2650,7 @@ func paginateMailboxes(mailboxes []Mailbox, page, pageSize int) []Mailbox {
 
 func mailboxListPagination(r *http.Request) (int, int, bool) {
 	values := r.URL.Query()
-	paged := values.Has("page") || values.Has("page_size") || values.Has("search") || values.Has("q") || values.Has("account_key") || values.Has("account_id") || values.Has("owner_id") || values.Has("status") || values.Has("exclude_status") || values.Has("html_state")
+	paged := values.Has("page") || values.Has("page_size") || values.Has("search") || values.Has("q") || values.Has("account_key") || values.Has("account_id") || values.Has("owner_id") || values.Has("status") || values.Has("exclude_status") || values.Has("html_state") || values.Has("provider")
 	page := parseBoundedPositiveInt(values.Get("page"), 1, 1, 1_000_000)
 	pageSize := parseBoundedPositiveInt(values.Get("page_size"), mailboxListDefaultPageSize, 1, mailboxListMaxPageSize)
 	return page, pageSize, paged
@@ -2526,15 +2690,15 @@ func mailboxAccountMap(accounts []Account) map[string]Account {
 	return out
 }
 
-func publicMailboxGroups(mailboxes []Mailbox, accountsByID map[string]Account) []publicMailboxGroup {
+func publicMailboxGroups(mailboxes []Mailbox, accountsByID map[string]Account, domainsByID map[string]Domain) []publicMailboxGroup {
 	byKey := map[string]publicMailboxGroup{}
 	for _, mailbox := range mailboxes {
-		key := mailboxListAccountKey(mailbox, accountsByID)
+		key := mailboxListAccountKey(mailbox, accountsByID, domainsByID)
 		group := byKey[key]
 		if group.Key == "" {
 			group = publicMailboxGroup{
 				Key:       key,
-				Title:     mailboxListAccountTitle(mailbox, accountsByID),
+				Title:     mailboxListAccountTitle(mailbox, accountsByID, domainsByID),
 				AccountID: strings.TrimSpace(mailbox.AccountID),
 			}
 		}
@@ -2551,16 +2715,34 @@ func publicMailboxGroups(mailboxes []Mailbox, accountsByID map[string]Account) [
 	return groups
 }
 
-func mailboxListAccountKey(mailbox Mailbox, accountsByID map[string]Account) string {
+func mailboxListAccountKey(mailbox Mailbox, accountsByID map[string]Account, domainsByID map[string]Domain) string {
+	if mailbox.ProviderKind() == MailboxProviderDomain {
+		if mailbox.DomainID != "" {
+			return "domain:" + strings.TrimSpace(mailbox.DomainID)
+		}
+		return "domain:unbound"
+	}
 	if strings.TrimSpace(mailbox.AccountID) != "" {
 		return strings.TrimSpace(mailbox.AccountID)
 	}
 	return "unbound"
 }
 
-func mailboxListAccountTitle(mailbox Mailbox, accountsByID map[string]Account) string {
+func mailboxListAccountTitle(mailbox Mailbox, accountsByID map[string]Account, domainsByID map[string]Domain) string {
+	if mailbox.ProviderKind() == MailboxProviderDomain {
+		domain := domainsByID[strings.TrimSpace(mailbox.DomainID)]
+		return firstNonEmpty(domain.Label, domain.Name, mailbox.DomainID, "未绑定域名")
+	}
 	account := accountsByID[strings.TrimSpace(mailbox.AccountID)]
 	return firstNonEmpty(account.Label, account.AppleID, mailbox.AccountID, "未绑定 Apple 账号")
+}
+
+func mailboxDomainMap(domains []Domain) map[string]Domain {
+	out := make(map[string]Domain, len(domains))
+	for _, domain := range domains {
+		out[domain.ID] = domain
+	}
+	return out
 }
 
 func (s *Server) handleCreateMailbox(w http.ResponseWriter, r *http.Request) {
@@ -2786,6 +2968,10 @@ func (s *Server) handleCleanRemoteMailbox(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, errCode("mailbox_not_found", "邮箱不存在", false))
 		return
 	}
+	if mailbox.ProviderKind() == MailboxProviderDomain {
+		writeError(w, http.StatusBadRequest, errCode("domain_mailbox_no_remote_cleanup", "域名邮箱由本机 SMTP 直接收件，没有 iCloud 远端邮件可清理", false))
+		return
+	}
 	var payload struct {
 		MoveSynced bool `json:"move_synced"`
 		EmptyTrash bool `json:"empty_trash"`
@@ -2853,6 +3039,10 @@ func (s *Server) handleCleanRemoteMailboxes(w http.ResponseWriter, r *http.Reque
 	handledMailboxes := 0
 	failedMailboxes := 0
 	for _, mailbox := range state.Mailboxes {
+		if mailbox.ProviderKind() == MailboxProviderDomain {
+			result.Skipped++
+			continue
+		}
 		if accountID != "" && !constantTimeEqual(accountID, strings.TrimSpace(mailbox.AccountID)) {
 			continue
 		}
@@ -2931,6 +3121,12 @@ func (s *Server) deleteMailboxRemoteThenLocal(ctx context.Context, mailboxID str
 		if !exists || mailboxHTMLState(link, true, now) != "expired" {
 			return mailbox, ICloudMailboxDeleteResult{}, errCode("mailbox_cleanup_skipped", "HTML 接码地址已不再过期", false)
 		}
+	}
+	if mailbox.ProviderKind() == MailboxProviderDomain {
+		if err := s.store.DeleteMailbox(mailbox.ID); err != nil {
+			return mailbox, ICloudMailboxDeleteResult{}, err
+		}
+		return mailbox, ICloudMailboxDeleteResult{Email: mailbox.Email, Deleted: true}, nil
 	}
 	session, ok := s.sessionForMailbox(mailbox.OwnerID, mailbox.AccountID)
 	if !ok {
@@ -3034,6 +3230,7 @@ func (s *Server) handleDeleteMailbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":       true,
 		"email":         mailbox.Email,
+		"provider":      mailbox.ProviderKind(),
 		"remote":        deletion,
 		"local_deleted": true,
 	})
@@ -3165,6 +3362,14 @@ func (s *Server) writeMailboxCode(w http.ResponseWriter, r *http.Request, mailbo
 		skipMessageID = ""
 	}
 	messages := s.store.MessagesForMailbox(mailbox.ID)
+	if mailbox.ProviderKind() == MailboxProviderDomain {
+		if msg, code, ok := latestMailboxCodeSkipping(messages, codeAfter, keyword, now, skipMessageID); ok {
+			s.writeMailboxCodeSuccess(w, mailbox, msg, code, "", !peekOnly)
+			return
+		}
+		writeError(w, http.StatusOK, errCode("no_code", "暂未收到验证码", true))
+		return
+	}
 	if cacheOnly {
 		if msg, code, ok := latestMailboxCode(messages, codeAfter, keyword, now); ok {
 			s.writeMailboxCodeSuccess(w, mailbox, msg, code, "", false)
@@ -3952,7 +4157,7 @@ func (s *Server) mailWatcherGroups() []mailboxWatcherOwnerGroup {
 	activeIDs := s.activeMailWatcherMailboxIDs(time.Now())
 	byOwner := make(map[string][]Mailbox)
 	for _, mailbox := range state.Mailboxes {
-		if !mailbox.APIActive || !mailbox.ICloudActive || mailbox.Status == StatusDisabled {
+		if mailbox.ProviderKind() == MailboxProviderDomain || !mailbox.APIActive || !mailbox.ICloudActive || mailbox.Status == StatusDisabled {
 			continue
 		}
 		ownerID := strings.TrimSpace(mailbox.OwnerID)
@@ -3991,7 +4196,7 @@ func (s *Server) mailWatcherIMAPGroups() []mailboxWatcherIMAPGroup {
 	}
 	buckets := make(map[string]*bucket)
 	for _, mailbox := range state.Mailboxes {
-		if !mailbox.APIActive || !mailbox.ICloudActive || mailbox.Status == StatusDisabled {
+		if mailbox.ProviderKind() == MailboxProviderDomain || !mailbox.APIActive || !mailbox.ICloudActive || mailbox.Status == StatusDisabled {
 			continue
 		}
 		ownerID := strings.TrimSpace(mailbox.OwnerID)
@@ -4043,6 +4248,9 @@ func mailWatcherIMAPGroupSignature(state LoginState, mailboxes []Mailbox) string
 }
 
 func (s *Server) syncMailbox(ctx context.Context, mailbox Mailbox, after time.Time, keyword string) (int, error) {
+	if mailbox.ProviderKind() == MailboxProviderDomain {
+		return 0, nil
+	}
 	return s.syncMailboxCodeBatchForOwnerWithLimit(ctx, mailbox.OwnerID, []Mailbox{mailbox}, after, keyword, mailboxSyncThreadLimit(mailbox))
 }
 
@@ -4059,7 +4267,7 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 	refreshed := make([]Mailbox, 0, len(mailboxes))
 	for _, mailbox := range mailboxes {
 		latest, ok := s.store.FindMailboxByID(mailbox.ID)
-		if !ok || !latest.APIActive || latest.Status == StatusDisabled || !latest.ICloudActive {
+		if !ok || latest.ProviderKind() == MailboxProviderDomain || !latest.APIActive || latest.Status == StatusDisabled || !latest.ICloudActive {
 			continue
 		}
 		refreshed = append(refreshed, latest)
@@ -5043,6 +5251,15 @@ func (s *Server) allowsUserSession(r *http.Request) bool {
 	if r.Method == http.MethodPost && r.URL.Path == "/api/accounts" {
 		return true
 	}
+	if r.Method == http.MethodGet && r.URL.Path == "/api/domains" {
+		return true
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/api/domains" {
+		return true
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/domains/") || r.URL.Path == "/api/domain-mailboxes" {
+		return true
+	}
 	if r.Method == http.MethodGet && r.URL.Path == "/api/mailboxes" {
 		return true
 	}
@@ -5307,7 +5524,16 @@ func (s *Server) publicAccount(account Account) publicAccount {
 func (s *Server) publicMailbox(r *http.Request, mailbox Mailbox) publicMailbox {
 	accountLabel := ""
 	accountAppleID := ""
-	if strings.TrimSpace(mailbox.AccountID) != "" {
+	provider := mailbox.ProviderKind()
+	providerLabel := "iCloud 隐私邮箱"
+	domainName := ""
+	if provider == MailboxProviderDomain {
+		providerLabel = "域名邮箱"
+		if domain, ok := s.store.FindDomainByID(mailbox.DomainID); ok {
+			domainName = domain.Name
+			accountLabel = domain.Label
+		}
+	} else if strings.TrimSpace(mailbox.AccountID) != "" {
 		if account, ok := s.store.FindAccountByID(mailbox.AccountID); ok {
 			accountLabel = account.Label
 			accountAppleID = strings.TrimSpace(account.AppleID)
@@ -5328,6 +5554,10 @@ func (s *Server) publicMailbox(r *http.Request, mailbox Mailbox) publicMailbox {
 		Owner:              s.ownerName(mailbox.OwnerID),
 		AccountID:          mailbox.AccountID,
 		AccountLabel:       accountLabel,
+		Provider:           provider,
+		ProviderLabel:      providerLabel,
+		DomainID:           mailbox.DomainID,
+		Domain:             domainName,
 		AccountAppleID:     accountAppleID,
 		Label:              mailbox.Label,
 		Email:              mailbox.Email,

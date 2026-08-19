@@ -19,5 +19,9 @@
   "update_enabled": true,
   "update_repository": "Xujs98/julong-ic-email",
   "update_manifest_url": "",
-  "update_asset_name": ""
+  "update_asset_name": "",
+  "domain_smtp_enabled": false,
+  "domain_smtp_host": "0.0.0.0",
+  "domain_smtp_port": 2525,
+  "domain_smtp_max_message_bytes": 10485760
 }

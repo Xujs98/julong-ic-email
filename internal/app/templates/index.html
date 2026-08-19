@@ -603,6 +603,7 @@
       cursor: pointer;
       border-color: var(--ok-line);
       background: var(--ok-soft);
+      font-size: 12px;
     }
     .code-inline-result.loading { white-space: nowrap; }
     .code-inline-result.error {
@@ -1617,6 +1618,18 @@
       .mailbox-batch-bar { margin-left: 20px; margin-right: 20px; }
       .global-log-panel { margin-left: 16px; margin-right: 16px; }
     }
+
+
+    /* 域名邮箱资产面板：沿用矩龙工作台的商业化卡片与数据表规范。 */
+    .domain-workbench { display: grid; gap: 18px; }
+    .domain-service-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 30px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--dragon-accent-soft) 76%, var(--panel)); color: var(--muted); }
+    .domain-service-banner strong { color: var(--text); }
+    .domain-service-banner .pill { white-space: nowrap; }
+    .domain-dns { min-height: 24px; margin: 0 30px; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); background: color-mix(in srgb, var(--panel) 84%, transparent); white-space: pre-wrap; line-height: 1.65; }
+    .domain-table .domain-name { color: var(--text); font-weight: 900; }
+    .domain-table .domain-meta { display: block; margin-top: 4px; color: var(--faint); font-size: 12px; }
+    .domain-table .domain-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    @media (max-width: 760px) { .domain-service-banner { align-items: flex-start; flex-direction: column; margin-left: 20px; margin-right: 20px; } .domain-dns { margin-left: 20px; margin-right: 20px; } }
   </style>
 </head>
 <body>
@@ -1633,6 +1646,7 @@
       <nav class="side-nav" aria-label="功能分类">
         <button class="nav-item active" data-view="overview" onclick="setActiveView('overview', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4.5h5.5v15H5zM13.5 4.5H19v15h-5.5z"/></svg></span><span>管理总览</span><span class="count-dot" id="navOverviewCount">0</span></button>
         <button class="nav-item" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4.5" y="4.5" width="15" height="15" rx="1.5"/><path d="M8.5 8.5h7v7h-7z"/></svg></span><span>全部邮箱</span><span class="count-dot" id="navMailboxCount">0</span></button>
+        <button class="nav-item" data-view="domains" onclick="setActiveView('domains', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v9h-15z"/><path d="m5.3 8.5 6.7 5 6.7-5"/><path d="M7.5 4.5h9"/></svg></span><span>域名邮箱</span><span class="count-dot" id="navDomainCount">0</span></button>
         <button class="nav-item" data-view="create" onclick="setActiveView('create', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg></span><span>新建邮箱</span></button>
         <button class="nav-item nav-alias" data-view="session" onclick="setActiveView('session', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h9.5a3.5 3.5 0 0 1 0 7H8"/><path d="m9 5-3 3 3 3"/></svg></span><span>转发邮箱</span></button>
         <button class="nav-item nav-alias" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v10h-15z"/><path d="m5.5 8.5 6.5 5 6.5-5"/></svg></span><span>统一收件箱</span></button>
@@ -1679,7 +1693,8 @@
         <section class="view-section active" data-view="overview">
           <section class="grid">
             <div class="card"><strong id="accountCount">0</strong><span>登录账号</span></div>
-            <div class="card"><strong id="mailboxCount">0</strong><span>隐私邮箱</span></div>
+            <div class="card"><strong id="mailboxCount">0</strong><span>统一邮箱</span></div>
+            <div class="card"><strong id="domainCount">0</strong><span>接入域名</span></div>
             <div class="card"><strong id="messageCount">0</strong><span>验证码邮件</span></div>
             <div class="card"><strong id="apiStatus">-</strong><span>API 状态</span></div>
           </section>
@@ -1699,7 +1714,12 @@
               <strong>邮箱池</strong>
               <span>搜索邮箱、复制 API、取码和同步邮件。</span>
             </button>
-            <button class="quick-card" onclick="openRunConfig()">
+            <button class="quick-card" onclick="setActiveView('domains')">
+              <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5h16v10H4z"/><path d="m5.2 8.8 6.8 5.1 6.8-5.1"/><path d="M8.5 4.5h7"/></svg></i>
+              <strong>域名邮箱</strong>
+              <span>管理接收域名、DNS 指引并批量生成可收件地址。</span>
+            </button>
+                        <button class="quick-card" onclick="openRunConfig()">
               <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.8v10.4"/><path d="m15.6 10.6-3.6 3.6-3.6-3.6"/><path d="M4.6 16.2v1.4A2.4 2.4 0 0 0 7 20h10a2.4 2.4 0 0 0 2.4-2.4v-1.4"/></svg></i>
               <strong>运行配置</strong>
               <span>导出邮箱/API，清理远端验证码邮件。</span>
@@ -1803,6 +1823,42 @@
             <button id="startScheduleButton" class="primary" onclick="startMailboxScheduler()">开始定时创建</button>
             <button id="stopScheduleButton" class="danger" onclick="stopMailboxScheduler()">停止定时创建</button>
             <span id="scheduleStatus" class="muted">定时创建未启动；刷新页面不会停止后台任务。</span>
+          </div>
+        </section>
+
+        <section class="view-section panel" data-view="domains">
+          <div class="panel-head">
+            <h2>域名邮箱</h2>
+            <p>将已配置 MX 的域名接入矩龙邮箱，统一生成、收件、查看邮件和获取验证码。</p>
+          </div>
+          <div class="domain-workbench">
+            <div id="domainSMTPInfo" class="domain-service-banner"><span>正在读取 SMTP 服务状态…</span></div>
+            <div class="field-grid">
+              <label>域名别名<input id="domainLabel" placeholder="生产邮箱域名"></label>
+              <label>接收域名<input id="domainName" placeholder="mail.example.com 或 example.com"></label>
+            </div>
+            <div class="toolbar">
+              <button type="button" class="primary" onclick="createDomain()">接入域名</button>
+              <span class="muted">接入后请按 DNS 指引完成 MX 配置，再生成收件邮箱。</span>
+            </div>
+            <div class="field-grid">
+              <label>生成到域名<select id="domainMailboxDomain"><option value="">请先接入域名</option></select></label>
+              <label>生成数量<input id="domainMailboxCount" type="number" min="1" max="500" value="1"></label>
+              <label>邮箱标签<input id="domainMailboxLabel" placeholder="注册批次 A"></label>
+              <label>备注<input id="domainMailboxNote" placeholder="选填"></label>
+            </div>
+            <div class="toolbar">
+              <button type="button" class="primary" onclick="createDomainMailboxes()">批量生成域名邮箱</button>
+              <button type="button" onclick="loadDomains()">刷新域名资产</button>
+              <span id="domainActionStatus" class="muted"></span>
+            </div>
+            <div id="domainDNSHint" class="domain-dns">选择“DNS 指引”可查看当前域名的 MX 与收件服务器记录。</div>
+            <div class="table-wrap domain-table">
+              <table>
+                <thead><tr><th>域名</th><th>状态</th><th>域名邮箱</th><th>创建时间</th><th>操作</th></tr></thead>
+                <tbody id="domainRows"><tr><td colspan="5" class="muted empty">正在读取域名资产…</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
@@ -2050,6 +2106,8 @@
     const mailboxColumnKeys = new Set(defaultMailboxColumns);
     let mailboxVisibleColumns = new Set(defaultMailboxColumns);
     let lastMailboxes = [];
+    let lastDomains = [];
+    let lastDomainSMTP = {};
     let lastMailboxGroups = [];
     let lastMailboxPagination = {page: 1, page_size: 10, total: 0, total_all: 0, total_pages: 1};
     let lastStatusSummary = {};
@@ -2097,7 +2155,8 @@
       overview: ['管理总览', '查看矩龙邮箱的账号、库存和收件状态。'],
       session: ['iCloud 账号', '管理创建邮箱与取码所需的 iCloud 登录状态。'],
       create: ['新建邮箱', '按已保存账号创建新的 iCloud 隐私邮箱。'],
-      mailboxes: ['全部邮箱', '查看所有尚未出库的 iCloud 隐私邮箱。'],
+      mailboxes: ['全部邮箱', '统一查看 iCloud 隐私邮箱与域名邮箱。'],
+      domains: ['域名邮箱', '接入收件域名、查看 DNS 指引并批量生成域名邮箱。'],
       outbound: ['取件码与发货', '查看已出库邮箱、邮件和取件码。'],
       settings: ['系统设置', '配置注册开关、唯一登录/注册入口和 HTML 接码地址生命周期。']
     };
@@ -2207,6 +2266,7 @@
         }
       }
       if (normalized === 'settings' && currentUser && currentUser.is_admin) loadSystemSettings().catch(err => log('读取系统设置失败：' + err.message));
+      if (normalized === 'domains') loadDomains().catch(err => log('读取域名资产失败：' + err.message));
       renderGlobalLogs();
     }
 
@@ -2345,6 +2405,7 @@
       set('navOverviewCount', accountTotal);
       set('navSessionCount', visibleSessionTotal);
       set('navMailboxCount', inventoryTotal);
+      set('navDomainCount', Number(summary.domains || 0));
       set('navOutboundCount', outboundTotal);
     }
 
@@ -3322,6 +3383,112 @@
       );
     }
 
+    function renderDomains() {
+      const rows = $('domainRows');
+      const select = $('domainMailboxDomain');
+      if (!rows || !select) return;
+      const domains = lastDomains || [];
+      const previous = select.value;
+      select.innerHTML = domains.length
+        ? ['<option value="">请选择接收域名</option>', ...domains.map(domain => `<option value="${esc(domain.id)}" ${domain.enabled ? '' : 'disabled'}>${esc(domain.name)}${domain.enabled ? '' : '（已停用）'}</option>`)].join('')
+        : '<option value="">请先接入域名</option>';
+      if ([...select.options].some(option => option.value === previous)) select.value = previous;
+      const smtp = lastDomainSMTP || {};
+      const enabled = !!smtp.enabled;
+      if ($('domainSMTPInfo')) {
+        $('domainSMTPInfo').innerHTML = `<span><strong>SMTP 收件服务</strong> · ${enabled ? `已启用，监听 ${esc(smtp.host || '0.0.0.0')}:${esc(String(smtp.port || 2525))}` : '未启用；生成邮箱可先完成，部署时启用 SMTP 后开始接收邮件。'}</span><span class="pill ${enabled ? 'status-active' : 'status-disabled'}">${enabled ? '收件在线' : '待启用'}</span>`;
+      }
+      if (!domains.length) {
+        rows.innerHTML = '<tr><td colspan="5" class="muted empty">尚未接入域名。请先填写可管理的收件域名。</td></tr>';
+        return;
+      }
+      rows.innerHTML = domains.map(domain => `<tr>
+        <td><span class="domain-name">${esc(domain.name)}</span><span class="domain-meta">${esc(domain.label || '未命名域名')} · ${esc(domain.owner || '')}</span></td>
+        <td><span class="pill ${domain.enabled ? 'status-active' : 'status-disabled'}">${domain.enabled ? '已启用' : '已停用'}</span></td>
+        <td>${Number(domain.mailboxes || 0)} 个</td>
+        <td>${esc(formatMailboxDate(domain.created_at))}</td>
+        <td><div class="domain-actions">
+          <button type="button" onclick="showDomainDNS('${esc(domain.id)}')">DNS 指引</button>
+          <button type="button" onclick="setManagedDomainEnabled('${esc(domain.id)}', ${domain.enabled ? 'false' : 'true'})">${domain.enabled ? '停用收件' : '启用收件'}</button>
+          <button type="button" class="danger" onclick="deleteManagedDomain('${esc(domain.id)}', '${esc(domain.name)}')">删除</button>
+        </div></td>
+      </tr>`).join('');
+    }
+
+    async function loadDomains(options = {}) {
+      const data = await api('/api/domains');
+      lastDomains = data.domains || [];
+      lastDomainSMTP = data.smtp || {};
+      renderDomains();
+      if (!options.silent) log(`域名资产已刷新：${lastDomains.length} 个域名`);
+      return data;
+    }
+
+    async function createDomain() {
+      const name = ($('domainName').value || '').trim();
+      const label = ($('domainLabel').value || '').trim();
+      if (!name) { showToast('请输入接收域名'); return; }
+      try {
+        const data = await api('/api/domains', {method: 'POST', body: JSON.stringify({name, label})});
+        $('domainName').value = '';
+        $('domainLabel').value = '';
+        if ($('domainActionStatus')) $('domainActionStatus').textContent = `已接入 ${data.domain && data.domain.name ? data.domain.name : name}`;
+        await loadDomains({silent: true});
+        await refresh();
+        showToast('域名已接入');
+      } catch (err) {
+        if ($('domainActionStatus')) $('domainActionStatus').textContent = `接入失败：${err.message}`;
+        log('接入域名失败：' + err.message);
+      }
+    }
+
+    async function createDomainMailboxes() {
+      const domainID = $('domainMailboxDomain').value;
+      const count = boundedInt('domainMailboxCount', 1, 1, 500);
+      if (!domainID) { showToast('请选择接收域名'); return; }
+      try {
+        const data = await api('/api/domain-mailboxes', {method: 'POST', body: JSON.stringify({
+          domain_id: domainID, count,
+          label: ($('domainMailboxLabel').value || '').trim(),
+          note: ($('domainMailboxNote').value || '').trim()
+        })});
+        if ($('domainActionStatus')) $('domainActionStatus').textContent = `已生成 ${data.count || 0} 个域名邮箱`;
+        log(`已生成域名邮箱：${data.count || 0} 个`);
+        await loadDomains({silent: true});
+        await refresh();
+        showToast(`已生成 ${data.count || 0} 个域名邮箱`);
+      } catch (err) {
+        if ($('domainActionStatus')) $('domainActionStatus').textContent = `生成失败：${err.message}`;
+        log('生成域名邮箱失败：' + err.message);
+      }
+    }
+
+    async function setManagedDomainEnabled(id, enabled) {
+      try {
+        await api(`/api/domains/${encodeURIComponent(id)}/status`, {method: 'POST', body: JSON.stringify({enabled})});
+        await loadDomains({silent: true});
+        await refresh();
+      } catch (err) { log('更新域名收件状态失败：' + err.message); }
+    }
+
+    async function showDomainDNS(id) {
+      try {
+        const data = await api(`/api/domains/${encodeURIComponent(id)}/dns`);
+        const records = (data.records || []).map(record => `${record.type}  ${record.name}  ${record.value}${record.priority ? `  优先级 ${record.priority}` : ''}\n${record.note || ''}`).join('\n\n');
+        if ($('domainDNSHint')) $('domainDNSHint').textContent = `域名 ${data.domain || ''} 的 DNS 指引（SMTP 监听端口 ${data.smtp_port || 2525}）：\n\n${records}`;
+      } catch (err) { log('读取 DNS 指引失败：' + err.message); }
+    }
+
+    async function deleteManagedDomain(id, name) {
+      if (!await askConfirm({title: '删除域名资产', message: name, detail: '需要先删除该域名下的全部邮箱，才能移除此域名。', confirmText: '删除域名', tone: 'danger'})) return;
+      try {
+        await api(`/api/domains/${encodeURIComponent(id)}`, {method: 'DELETE'});
+        await loadDomains({silent: true});
+        await refresh();
+        showToast('域名已删除');
+      } catch (err) { log('删除域名失败：' + err.message); showToast(`删除失败：${err.message}`); }
+    }
+
     function initSessionCheckSettings() {
       const savedMinutes = localStorage.getItem(sessionCheckMinutesStorage);
       if (savedMinutes && $('sessionCheckMinutes')) {
@@ -3400,6 +3567,7 @@
       const sessionSaved = lastICloudSessions.length > 0;
       $('accountCount').textContent = Math.max(Number(status.accounts || 0), lastICloudSessions.length);
       $('mailboxCount').textContent = status.mailboxes;
+      if ($('domainCount')) $('domainCount').textContent = status.domains || 0;
       $('messageCount').textContent = status.messages;
       $('apiStatus').textContent = status.current_user && status.current_user.is_admin ? '管理员' : '普通账号';
       if (status.current_user && status.current_user.is_admin) {
@@ -3415,6 +3583,7 @@
       renderICloudSessions(lastICloudSessions);
       updateNavCounts(status);
       await loadMailboxPage({silent: true});
+      if (activeView === 'domains') await loadDomains({silent: true});
     }
 
     function ensureSchedulerPolling() {
@@ -3708,7 +3877,7 @@
             <td data-mailbox-column="label" class="mailbox-label-cell"><span class="mailbox-label-chip ${row.label ? '' : 'empty'}" title="${esc(row.label || '未设置标签')}">${esc(row.label || '未设置')}</span></td>
             <td data-mailbox-column="status"><span class="mailbox-status-badge ${status.kind}" title="API ${row.api_active ? '正常' : '停用'} / iCloud ${row.icloud_active ? '正常' : '停用'}">${esc(status.text)}</span></td>
             <td data-mailbox-column="email"><button type="button" class="copy-email-button" onclick="copyMailboxEmail('${row.id}')" title="点击复制邮箱地址">${esc(row.email)}</button></td>
-            <td data-mailbox-column="account" class="mailbox-account-cell" title="${esc(mailboxAccountTitle(row))}">${esc(mailboxAccountTitle(row))}</td>
+            <td data-mailbox-column="account" class="mailbox-account-cell" title="${esc((row.provider_label || '') + ' · ' + mailboxAccountTitle(row))}"><span class="mailbox-label-chip ${row.provider === 'domain' ? '' : 'empty'}">${esc(row.provider_label || 'iCloud 隐私邮箱')}</span><span class="domain-meta">${esc(mailboxAccountTitle(row))}</span></td>
             <td data-mailbox-column="batch" class="mailbox-batch-cell">${renderMailboxBatch(row)}</td>
             <td data-mailbox-column="messages"><button type="button" class="mailbox-message-count-button" onclick="openMailboxMessages('${row.id}')" title="查看 ${esc(row.email)} 的邮件" aria-label="查看 ${esc(row.email)} 的邮件">${row.receive_count || 0} 封</button></td>
             <td data-mailbox-column="created" class="mailbox-created-cell">${esc(formatMailboxDate(row.created_at))}</td>
@@ -3716,14 +3885,14 @@
             <td data-mailbox-column="code" class="mailbox-code-cell">${renderMailboxCodeCell(row.id)}</td>
             <td data-mailbox-column="actions"><div class="row-actions">
               <button id="verifyButton-${esc(row.id)}" onclick="verifyMailbox('${row.id}')" title="获取验证码" aria-label="获取验证码">${mailboxActionIcon('eye')}</button>
-              <button class="action-sync ${syncButtonClass(row.id)}" onclick="syncMailbox('${row.id}')" ${syncButtonDisabled(row.id)} title="同步邮件" aria-label="同步邮件">${mailboxActionIcon('sync')}</button>
+              ${row.provider === 'domain' ? '' : `<button class="action-sync ${syncButtonClass(row.id)}" onclick="syncMailbox('${row.id}')" ${syncButtonDisabled(row.id)} title="同步邮件" aria-label="同步邮件">${mailboxActionIcon('sync')}</button>`}
               <button onclick="createMailboxHTMLLink('${row.id}')" title="复制 HTML 接码地址" aria-label="复制 HTML 接码地址">${mailboxActionIcon('link')}</button>
               <details class="mailbox-more">
                 <summary title="更多操作" aria-label="更多操作">${mailboxActionIcon('more')}</summary>
                 <div class="mailbox-more-menu">
                   <button type="button" onclick="copyMailboxValue('${row.id}', 'api')">复制 API 地址</button>
                   <button type="button" onclick="copyMailboxValue('${row.id}', 'both')">复制邮箱 + API</button>
-                  <button type="button" onclick="cleanRemoteMailbox('${row.id}')">清理远端邮件</button>
+                  ${row.provider === 'domain' ? '' : `<button type="button" onclick="cleanRemoteMailbox('${row.id}')">清理远端邮件</button>`}
                   <button type="button" onclick="setMailboxStatus('${row.id}', 'available')">设为可用</button>
                   <button type="button" onclick="setMailboxStatus('${row.id}', 'used')">设为已使用</button>
                   <button type="button" onclick="setMailboxStatus('${row.id}', 'failed')">设为失败</button>
@@ -3731,7 +3900,7 @@
                   ${renderMailboxAPIToggleAction(row)}
                 </div>
               </details>
-              <button class="action-delete" onclick="deleteMailbox('${row.id}')" title="从 iCloud 永久删除邮箱" aria-label="从 iCloud 永久删除邮箱">${mailboxActionIcon('trash')}</button>
+              <button class="action-delete" onclick="deleteMailbox('${row.id}')" title="${row.provider === 'domain' ? '永久删除域名邮箱' : '从 iCloud 永久删除邮箱'}" aria-label="永久删除邮箱">${mailboxActionIcon('trash')}</button>
             </div>
             </td>
           </tr>`;
@@ -3917,7 +4086,7 @@
     function mailboxTableStatus(row) {
       if (row.status === 'outbound') return {text: '出库', kind: 'warn'};
       if (!row.api_active) return {text: 'API 停用', kind: 'off'};
-      if (!row.icloud_active) return {text: 'iCloud 停用', kind: 'bad'};
+      if (!row.icloud_active) return {text: row.provider === 'domain' ? '收件停用' : 'iCloud 停用', kind: 'bad'};
       return ({
         available: {text: '可用', kind: 'ok'},
         used: {text: '已使用', kind: 'warn'},
@@ -3954,6 +4123,7 @@
     }
 
     function mailboxAccountTitle(row) {
+      if (row.provider === 'domain') return row.domain || row.account_label || row.domain_id || '未绑定域名';
       return row.account_label || row.account_apple_id || row.account_id || '未绑定 Apple 账号';
     }
 
@@ -4804,7 +4974,7 @@
         selectedMailboxIDs.delete(id);
         selectedMailboxRows.delete(id);
         const remote = data.remote || {};
-        const detail = remote.already_missing ? '远端已不存在，本地记录已清理' : 'iCloud 远端与本地记录均已删除';
+        const detail = data.provider === 'domain' ? '本地域名邮箱与收件数据已删除' : (remote.already_missing ? '远端已不存在，本地记录已清理' : 'iCloud 远端与本地记录均已删除');
         log(`邮箱已永久删除：${email}（${detail}）`);
         showToast(`已永久删除邮箱：${email}`);
         await refresh();

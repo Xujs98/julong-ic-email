@@ -6,7 +6,9 @@
 
 > **二开说明**：本项目由 Xujs98 基于原项目 [q1953258942/iCloud-Privacy-Mail](https://github.com/q1953258942/iCloud-Privacy-Mail) 二次开发，当前维护仓库为 [Xujs98/julong-ic-email](https://github.com/Xujs98/julong-ic-email)。原项目版权与许可继续归原作者及其许可文件约定所有。
 
-独立 Go 服务，用来登录 iCloud、创建 Hide My Email 隐私邮箱、同步邮件（默认只保留验证码邮件），并给外部注册项目提供取码 API。
+独立 Go 服务，用来登录 iCloud、创建 Hide My Email 隐私邮箱，也可接入自有域名并由内置 SMTP 服务直接收件；两类邮箱共用邮件管理、HTML 接码页和取码 API。
+
+> **域名邮箱能力说明**：域名收件、邮箱生命周期和 DNS 引导思路参考 [DreamsHive/CloakMail](https://github.com/DreamsHive/cloakmail)（MIT License），本项目以 Go 重新实现并保留矩龙邮箱现有 UI；完整声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 当前版本是 **全协议后端**：不依赖比特浏览器、CDP、浏览器页面脚本或手动复制 Cookie。
 
@@ -17,10 +19,12 @@
 - 旧接口登录态：后端发起 iCloud 登录，用户收到 2FA 后提交 6 位验证码保存登录态。
 - 多 Apple 登录态：同一平台账号可保存多个 Apple/iCloud 登录态，前端按账号 TAB 分开显示和操作。
 - 隐私邮箱创建：优先调用 Apple Account 新接口创建，账号只有旧登录态时回落 iCloud Hide My Email `generate + reserve`。
+- 域名资产管理：在矩龙邮箱原有商业化工作台接入、启停和删除收件域名；面板提供 MX/A DNS 指引、SMTP 服务状态与域名邮箱数量。
+- 域名邮箱生成与收件：按已启用域名批量生成地址；内置 receive-only SMTP 服务只接收已生成且启用的地址，保留纯文本/HTML 邮件并复用现有邮件弹窗、HTML 接码页和单邮箱取码 API。
 - 批量/定时创建：可勾选多个 Apple 登录态；手动创建会让选中账号同时跑一轮，定时只设置间隔，失败账号只在本次定时创建中临时跳过，其他账号继续创建，直到本次账号全部失败后等待下一次。
 - 邮件同步：创建邮箱的 Apple 登录态只用于创建；收件使用 iCloud 邮箱账号 + App 专用密码，通过 IMAP 监听和同步邮件。默认只保存验证码邮件，管理员关闭过滤后会保存隐藏邮箱收到的全部邮件，取码 API 仍只提取验证码。
 - 取码 API：每个隐私邮箱自动生成独立 `mailbox_key` 和 API 地址。
-- 全部邮箱表格：统一按 ID、标签、状态、邮箱、Apple 账号、邮件数、创建时间、HTML 过期时间、取件码和操作列展示尚未出库的邮箱；最新新增的邮箱排在最前，创建时间仅在邮箱入库时记录，后续同步、状态和邮件操作不会改变该列；HTML 地址未访问时显示“未激活”和激活后的有效期，访问后按天、时、分、秒显示剩余时间。
+- 全部邮箱表格：统一按 ID、标签、状态、邮箱、邮箱类型/所属账号或域名、邮件数、创建时间、HTML 过期时间、取件码和操作列展示尚未出库的 iCloud 与域名邮箱；最新新增的邮箱排在最前，创建时间仅在邮箱入库时记录，后续同步、状态和邮件操作不会改变该列；HTML 地址未访问时显示“未激活”和激活后的有效期，访问后按天、时、分、秒显示剩余时间。
 - 单邮箱邮件查询：点击“全部邮箱”表格中的邮件数量，会打开当前邮箱专属邮件弹窗；可查看发件人、主题、收件时间、正文、验证码和隔离后的 HTML 邮件预览，并支持同步或刷新当前邮箱邮件。
 - 邮箱批量操作：支持跨分页选择邮箱，批量复制邮箱/API/HTML 地址、同步邮件、出库、修改状态、停用 API，以及从 iCloud 永久删除邮箱。
 - 出库与发货：勾选库存邮箱后点击“出库”，邮箱状态会改为“出库”并移入侧边栏“取件码与发货”；出库列表继续支持邮件查询、验证码和 HTML 地址，也可按全部、已激活、未激活、已过期筛选 HTML 状态，批量退回库存或一键清理全部已过期邮箱。
@@ -104,6 +108,10 @@ Copy-Item .\config.example.json .\config.json
 | `update_repository` | 未配置 manifest 时读取的 GitHub 仓库，默认 `Xujs98/julong-ic-email` |
 | `update_manifest_url` | 可选的更新 manifest 地址；配置后优先按 manifest 选择当前系统架构的二进制和 sha256 |
 | `update_asset_name` | 可选的发布资产文件名；不填时自动匹配当前 `os/arch` |
+| `domain_smtp_enabled` | 是否启动域名邮箱 SMTP 收件服务，默认 `false` |
+| `domain_smtp_host` | SMTP 监听地址，默认 `0.0.0.0` |
+| `domain_smtp_port` | SMTP 监听端口，默认 `2525`；生产环境通常由宿主机 TCP 25 映射到此端口 |
+| `domain_smtp_max_message_bytes` | 单封域名邮件最大字节数，默认 `10485760`（10 MiB） |
 
 示例：
 
@@ -119,13 +127,26 @@ Copy-Item .\config.example.json .\config.json
   "update_enabled": true,
   "update_repository": "Xujs98/julong-ic-email",
   "update_manifest_url": "",
-  "update_asset_name": ""
+  "update_asset_name": "",
+  "domain_smtp_enabled": true,
+  "domain_smtp_host": "0.0.0.0",
+  "domain_smtp_port": 2525,
+  "domain_smtp_max_message_bytes": 10485760
 }
 ```
 
 > 管理面板只支持账号密码登录；旧版 Admin Key 管理入口已移除。
 >
 > `data_path` 是唯一真实数据源，里面包含平台用户、Apple 登录态、隐私邮箱、邮件缓存和每个邮箱的 `mailbox_key`。部署、迁移或合并数据前必须先备份这个文件。
+
+### 域名邮箱部署
+
+1. 在 `config.json` 中把 `domain_smtp_enabled` 设为 `true`；Docker Compose 部署时设置 `IPM_DOMAIN_SMTP_ENABLED=true`。容器默认监听 `2525`，公网 MX 通常需要将宿主机 **TCP 25** 映射到容器 `2525`，例如把 `JULONG_SMTP_PORT=25`。
+2. 登录矩龙邮箱，在左侧 **域名邮箱** 中接入域名并查看“DNS 指引”。为 `mail.<你的域名>` 设置公网 A/AAAA，根域名 MX 指向该主机；`mail` 记录仅做 DNS 解析，不走 HTTP/CDN 代理。
+3. 在同一页面生成域名邮箱。SMTP 服务只接受已经生成且启用的精确收件地址；收到的邮件会直接显示在“全部邮箱”中，邮箱类型标记为“域名邮箱”。
+4. 访问生成邮箱的 API 或 HTML 接码地址时，仍使用该邮箱独立的 API key/token；域名邮箱没有 iCloud 远端同步或远端清理步骤。
+
+本地联调可继续使用 `2525`；公网收件还需确保服务器与云厂商允许 TCP 25 入站。若同一域名还要发信，需自行补齐 SPF、DKIM、DMARC 与 PTR/rDNS。
 
 ### 在线更新
 
@@ -209,8 +230,8 @@ https://mail.example.com/mailbox/TOKEN
 
 | 角色 | 权限 |
 | --- | --- |
-| 管理员 | 查看全部用户、全部 iCloud 登录态、全部隐私邮箱；可导出全量数据 |
-| 普通用户 | 只能查看和操作自己创建的 iCloud 登录态和隐私邮箱；只能导出自己的数据 |
+| 管理员 | 查看全部用户、全部 iCloud 登录态、全部邮箱与域名资产；可导出全量数据 |
+| 普通用户 | 只能查看和操作自己创建的 iCloud 登录态、域名资产和邮箱；只能导出自己的数据 |
 
 所有管理接口默认要求登录后的 HttpOnly Cookie。外部取码接口只接受单邮箱 `mailbox_key` 或全局 `api_key` 请求头，不接受全局 key 放在 URL 查询参数里。
 
