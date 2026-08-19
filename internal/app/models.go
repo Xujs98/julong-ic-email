@@ -44,15 +44,18 @@ type State struct {
 // administrator entry point, and the lifetime of mailbox HTML code pages. API
 // tokens are independent.
 type SystemSettings struct {
-	RegistrationEnabled     bool      `json:"registration_enabled"`
-	StoreAllMessages        bool      `json:"store_all_messages,omitempty"`
-	AdminPath               string    `json:"admin_path"`
-	HTMLLinkTTLSeconds      int       `json:"html_link_ttl_seconds,omitempty"`
-	HTMLLinkTTLDays         int       `json:"html_link_ttl_days,omitempty"`
-	HTMLPageMessageLimit    int       `json:"html_page_message_limit"`
-	HTMLPageRefreshSeconds  int       `json:"html_page_refresh_seconds"`
-	HTMLExpiryDeleteMailbox bool      `json:"html_expiry_delete_mailbox,omitempty"`
-	UpdatedAt               time.Time `json:"updated_at,omitempty"`
+	RegistrationEnabled    bool   `json:"registration_enabled"`
+	StoreAllMessages       bool   `json:"store_all_messages,omitempty"`
+	AdminPath              string `json:"admin_path"`
+	HTMLLinkTTLSeconds     int    `json:"html_link_ttl_seconds,omitempty"`
+	HTMLLinkTTLDays        int    `json:"html_link_ttl_days,omitempty"`
+	HTMLPageMessageLimit   int    `json:"html_page_message_limit"`
+	HTMLPageRefreshSeconds int    `json:"html_page_refresh_seconds"`
+	// Existing installations remain enabled by default because this field is a
+	// disabled flag; administrators can turn the lifecycle off explicitly.
+	HTMLLinkLifecycleDisabled bool      `json:"html_link_lifecycle_disabled,omitempty"`
+	HTMLExpiryDeleteMailbox   bool      `json:"html_expiry_delete_mailbox,omitempty"`
+	UpdatedAt                 time.Time `json:"updated_at,omitempty"`
 }
 
 type MailboxHTMLLink struct {
@@ -359,37 +362,38 @@ type publicDomain struct {
 }
 
 type publicMailbox struct {
-	ID                 string `json:"id"`
-	OwnerID            string `json:"owner_id,omitempty"`
-	Owner              string `json:"owner,omitempty"`
-	AccountID          string `json:"account_id"`
-	AccountLabel       string `json:"account_label,omitempty"`
-	Provider           string `json:"provider"`
-	ProviderLabel      string `json:"provider_label"`
-	DomainID           string `json:"domain_id,omitempty"`
-	Domain             string `json:"domain,omitempty"`
-	AccountAppleID     string `json:"account_apple_id,omitempty"`
-	CreateChannel      string `json:"create_channel,omitempty"`
-	CreateChannelLabel string `json:"create_channel_label,omitempty"`
-	Label              string `json:"label"`
-	Email              string `json:"email"`
-	APITokenMask       string `json:"api_token_mask"`
-	APIURL             string `json:"api_url"`
-	HTMLLinkURL        string `json:"html_link_url,omitempty"`
-	HTMLLinkActivated  string `json:"html_link_activated_at,omitempty"`
-	HTMLLinkExpires    string `json:"html_link_expires,omitempty"`
-	HTMLLinkTTLSeconds int    `json:"html_link_ttl_seconds"`
-	HTMLLinkTTLDays    int    `json:"html_link_ttl_days,omitempty"`
-	APIActive          bool   `json:"api_active"`
-	ICloudActive       bool   `json:"icloud_active"`
-	ReceiveCount       int    `json:"receive_count"`
-	Status             string `json:"status"`
-	OutboundBatch      string `json:"outbound_batch,omitempty"`
-	Note               string `json:"note"`
-	LastSyncAt         string `json:"last_sync_at,omitempty"`
-	LastSyncUID        string `json:"last_sync_uid,omitempty"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
+	ID                       string `json:"id"`
+	OwnerID                  string `json:"owner_id,omitempty"`
+	Owner                    string `json:"owner,omitempty"`
+	AccountID                string `json:"account_id"`
+	AccountLabel             string `json:"account_label,omitempty"`
+	Provider                 string `json:"provider"`
+	ProviderLabel            string `json:"provider_label"`
+	DomainID                 string `json:"domain_id,omitempty"`
+	Domain                   string `json:"domain,omitempty"`
+	AccountAppleID           string `json:"account_apple_id,omitempty"`
+	CreateChannel            string `json:"create_channel,omitempty"`
+	CreateChannelLabel       string `json:"create_channel_label,omitempty"`
+	Label                    string `json:"label"`
+	Email                    string `json:"email"`
+	APITokenMask             string `json:"api_token_mask"`
+	APIURL                   string `json:"api_url"`
+	HTMLLinkURL              string `json:"html_link_url,omitempty"`
+	HTMLLinkActivated        string `json:"html_link_activated_at,omitempty"`
+	HTMLLinkExpires          string `json:"html_link_expires,omitempty"`
+	HTMLLinkTTLSeconds       int    `json:"html_link_ttl_seconds"`
+	HTMLLinkTTLDays          int    `json:"html_link_ttl_days,omitempty"`
+	HTMLLinkLifecycleEnabled bool   `json:"html_link_lifecycle_enabled"`
+	APIActive                bool   `json:"api_active"`
+	ICloudActive             bool   `json:"icloud_active"`
+	ReceiveCount             int    `json:"receive_count"`
+	Status                   string `json:"status"`
+	OutboundBatch            string `json:"outbound_batch,omitempty"`
+	Note                     string `json:"note"`
+	LastSyncAt               string `json:"last_sync_at,omitempty"`
+	LastSyncUID              string `json:"last_sync_uid,omitempty"`
+	CreatedAt                string `json:"created_at"`
+	UpdatedAt                string `json:"updated_at"`
 }
 
 type publicMailboxGroup struct {

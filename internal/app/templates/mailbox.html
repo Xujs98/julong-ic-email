@@ -32,12 +32,13 @@
     const token = location.pathname.split('/').filter(Boolean).pop();
     let lastMessageFingerprint = '';
     let ttlSeconds = 0;
+    let lifecycleEnabled = true;
     let ttlMeasuredAt = Date.now();
     let refreshSeconds = 20;
     let refreshTimer = 0;
     function formatTTL(seconds){let remaining=Math.max(0,Math.floor(Number(seconds)||0));if(remaining<=0)return'已过期';const d=Math.floor(remaining/86400);remaining%=86400;const h=Math.floor(remaining/3600);remaining%=3600;const m=Math.floor(remaining/60);const s=remaining%60;return`剩余 ${d}天 ${h}时 ${m}分 ${s}秒`}
     function setTTL(seconds){ttlSeconds=Math.max(0,Math.floor(Number(seconds)||0));ttlMeasuredAt=Date.now();renderTTL()}
-    function renderTTL(){const elapsed=Math.floor((Date.now()-ttlMeasuredAt)/1000);document.getElementById('expiry').textContent=formatTTL(Math.max(0,ttlSeconds-elapsed))}
+    function renderTTL(){if(!lifecycleEnabled){document.getElementById('expiry').textContent='永不过期';return}const elapsed=Math.floor((Date.now()-ttlMeasuredAt)/1000);document.getElementById('expiry').textContent=formatTTL(Math.max(0,ttlSeconds-elapsed))}
     function setRefreshSeconds(seconds){refreshSeconds=Math.min(3600,Math.max(5,Math.floor(Number(seconds)||20)));document.getElementById('refreshInfo').textContent=`页面每 ${refreshSeconds} 秒自动刷新，API 地址永不过期。`}
     function scheduleReload(){clearTimeout(refreshTimer);refreshTimer=setTimeout(loadData,refreshSeconds*1000)}
     function formatDateTime(value){if(!value)return'—';const date=new Date(value);if(Number.isNaN(date.getTime()))return String(value);return date.toLocaleString('zh-CN',{hour12:false})}
@@ -60,7 +61,7 @@
     }
     async function loadData(){
       try{const res=await fetch(`/mailbox/${encodeURIComponent(token)}/data`,{cache:'no-store'});const data=await res.json();if(!res.ok)throw new Error(data.message||'链接已过期');
-        document.getElementById('email').textContent=data.mailbox.email||'—';document.getElementById('count').textContent=`${data.messages.length} 封邮件`;setTTL(data.ttl_seconds);setRefreshSeconds(data.refresh_seconds);document.getElementById('updated').textContent=new Date().toLocaleTimeString();
+        document.getElementById('email').textContent=data.mailbox.email||'—';document.getElementById('count').textContent=`${data.messages.length} 封邮件`;lifecycleEnabled=data.lifecycle_enabled!==false;setTTL(data.ttl_seconds);setRefreshSeconds(data.refresh_seconds);document.getElementById('updated').textContent=new Date().toLocaleTimeString();
         const latest=data.latest||{};document.getElementById('code').textContent=latest.code||'—';document.getElementById('codeMeta').textContent=latest.code?`${latest.subject||'验证码邮件'} · ${formatDateTime(latest.received_at)}`:'暂未识别到验证码';renderMessages(data.messages||[]);
       }catch(err){setTTL(0);document.getElementById('messages').className='empty';document.getElementById('messages').textContent=err.message||'链接已过期';}finally{scheduleReload()}
     }

@@ -332,6 +332,7 @@ func TestSystemSettingsTemplateIncludesMailRetentionAndExpiryDeleteSwitches(t *t
 		`id="settingsAccessMetric"`,
 		`id="verificationOnly"`,
 		`id="htmlExpiryDeleteMailbox"`,
+		`id="htmlLinkLifecycleEnabled"`,
 		`id="htmlPageMessageLimit"`,
 		`id="htmlPageRefreshSeconds"`,
 		`id="htmlLinkTTLSeconds"`,
@@ -344,10 +345,35 @@ func TestSystemSettingsTemplateIncludesMailRetentionAndExpiryDeleteSwitches(t *t
 		`html_page_message_limit:`,
 		`html_page_refresh_seconds:`,
 		`html_expiry_delete_mailbox:`,
+		`html_link_lifecycle_enabled:`,
 		`formatTTLDuration`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("system settings template source missing %q", want)
+		}
+	}
+}
+
+func TestManagementWorkbenchCommercialUIAndIndependentLogs(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`class="commercial-hero"`,
+		`class="commercial-hero-metrics"`,
+		`class="commercial-section-label"`,
+		`data-view="logs" onclick="setActiveView('logs', this)"`,
+		`id="globalLogPanel" class="view-section panel global-log-panel logs-panel" data-view="logs"`,
+		`logs: ['运行日志', '集中查看运行、创建和定时任务记录。']`,
+		`if (panel) panel.hidden = activeView !== 'logs';`,
+		`data-log-category="runtime"`,
+		`data-log-category="create"`,
+		`data-log-category="schedule"`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("commercial workbench/log center source missing %q", want)
 		}
 	}
 }
@@ -6074,35 +6100,36 @@ func TestSystemSettingsMessageRetentionAndExpiryDeleteSwitches(t *testing.T) {
 	}
 	var body struct {
 		Settings struct {
-			VerificationOnly        bool `json:"verification_only"`
-			HTMLExpiryDeleteMailbox bool `json:"html_expiry_delete_mailbox"`
-			HTMLPageMessageLimit    int  `json:"html_page_message_limit"`
-			HTMLPageRefreshSeconds  int  `json:"html_page_refresh_seconds"`
-			HTMLLinkTTLSeconds      int  `json:"html_link_ttl_seconds"`
+			VerificationOnly         bool `json:"verification_only"`
+			HTMLLinkLifecycleEnabled bool `json:"html_link_lifecycle_enabled"`
+			HTMLExpiryDeleteMailbox  bool `json:"html_expiry_delete_mailbox"`
+			HTMLPageMessageLimit     int  `json:"html_page_message_limit"`
+			HTMLPageRefreshSeconds   int  `json:"html_page_refresh_seconds"`
+			HTMLLinkTTLSeconds       int  `json:"html_link_ttl_seconds"`
 		} `json:"settings"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.Settings.VerificationOnly || body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 50 || body.Settings.HTMLPageRefreshSeconds != 20 || body.Settings.HTMLLinkTTLSeconds != 604800 {
+	if !body.Settings.VerificationOnly || !body.Settings.HTMLLinkLifecycleEnabled || body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 50 || body.Settings.HTMLPageRefreshSeconds != 20 || body.Settings.HTMLLinkTTLSeconds != 604800 {
 		t.Fatalf("default settings = %+v, want verification-only on, expiry-delete off, limit 50, refresh 20 seconds and TTL 604800 seconds", body.Settings)
 	}
 
 	rr = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":true,"verification_only":false,"admin_path":"/manage","html_link_ttl_seconds":5,"html_page_message_limit":120,"html_page_refresh_seconds":35,"html_expiry_delete_mailbox":true}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(`{"registration_enabled":true,"verification_only":false,"admin_path":"/manage","html_link_ttl_seconds":5,"html_page_message_limit":120,"html_page_refresh_seconds":35,"html_link_lifecycle_enabled":false,"html_expiry_delete_mailbox":true}`))
 	req.AddCookie(adminCookie)
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("save settings switches = %d body=%s", rr.Code, rr.Body.String())
 	}
 	settings := store.SystemSettings()
-	if !settings.StoreAllMessages || !settings.HTMLExpiryDeleteMailbox || settings.HTMLPageMessageLimit != 120 || settings.HTMLPageRefreshSeconds != 35 || settings.HTMLLinkTTLSeconds != 5 {
+	if !settings.StoreAllMessages || !settings.HTMLLinkLifecycleDisabled || !settings.HTMLExpiryDeleteMailbox || settings.HTMLPageMessageLimit != 120 || settings.HTMLPageRefreshSeconds != 35 || settings.HTMLLinkTTLSeconds != 5 {
 		t.Fatalf("stored settings = %+v, want all messages, expiry deletion, limit 120, refresh 35 seconds and TTL 5 seconds", settings)
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Settings.VerificationOnly || !body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 120 || body.Settings.HTMLPageRefreshSeconds != 35 || body.Settings.HTMLLinkTTLSeconds != 5 {
+	if body.Settings.VerificationOnly || body.Settings.HTMLLinkLifecycleEnabled || !body.Settings.HTMLExpiryDeleteMailbox || body.Settings.HTMLPageMessageLimit != 120 || body.Settings.HTMLPageRefreshSeconds != 35 || body.Settings.HTMLLinkTTLSeconds != 5 {
 		t.Fatalf("saved public settings = %+v", body.Settings)
 	}
 
@@ -6218,6 +6245,46 @@ func TestExpiredMailboxHTMLLinksAreRetainedUntilExplicitRegeneration(t *testing.
 	}
 	if replacement.Token == "" || replacement.Token == "expired-html" || !replacement.ActivatedAt.IsZero() || !replacement.ExpiresAt.IsZero() {
 		t.Fatalf("explicit regeneration did not create a new inactive HTML link: %+v", replacement)
+	}
+}
+
+func TestDisabledHTMLLinkLifecycleKeepsLinksPermanent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	now := time.Now()
+	state := State{
+		NextID: 2,
+		Mailboxes: []Mailbox{{
+			ID: "mbx_permanent", Email: "permanent@example.com", APIToken: "api-permanent",
+			APIActive: true, ICloudActive: true, Status: StatusAvailable, CreatedAt: now, UpdatedAt: now,
+		}},
+		MailboxHTMLLinks: []MailboxHTMLLink{{
+			Token: "permanent-html", MailboxID: "mbx_permanent", CreatedAt: now.Add(-48 * time.Hour),
+			ActivatedAt: now.Add(-24 * time.Hour), ExpiresAt: now.Add(-time.Hour),
+		}},
+		SystemSettings: SystemSettings{
+			RegistrationEnabled: true, AdminPath: "/manage", HTMLLinkTTLSeconds: 60,
+			HTMLLinkLifecycleDisabled: true, UpdatedAt: now,
+		},
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link, ok := store.FindMailboxHTMLLink("permanent-html"); !ok || link.Token != "permanent-html" {
+		t.Fatalf("disabled lifecycle link lookup = %+v, ok=%v", link, ok)
+	}
+	if links := store.ExpiredMailboxHTMLLinks(now); len(links) != 0 {
+		t.Fatalf("disabled lifecycle should not expose expired links: %+v", links)
+	}
+	if link, ok, err := store.ActivateMailboxHTMLLink("permanent-html", now); err != nil || !ok || !link.ExpiresAt.IsZero() {
+		t.Fatalf("disabled lifecycle activation = %+v, ok=%v, err=%v; want permanent link", link, ok, err)
 	}
 }
 

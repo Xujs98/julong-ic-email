@@ -555,15 +555,16 @@ func (s *Server) handleManagePage(w http.ResponseWriter, r *http.Request) {
 func publicSystemSettings(settings SystemSettings) map[string]any {
 	settings = normalizeSystemSettings(settings)
 	return map[string]any{
-		"registration_enabled":       settings.RegistrationEnabled,
-		"verification_only":          !settings.StoreAllMessages,
-		"admin_path":                 settings.AdminPath,
-		"html_link_ttl_seconds":      settings.HTMLLinkTTLSeconds,
-		"html_link_ttl_days":         htmlLinkTTLDays(settings.HTMLLinkTTLSeconds),
-		"html_page_message_limit":    settings.HTMLPageMessageLimit,
-		"html_page_refresh_seconds":  settings.HTMLPageRefreshSeconds,
-		"html_expiry_delete_mailbox": settings.HTMLExpiryDeleteMailbox,
-		"updated_at":                 formatTime(settings.UpdatedAt),
+		"registration_enabled":        settings.RegistrationEnabled,
+		"verification_only":           !settings.StoreAllMessages,
+		"admin_path":                  settings.AdminPath,
+		"html_link_ttl_seconds":       settings.HTMLLinkTTLSeconds,
+		"html_link_ttl_days":          htmlLinkTTLDays(settings.HTMLLinkTTLSeconds),
+		"html_page_message_limit":     settings.HTMLPageMessageLimit,
+		"html_page_refresh_seconds":   settings.HTMLPageRefreshSeconds,
+		"html_link_lifecycle_enabled": !settings.HTMLLinkLifecycleDisabled,
+		"html_expiry_delete_mailbox":  settings.HTMLExpiryDeleteMailbox,
+		"updated_at":                  formatTime(settings.UpdatedAt),
 	}
 }
 
@@ -590,14 +591,15 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var payload struct {
-		RegistrationEnabled     bool   `json:"registration_enabled"`
-		VerificationOnly        *bool  `json:"verification_only"`
-		AdminPath               string `json:"admin_path"`
-		HTMLLinkTTLSeconds      *int   `json:"html_link_ttl_seconds"`
-		HTMLLinkTTLDays         *int   `json:"html_link_ttl_days"`
-		HTMLPageMessageLimit    *int   `json:"html_page_message_limit"`
-		HTMLPageRefreshSeconds  *int   `json:"html_page_refresh_seconds"`
-		HTMLExpiryDeleteMailbox *bool  `json:"html_expiry_delete_mailbox"`
+		RegistrationEnabled      bool   `json:"registration_enabled"`
+		VerificationOnly         *bool  `json:"verification_only"`
+		AdminPath                string `json:"admin_path"`
+		HTMLLinkTTLSeconds       *int   `json:"html_link_ttl_seconds"`
+		HTMLLinkTTLDays          *int   `json:"html_link_ttl_days"`
+		HTMLPageMessageLimit     *int   `json:"html_page_message_limit"`
+		HTMLPageRefreshSeconds   *int   `json:"html_page_refresh_seconds"`
+		HTMLLinkLifecycleEnabled *bool  `json:"html_link_lifecycle_enabled"`
+		HTMLExpiryDeleteMailbox  *bool  `json:"html_expiry_delete_mailbox"`
 	}
 	if err := decodeJSON(r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -647,14 +649,19 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 	if payload.HTMLExpiryDeleteMailbox != nil {
 		htmlExpiryDeleteMailbox = *payload.HTMLExpiryDeleteMailbox
 	}
+	htmlLinkLifecycleDisabled := current.HTMLLinkLifecycleDisabled
+	if payload.HTMLLinkLifecycleEnabled != nil {
+		htmlLinkLifecycleDisabled = !*payload.HTMLLinkLifecycleEnabled
+	}
 	settings, err := s.store.SaveSystemSettings(SystemSettings{
-		RegistrationEnabled:     payload.RegistrationEnabled,
-		StoreAllMessages:        !verificationOnly,
-		AdminPath:               path,
-		HTMLLinkTTLSeconds:      htmlLinkTTLSeconds,
-		HTMLPageMessageLimit:    htmlPageMessageLimit,
-		HTMLPageRefreshSeconds:  htmlPageRefreshSeconds,
-		HTMLExpiryDeleteMailbox: htmlExpiryDeleteMailbox,
+		RegistrationEnabled:       payload.RegistrationEnabled,
+		StoreAllMessages:          !verificationOnly,
+		AdminPath:                 path,
+		HTMLLinkTTLSeconds:        htmlLinkTTLSeconds,
+		HTMLPageMessageLimit:      htmlPageMessageLimit,
+		HTMLPageRefreshSeconds:    htmlPageRefreshSeconds,
+		HTMLLinkLifecycleDisabled: htmlLinkLifecycleDisabled,
+		HTMLExpiryDeleteMailbox:   htmlExpiryDeleteMailbox,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -747,19 +754,22 @@ func (s *Server) handleMailboxHTMLData(w http.ResponseWriter, r *http.Request) {
 		out = append(out, publicMessage{ID: msg.ID, MailboxID: msg.MailboxID, Subject: msg.Subject, From: msg.From, Body: msg.Body, HTMLBody: msg.HTMLBody, ReceivedAt: formatTime(msg.ReceivedAt), CreatedAt: formatTime(msg.CreatedAt)})
 	}
 	ttlSeconds := int(time.Until(link.ExpiresAt).Seconds())
-	if ttlSeconds < 0 {
+	if settings.HTMLLinkLifecycleDisabled {
+		ttlSeconds = 0
+	} else if ttlSeconds < 0 {
 		ttlSeconds = 0
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"success":         true,
-		"mailbox":         map[string]any{"email": mailbox.Email, "label": mailbox.Label, "status": mailbox.Status, "receive_count": mailbox.ReceiveCount},
-		"latest":          latest,
-		"messages":        out,
-		"message_limit":   messageLimit,
-		"refresh_seconds": settings.HTMLPageRefreshSeconds,
-		"activated_at":    formatTime(link.ActivatedAt),
-		"expires_at":      formatTime(link.ExpiresAt),
-		"ttl_seconds":     ttlSeconds,
+		"success":           true,
+		"mailbox":           map[string]any{"email": mailbox.Email, "label": mailbox.Label, "status": mailbox.Status, "receive_count": mailbox.ReceiveCount},
+		"latest":            latest,
+		"messages":          out,
+		"message_limit":     messageLimit,
+		"refresh_seconds":   settings.HTMLPageRefreshSeconds,
+		"lifecycle_enabled": !settings.HTMLLinkLifecycleDisabled,
+		"activated_at":      formatTime(link.ActivatedAt),
+		"expires_at":        formatTime(link.ExpiresAt),
+		"ttl_seconds":       ttlSeconds,
 	})
 }
 
@@ -5575,35 +5585,36 @@ func (s *Server) publicMailbox(r *http.Request, mailbox Mailbox) publicMailbox {
 	}
 	settings := s.store.SystemSettings()
 	return publicMailbox{
-		ID:                 mailbox.ID,
-		OwnerID:            mailbox.OwnerID,
-		Owner:              s.ownerName(mailbox.OwnerID),
-		AccountID:          mailbox.AccountID,
-		AccountLabel:       accountLabel,
-		Provider:           provider,
-		ProviderLabel:      providerLabel,
-		DomainID:           mailbox.DomainID,
-		Domain:             domainName,
-		AccountAppleID:     accountAppleID,
-		Label:              mailbox.Label,
-		Email:              mailbox.Email,
-		APITokenMask:       maskSecret(mailbox.APIToken, 6),
-		APIURL:             s.mailboxAPIURL(r, mailbox),
-		HTMLLinkURL:        linkURL,
-		HTMLLinkActivated:  linkActivated,
-		HTMLLinkExpires:    linkExpires,
-		HTMLLinkTTLSeconds: settings.HTMLLinkTTLSeconds,
-		HTMLLinkTTLDays:    htmlLinkTTLDays(settings.HTMLLinkTTLSeconds),
-		APIActive:          mailbox.APIActive,
-		ICloudActive:       mailbox.ICloudActive,
-		ReceiveCount:       mailbox.ReceiveCount,
-		Status:             mailbox.Status,
-		OutboundBatch:      mailbox.OutboundBatch,
-		Note:               mailbox.Note,
-		LastSyncAt:         formatTime(mailbox.LastSyncAt),
-		LastSyncUID:        mailbox.LastSyncUID,
-		CreatedAt:          formatTime(mailbox.CreatedAt),
-		UpdatedAt:          formatTime(mailbox.UpdatedAt),
+		ID:                       mailbox.ID,
+		OwnerID:                  mailbox.OwnerID,
+		Owner:                    s.ownerName(mailbox.OwnerID),
+		AccountID:                mailbox.AccountID,
+		AccountLabel:             accountLabel,
+		Provider:                 provider,
+		ProviderLabel:            providerLabel,
+		DomainID:                 mailbox.DomainID,
+		Domain:                   domainName,
+		AccountAppleID:           accountAppleID,
+		Label:                    mailbox.Label,
+		Email:                    mailbox.Email,
+		APITokenMask:             maskSecret(mailbox.APIToken, 6),
+		APIURL:                   s.mailboxAPIURL(r, mailbox),
+		HTMLLinkURL:              linkURL,
+		HTMLLinkActivated:        linkActivated,
+		HTMLLinkExpires:          linkExpires,
+		HTMLLinkTTLSeconds:       settings.HTMLLinkTTLSeconds,
+		HTMLLinkTTLDays:          htmlLinkTTLDays(settings.HTMLLinkTTLSeconds),
+		HTMLLinkLifecycleEnabled: !settings.HTMLLinkLifecycleDisabled,
+		APIActive:                mailbox.APIActive,
+		ICloudActive:             mailbox.ICloudActive,
+		ReceiveCount:             mailbox.ReceiveCount,
+		Status:                   mailbox.Status,
+		OutboundBatch:            mailbox.OutboundBatch,
+		Note:                     mailbox.Note,
+		LastSyncAt:               formatTime(mailbox.LastSyncAt),
+		LastSyncUID:              mailbox.LastSyncUID,
+		CreatedAt:                formatTime(mailbox.CreatedAt),
+		UpdatedAt:                formatTime(mailbox.UpdatedAt),
 	}
 }
 

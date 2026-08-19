@@ -468,6 +468,32 @@
       background: linear-gradient(135deg, var(--green), var(--green-2));
     }
     .global-log { min-height: 260px; max-height: 380px; }
+    /* 统一工作台视觉层：让各业务页共享清晰的商业化信息层级。 */
+    .commercial-hero {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin: 0 30px 6px;
+      padding: 20px 22px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background:
+        radial-gradient(circle at 100% 0, color-mix(in srgb, var(--green) 16%, transparent), transparent 42%),
+        color-mix(in srgb, var(--panel) 88%, var(--green) 12%);
+    }
+    .commercial-hero-copy { display: grid; gap: 6px; min-width: 0; }
+    .commercial-hero-copy strong { color: var(--text); font-size: 16px; font-weight: 950; }
+    .commercial-hero-copy span { color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .commercial-hero-metrics { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+    .commercial-metric { display: grid; gap: 2px; min-width: 86px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 13px; background: color-mix(in srgb, var(--panel) 80%, transparent); }
+    .commercial-metric strong { color: var(--green-2); font-size: 17px; font-weight: 950; }
+    .commercial-metric span { color: var(--faint); font-size: 10px; font-weight: 800; }
+    .commercial-section-label { display: flex; align-items: center; gap: 9px; margin: 12px 30px 0; color: var(--muted); font-size: 11px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; }
+    .commercial-section-label::before { content: ""; width: 22px; height: 2px; border-radius: 99px; background: linear-gradient(90deg, var(--green), var(--green-2)); }
+    .logs-panel { min-height: 520px; }
+    .logs-panel .global-log { min-height: 360px; max-height: none; }
+    .logs-panel .toolbar { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 72%, transparent); }
     .quick-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(160px, 1fr));
@@ -1579,6 +1605,7 @@
     }
     .app-toast.show { opacity: 1; transform: translateY(0); }
     .global-log-panel { margin: 0 48px 40px; overflow: hidden; }
+    .logs-panel { margin: 0 !important; overflow: hidden; }
     .global-log-panel .log { color: var(--log-ink); background: var(--log-bg); }
     .modal { border-color: var(--line); border-radius: 24px; color: var(--text); background: var(--panel); }
     @media (max-width: 1180px) {
@@ -1920,6 +1947,7 @@
     .domain-table .domain-meta { display: block; margin-top: 4px; color: var(--faint); font-size: 12px; }
     .domain-table .domain-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     @media (max-width: 760px) { .domain-service-banner { align-items: flex-start; flex-direction: column; margin-left: 20px; margin-right: 20px; } .domain-dns { margin-left: 20px; margin-right: 20px; } }
+    @media (max-width: 720px) { .commercial-hero { margin-left: 20px; margin-right: 20px; flex-direction: column; } .commercial-hero-metrics { justify-content: flex-start; } .commercial-section-label { margin-left: 20px; margin-right: 20px; } }
   </style>
 </head>
 <body>
@@ -1942,6 +1970,7 @@
         <button class="nav-item nav-alias" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v10h-15z"/><path d="m5.5 8.5 6.5 5 6.5-5"/></svg></span><span>统一收件箱</span></button>
         <button class="nav-item" data-view="outbound" onclick="setActiveView('outbound', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 7.5h10M8.5 11.5h7M10 15.5h4"/><path d="M5 3.8h14v16.4H5z"/></svg></span><span>取件码与发货</span><span class="count-dot" id="navOutboundCount">0</span></button>
         <button class="nav-item" data-view="session" onclick="setActiveView('session', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/></svg></span><span>iCloud 账号</span><span class="count-dot" id="navSessionCount">0</span></button>
+        <button class="nav-item" data-view="logs" onclick="setActiveView('logs', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v14H5z"/><path d="M8.5 9h7M8.5 12h7M8.5 15h4"/></svg></span><span>运行日志</span></button>
         <button class="nav-item" data-view="settings" onclick="setActiveView('settings', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3.8v2.1M12 18.1v2.1M3.8 12h2.1M18.1 12h2.1M6.2 6.2l1.5 1.5M16.3 16.3l1.5 1.5M17.8 6.2l-1.5 1.5M7.7 16.3l-1.5 1.5"/><circle cx="12" cy="12" r="3.4"/></svg></span><span>系统设置</span></button>
       </nav>
       <!-- <aside class="sidebar-note">
@@ -2022,6 +2051,11 @@
             <h2>Apple 登录</h2>
             <p>Apple 登录态只用于创建隐私邮箱；取验证码请保存下方取码登录。</p>
           </div>
+          <div class="commercial-hero">
+            <div class="commercial-hero-copy"><strong>登录态中心</strong><span>将创建能力与收件能力拆分管理，便于团队按职责协作并快速定位状态。</span></div>
+            <div class="commercial-hero-metrics"><div class="commercial-metric"><strong>2</strong><span>创建通道</span></div><div class="commercial-metric"><strong>IMAP</strong><span>取码服务</span></div><div class="commercial-metric"><strong>24/7</strong><span>自动检测</span></div></div>
+          </div>
+          <div class="commercial-section-label">账号认证与取码配置</div>
           <div class="notice" id="icloudSessionInfo">未完成创建登录。建议先点“新接口登录”或“旧接口登录”；收到 2FA 后提交对应验证码。取码登录会单独保存。</div>
           <div class="field-grid">
             <label>Apple ID<input id="protocolAppleId" autocomplete="username" placeholder="name@icloud.com"></label>
@@ -2071,6 +2105,11 @@
             <h2>创建隐私邮箱</h2>
             <p>优先用 Apple Account 新接口创建，达到上限后回落 iCloud 旧接口。</p>
           </div>
+          <div class="commercial-hero">
+            <div class="commercial-hero-copy"><strong>邮箱生产工作台</strong><span>统一编排手动创建与定时任务，实时查看账号选择、接口策略和执行结果。</span></div>
+            <div class="commercial-hero-metrics"><div class="commercial-metric"><strong>25/h</strong><span>理论产能</span></div><div class="commercial-metric"><strong>AUTO</strong><span>故障切换</span></div><div class="commercial-metric"><strong>队列</strong><span>任务调度</span></div></div>
+          </div>
+          <div class="commercial-section-label">创建策略</div>
           <div class="field-grid">
             <label>标签<input id="protoLabel" placeholder="UPI-70-13"></label>
             <label>备注<input id="protoNote" placeholder="选填"></label>
@@ -2123,6 +2162,11 @@
           </div>
           <div class="domain-workbench">
             <div id="domainSMTPInfo" class="domain-service-banner"><span>正在读取 SMTP 服务状态…</span></div>
+            <div class="commercial-hero">
+              <div class="commercial-hero-copy"><strong>域名资产中心</strong><span>从接入、DNS 校验到地址生成，全流程集中管理，适合批量运营和多域名部署。</span></div>
+              <div class="commercial-hero-metrics"><div class="commercial-metric"><strong id="domainMetricCount">0</strong><span>已接入域名</span></div><div class="commercial-metric"><strong id="domainMailboxMetricCount">0</strong><span>域名邮箱</span></div><div class="commercial-metric"><strong>MX</strong><span>收件协议</span></div></div>
+            </div>
+            <div class="commercial-section-label">域名接入与地址生成</div>
             <div class="field-grid">
               <label>域名别名<input id="domainLabel" placeholder="生产邮箱域名"></label>
               <label>接收域名<input id="domainName" placeholder="mail.example.com 或 example.com"></label>
@@ -2157,6 +2201,11 @@
             <h2 id="mailboxPanelTitle">全部邮箱</h2>
             <p id="mailboxPanelSubtitle">查看尚未出库的邮箱库存，勾选后可批量出库。</p>
           </div>
+          <div class="commercial-hero">
+            <div class="commercial-hero-copy"><strong>邮箱资产运营台</strong><span>搜索、筛选、同步、出库与导出均在同一工作区完成，列表按最新业务更新时间优先。</span></div>
+            <div class="commercial-hero-metrics"><div class="commercial-metric"><strong id="mailboxMetricCount">0</strong><span>当前结果</span></div><div class="commercial-metric"><strong id="mailboxSelectedMetric">0</strong><span>已选择</span></div><div class="commercial-metric"><strong id="mailboxModeMetric">库存</strong><span>工作模式</span></div></div>
+          </div>
+          <div class="commercial-section-label">筛选与批量操作</div>
           <div class="toolbar list-toolbar">
             <label class="search-field">全局搜索邮箱
               <input id="mailboxSearch" placeholder="邮箱/标签，或 [批次] && [已激活]" oninput="setMailboxSearch()">
@@ -2249,6 +2298,27 @@
           </div>
         </section>
 
+        <section id="globalLogPanel" class="view-section panel global-log-panel logs-panel" data-view="logs">
+          <div class="panel-head log-panel-head">
+            <div>
+              <h2>运行日志</h2>
+              <p>集中查看运行、创建和定时任务记录，支持分类筛选、复制与清理。</p>
+            </div>
+            <div class="log-tabs" aria-label="日志分类">
+              <button type="button" data-log-category="all" onclick="setLogCategory('all')">全部</button>
+              <button type="button" data-log-category="runtime" onclick="setLogCategory('runtime')">运行</button>
+              <button type="button" data-log-category="create" onclick="setLogCategory('create')">创建</button>
+              <button type="button" data-log-category="schedule" onclick="setLogCategory('schedule')">定时</button>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button onclick="refresh()">刷新状态</button>
+            <button onclick="copyLog()">复制日志</button>
+            <button class="danger" onclick="clearLog()">清除日志</button>
+          </div>
+          <div id="log" class="log global-log">等待操作...</div>
+        </section>
+
         <section class="view-section panel settings-panel" data-view="settings">
           <div class="settings-hero">
             <div>
@@ -2332,7 +2402,12 @@
                 <span class="settings-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.8v2.1M12 18.1v2.1M3.8 12h2.1M18.1 12h2.1M6.2 6.2l1.5 1.5M16.3 16.3l1.5 1.5M17.8 6.2l-1.5 1.5M7.7 16.3l-1.5 1.5"/><circle cx="12" cy="12" r="3.4"/></svg></span>
                 <div><h3>公开接码生命周期</h3><p>定义 HTML 接码地址的有效期与到期处理方式。</p></div>
               </header>
-              <div class="settings-card-body settings-lifecycle-body">
+                <div class="settings-card-body settings-lifecycle-body">
+                <label class="settings-toggle">
+                  <input id="htmlLinkLifecycleEnabled" type="checkbox" checked onchange="markSystemSettingsDirty()">
+                  <span class="settings-toggle-track" aria-hidden="true"><span></span></span>
+                  <span class="settings-toggle-copy"><strong>启用公开接码生命周期</strong><small>开启后按下方有效期执行到期处理；关闭后 HTML 接码地址永不过期。</small></span>
+                </label>
                 <label class="settings-field">HTML 接码地址有效期（秒）
                   <span>首次访问公开页面后开始计时。</span>
                   <input id="htmlLinkTTLSeconds" type="number" min="1" max="315360000" value="604800" oninput="updateHTMLTTLPreview(); markSystemSettingsDirty()">
@@ -2371,26 +2446,6 @@
         </section>
 
       </main>
-      <section id="globalLogPanel" class="panel global-log-panel">
-        <div class="panel-head log-panel-head">
-          <div>
-            <h2>日志</h2>
-            <p>运行日志、创建账号日志和定时创建日志统一显示。</p>
-          </div>
-          <div class="log-tabs" aria-label="日志分类">
-            <button type="button" data-log-category="all" onclick="setLogCategory('all')">全部</button>
-            <button type="button" data-log-category="runtime" onclick="setLogCategory('runtime')">运行</button>
-            <button type="button" data-log-category="create" onclick="setLogCategory('create')">创建</button>
-            <button type="button" data-log-category="schedule" onclick="setLogCategory('schedule')">定时</button>
-          </div>
-        </div>
-        <div class="toolbar">
-          <button onclick="refresh()">刷新状态</button>
-          <button onclick="copyLog()">复制日志</button>
-          <button class="danger" onclick="clearLog()">清除日志</button>
-        </div>
-        <div id="log" class="log global-log">等待操作...</div>
-      </section>
     </section>
   </div>
   <div id="mailboxMessagesModal" class="modal-backdrop mailbox-messages-backdrop" aria-hidden="true" onclick="closeMailboxMessages(event)">
@@ -2550,6 +2605,7 @@
       mailboxes: ['全部邮箱', '统一查看 iCloud 隐私邮箱与域名邮箱。'],
       domains: ['域名邮箱', '接入收件域名、查看 DNS 指引并批量生成域名邮箱。'],
       outbound: ['取件码与发货', '查看已出库邮箱、邮件和取件码。'],
+      logs: ['运行日志', '集中查看运行、创建和定时任务记录。'],
       settings: ['系统设置', '配置注册开关、唯一登录/注册入口和 HTML 接码地址生命周期。']
     };
 
@@ -2876,11 +2932,14 @@
       setSystemSettingsText('settingsRegistrationMetric', registrationEnabled ? '注册已开放' : '暂停新用户注册');
       setSystemSettingsText('settingsRetentionMetric', verificationOnly ? '验证码邮件' : '全部邮件');
       setSystemSettingsText('settingsRetentionHint', verificationOnly ? '优先减少收件数据留存' : '完整邮件将保留在本地');
-      setSystemSettingsText('settingsTTLMetric', formatTTLDuration(ttlSeconds));
-      setSystemSettingsText('settingsExpiryMetric', expiryDeleteMailbox ? '到期后自动清理邮箱' : '到期后保留状态');
+      const lifecycleEnabled = !!($('htmlLinkLifecycleEnabled') && $('htmlLinkLifecycleEnabled').checked);
+      if ($('htmlLinkTTLSeconds')) $('htmlLinkTTLSeconds').disabled = !lifecycleEnabled;
+      if ($('htmlExpiryDeleteMailbox')) $('htmlExpiryDeleteMailbox').disabled = !lifecycleEnabled;
+      setSystemSettingsText('settingsTTLMetric', lifecycleEnabled ? formatTTLDuration(ttlSeconds) : '永不过期');
+      setSystemSettingsText('settingsExpiryMetric', !lifecycleEnabled ? '生命周期已关闭' : (expiryDeleteMailbox ? '到期后自动清理邮箱' : '到期后保留状态'));
       setSystemSettingsText('settingsRefreshMetric', `${refreshSeconds} 秒`);
       setSystemSettingsText('settingsMessageLimitMetric', `最近 ${messageLimit} 封邮件`);
-      setSystemSettingsText('systemSettingsNotice', `唯一入口 ${adminPath} · ${registrationEnabled ? '开放注册' : '暂停注册'} · ${verificationOnly ? '仅留验证码邮件' : '保留全部邮件'} · HTML 地址 ${formatTTLDuration(ttlSeconds)} 后${expiryDeleteMailbox ? '自动清理邮箱' : '保留过期状态'}。`);
+      setSystemSettingsText('systemSettingsNotice', `唯一入口 ${adminPath} · ${registrationEnabled ? '开放注册' : '暂停注册'} · ${verificationOnly ? '仅留验证码邮件' : '保留全部邮件'} · ${!lifecycleEnabled ? 'HTML 地址永不过期' : `HTML 地址 ${formatTTLDuration(ttlSeconds)} 后${expiryDeleteMailbox ? '自动清理邮箱' : '保留过期状态'}`}。`);
     }
 
     function applySystemSettings(settings = {}) {
@@ -2888,6 +2947,7 @@
       if ($('registrationEnabled')) $('registrationEnabled').checked = !!settings.registration_enabled;
       if ($('verificationOnly')) $('verificationOnly').checked = settings.verification_only !== false;
       if ($('htmlExpiryDeleteMailbox')) $('htmlExpiryDeleteMailbox').checked = !!settings.html_expiry_delete_mailbox;
+      if ($('htmlLinkLifecycleEnabled')) $('htmlLinkLifecycleEnabled').checked = settings.html_link_lifecycle_enabled !== false;
       if ($('adminPath')) $('adminPath').value = settings.admin_path || '/manage';
       if ($('htmlLinkTTLSeconds')) $('htmlLinkTTLSeconds').value = String(settings.html_link_ttl_seconds || 604800);
       if ($('htmlPageMessageLimit')) $('htmlPageMessageLimit').value = String(settings.html_page_message_limit || 50);
@@ -2920,6 +2980,7 @@
         html_link_ttl_seconds: boundedInt('htmlLinkTTLSeconds', 604800, 1, 315360000),
         html_page_message_limit: boundedInt('htmlPageMessageLimit', 50, 1, 500),
         html_page_refresh_seconds: boundedInt('htmlPageRefreshSeconds', 20, 5, 3600),
+        html_link_lifecycle_enabled: !!($('htmlLinkLifecycleEnabled') && $('htmlLinkLifecycleEnabled').checked),
         html_expiry_delete_mailbox: !!($('htmlExpiryDeleteMailbox') && $('htmlExpiryDeleteMailbox').checked)
       };
       setSystemSettingsStatus('正在保存策略…');
@@ -3090,7 +3151,7 @@
 
     function renderGlobalLogs() {
       const panel = $('globalLogPanel');
-      if (panel) panel.hidden = activeView === 'mailboxes';
+      if (panel) panel.hidden = activeView !== 'logs';
       for (const button of document.querySelectorAll('[data-log-category]')) {
         button.classList.toggle('active', button.dataset.logCategory === activeLogCategory);
       }
@@ -3868,6 +3929,8 @@
       const select = $('domainMailboxDomain');
       if (!rows || !select) return;
       const domains = lastDomains || [];
+      if ($('domainMetricCount')) $('domainMetricCount').textContent = String(domains.length);
+      if ($('domainMailboxMetricCount')) $('domainMailboxMetricCount').textContent = String(domains.reduce((sum, domain) => sum + Number(domain.mailboxes || 0), 0));
       const previous = select.value;
       select.innerHTML = domains.length
         ? ['<option value="">请选择接收域名</option>', ...domains.map(domain => `<option value="${esc(domain.id)}" ${domain.enabled ? '' : 'disabled'}>${esc(domain.name)}${domain.enabled ? '' : '（已停用）'}</option>`)].join('')
@@ -4360,7 +4423,9 @@
         const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
         const rangeEnd = Math.min(page * pageSize, total);
         $('mailboxPageInfo').textContent = `${page}/${totalPages} 页 · ${rangeStart}-${rangeEnd}/${total} · 总 ${totalAll}`;
+        if ($('mailboxMetricCount')) $('mailboxMetricCount').textContent = String(total);
       }
+      if ($('mailboxModeMetric')) $('mailboxModeMetric').textContent = activeView === 'outbound' ? '出库' : '库存';
       if ($('mailboxPrevPage')) $('mailboxPrevPage').disabled = page <= 1;
       if ($('mailboxNextPage')) $('mailboxNextPage').disabled = page >= totalPages;
       if (rows.length === 0) {
@@ -4572,6 +4637,9 @@
       if (!row.html_link_url) {
         return '<span class="html-expiry expired"><strong>未生成</strong><small>点击链接图标生成</small></span>';
       }
+      if (row.html_link_lifecycle_enabled === false) {
+        return '<span class="html-expiry active" title="系统设置已关闭公开接码生命周期"><strong>永不过期</strong><small>生命周期已关闭</small></span>';
+      }
       const ttlSeconds = Math.max(1, Number.parseInt(row.html_link_ttl_seconds, 10) || 604800);
       if (!row.html_link_activated_at || !row.html_link_expires) {
         return `<span class="html-expiry pending" title="首次访问后开始计算有效期"><strong>未激活</strong><small>激活后 ${esc(formatTTLDuration(ttlSeconds))} 到期</small></span>`;
@@ -4665,6 +4733,7 @@
       const count = selectedMailboxIDs.size;
       if (bar) bar.hidden = count === 0;
       if ($('mailboxSelectedCount')) $('mailboxSelectedCount').textContent = String(count);
+      if ($('mailboxSelectedMetric')) $('mailboxSelectedMetric').textContent = String(count);
       const selectAll = $('mailboxSelectAll');
       if (selectAll) {
         const rows = lastMailboxes || [];
