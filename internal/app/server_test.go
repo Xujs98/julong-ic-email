@@ -323,12 +323,22 @@ func TestSystemSettingsTemplateIncludesMailRetentionAndExpiryDeleteSwitches(t *t
 	}
 	source := string(data)
 	for _, want := range []string{
+		`settings-panel`,
+		`ADMINISTRATION · POLICY CENTER`,
+		`class="settings-summary-card"`,
+		`class="settings-metrics"`,
+		`class="settings-control-grid"`,
+		`class="settings-save-bar"`,
+		`id="settingsAccessMetric"`,
 		`id="verificationOnly"`,
 		`id="htmlExpiryDeleteMailbox"`,
 		`id="htmlPageMessageLimit"`,
 		`id="htmlPageRefreshSeconds"`,
 		`id="htmlLinkTTLSeconds"`,
 		`id="htmlLinkTTLPreview"`,
+		`markSystemSettingsDirty`,
+		`updateSystemSettingsPreview`,
+		`applySystemSettings`,
 		`verification_only:`,
 		`html_link_ttl_seconds:`,
 		`html_page_message_limit:`,
