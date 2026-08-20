@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"mime/quotedprintable"
 	"net"
 	"net/mail"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -27,12 +29,13 @@ const (
 // intentionally receive-only: domain mailbox records are the recipient allow
 // list, and every accepted message is persisted in the existing mailbox store.
 type DomainSMTPService struct {
-	listener net.Listener
-	store    *FileStore
-	logger   *slog.Logger
-	maxBytes int64
-	done     chan struct{}
-	once     sync.Once
+	listener  net.Listener
+	store     *FileStore
+	logger    *slog.Logger
+	maxBytes  int64
+	tlsConfig *tls.Config
+	done      chan struct{}
+	once      sync.Once
 }
 
 func StartDomainSMTP(cfg Config, store *FileStore, logger *slog.Logger) (*DomainSMTPService, error) {
@@ -55,10 +58,33 @@ func StartDomainSMTP(cfg Config, store *FileStore, logger *slog.Logger) (*Domain
 	if maxBytes <= 0 {
 		maxBytes = 10 * 1024 * 1024
 	}
-	service := &DomainSMTPService{listener: listener, store: store, logger: logger, maxBytes: maxBytes, done: make(chan struct{})}
+	var tlsConfig *tls.Config
+	certFile := strings.TrimSpace(cfg.DomainSMTPCertFile)
+	keyFile := strings.TrimSpace(cfg.DomainSMTPKeyFile)
+	if certFile != "" || keyFile != "" {
+		if certFile == "" || keyFile == "" {
+			_ = listener.Close()
+			return nil, fmt.Errorf("domain SMTP TLS requires both certificate and key files")
+		}
+		if _, err := os.Stat(certFile); err != nil {
+			_ = listener.Close()
+			return nil, fmt.Errorf("domain SMTP certificate: %w", err)
+		}
+		if _, err := os.Stat(keyFile); err != nil {
+			_ = listener.Close()
+			return nil, fmt.Errorf("domain SMTP key: %w", err)
+		}
+		certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			_ = listener.Close()
+			return nil, fmt.Errorf("load domain SMTP TLS certificate: %w", err)
+		}
+		tlsConfig = &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
+	}
+	service := &DomainSMTPService{listener: listener, store: store, logger: logger, maxBytes: maxBytes, tlsConfig: tlsConfig, done: make(chan struct{})}
 	go service.serve()
 	if logger != nil {
-		logger.Info("domain SMTP started", "addr", listener.Addr().String(), "max_message_bytes", maxBytes)
+		logger.Info("domain SMTP started", "addr", listener.Addr().String(), "max_message_bytes", maxBytes, "starttls", tlsConfig != nil)
 	}
 	return service, nil
 }
@@ -107,12 +133,13 @@ func (s *DomainSMTPService) handleConn(conn net.Conn) {
 	_ = conn.SetDeadline(time.Now().Add(domainSMTPReadTimeout))
 	reader := bufio.NewReaderSize(conn, 64*1024)
 	writer := bufio.NewWriterSize(conn, 8*1024)
-	defer writer.Flush()
+	defer func() { _ = writer.Flush() }()
 	writeSMTPReply(writer, 220, "julong-mail ESMTP domain receiver ready")
 
 	var sender string
 	mailFromSet := false
 	var recipients []Mailbox
+	tlsActive := false
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -123,7 +150,32 @@ func (s *DomainSMTPService) handleConn(conn net.Conn) {
 		command, argument := smtpCommand(line)
 		switch command {
 		case "EHLO", "HELO":
-			writeSMTPMultiline(writer, 250, []string{"julong-mail", "SIZE " + fmt.Sprintf("%d", s.maxBytes), "8BITMIME"})
+			capabilities := []string{"julong-mail", "SIZE " + fmt.Sprintf("%d", s.maxBytes), "8BITMIME"}
+			if s.tlsConfig != nil && !tlsActive {
+				capabilities = append(capabilities, "STARTTLS")
+			}
+			writeSMTPMultiline(writer, 250, capabilities)
+		case "STARTTLS":
+			if s.tlsConfig == nil || tlsActive {
+				writeSMTPReply(writer, 502, "command not supported")
+				continue
+			}
+			writeSMTPReply(writer, 220, "ready to start TLS")
+			tlsConn := tls.Server(conn, s.tlsConfig.Clone())
+			if err := tlsConn.Handshake(); err != nil {
+				if s.logger != nil {
+					s.logger.Warn("domain SMTP TLS handshake failed", "err", err)
+				}
+				return
+			}
+			conn = tlsConn
+			_ = conn.SetDeadline(time.Now().Add(domainSMTPReadTimeout))
+			reader = bufio.NewReaderSize(conn, 64*1024)
+			writer = bufio.NewWriterSize(conn, 8*1024)
+			tlsActive = true
+			sender = ""
+			mailFromSet = false
+			recipients = nil
 		case "NOOP":
 			writeSMTPReply(writer, 250, "OK")
 		case "RSET":
@@ -136,7 +188,7 @@ func (s *DomainSMTPService) handleConn(conn net.Conn) {
 			return
 		case "VRFY", "EXPN":
 			writeSMTPReply(writer, 252, "cannot verify user")
-		case "AUTH", "STARTTLS":
+		case "AUTH":
 			writeSMTPReply(writer, 502, "command not supported")
 		case "MAIL":
 			address, ok := smtpPathArgument(argument, "FROM:")

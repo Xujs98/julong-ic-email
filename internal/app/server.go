@@ -384,6 +384,7 @@ func (s *Server) domainSMTPStatus() map[string]any {
 		"host":               configured.DomainSMTPHost,
 		"port":               configured.DomainSMTPPort,
 		"max_message_bytes":  configured.DomainSMTPMaxMessageBytes,
+		"tls_enabled":        strings.TrimSpace(configured.DomainSMTPCertFile) != "" && strings.TrimSpace(configured.DomainSMTPKeyFile) != "",
 		"public_port":        25,
 		"configured_from_ui": settings.DomainSMTPConfigured,
 	}

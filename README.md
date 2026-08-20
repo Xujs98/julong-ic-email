@@ -112,6 +112,7 @@ Copy-Item .\config.example.json .\config.json
 | `domain_smtp_host` | 首次启动时的 SMTP 监听地址，默认 `0.0.0.0`；管理员之后可在系统设置中可视化修改 |
 | `domain_smtp_port` | 首次启动时的容器监听端口，默认 `2525`；管理员之后可在系统设置中可视化修改 |
 | `domain_smtp_max_message_bytes` | 首次启动时的单封域名邮件最大字节数，默认 `10485760`（10 MiB）；管理员之后可在系统设置中可视化修改 |
+| `domain_smtp_cert_file` / `domain_smtp_key_file` | SMTP `STARTTLS` 的证书和私钥路径；Docker 默认使用 `/app/tls/fullchain.pem` 与 `/app/tls/privkey.pem`，证书目录通过 Compose 只读挂载 |
 
 示例：
 
@@ -131,7 +132,9 @@ Copy-Item .\config.example.json .\config.json
   "domain_smtp_enabled": true,
   "domain_smtp_host": "0.0.0.0",
   "domain_smtp_port": 2525,
-  "domain_smtp_max_message_bytes": 10485760
+  "domain_smtp_max_message_bytes": 10485760,
+  "domain_smtp_cert_file": "/app/tls/fullchain.pem",
+  "domain_smtp_key_file": "/app/tls/privkey.pem"
 }
 ```
 
@@ -142,10 +145,11 @@ Copy-Item .\config.example.json .\config.json
 ### 域名邮箱部署
 
 1. Docker 默认将宿主机 **TCP 25** 映射到容器 `2525`。登录后台进入 **系统设置 → 域名邮箱 SMTP 收件**，可视化配置启用开关、监听地址、容器端口和单封邮件大小；保存后立即启停服务，无需编辑环境文件。环境变量和 `config.json` 仅作为首次启动兼容引导值。
-2. 登录矩龙邮箱，在左侧 **域名邮箱** 中接入域名并查看“DNS 指引”。为 `mail.<你的域名>` 设置公网 A/AAAA，根域名 MX 指向该主机；`mail` 记录仅做 DNS 解析，不走 HTTP/CDN 代理。
-3. 在同一页面生成域名邮箱。SMTP 服务只接受已经生成且启用的精确收件地址；收到的邮件会直接显示在“全部邮箱”中，邮箱类型标记为“域名邮箱”。
-4. 服务器安全组和防火墙仍需放行 TCP 25；`JULONG_SMTP_PORT` 属于 Docker 宿主机端口映射，默认值为 25，只有更换公网端口时才需要调整部署配置。
-5. 访问生成邮箱的 API 或 HTML 接码地址时，仍使用该邮箱独立的 API key/token；域名邮箱没有 iCloud 远端同步或远端清理步骤。
+2. 为 `mail.<你的域名>` 配置有效的 ACME/Let's Encrypt 证书，把证书和私钥复制到服务器项目目录的 `tls/fullchain.pem`、`tls/privkey.pem`（目录权限 `755`，私钥至少允许容器用户读取）。Compose 会把该目录以只读方式挂载到 `/app/tls`，SMTP 在 EHLO 中公布 `STARTTLS`；证书续期后重新复制文件并执行 `docker compose restart app`。
+3. 登录矩龙邮箱，在左侧 **域名邮箱** 中接入域名并查看“DNS 指引”。为 `mail.<你的域名>` 设置公网 A/AAAA，根域名 MX 指向该主机；`mail` 记录仅做 DNS 解析，不走 HTTP/CDN 代理。
+4. 在同一页面生成域名邮箱。SMTP 服务只接受已经生成且启用的精确收件地址；收到的邮件会直接显示在“全部邮箱”中，邮箱类型标记为“域名邮箱”。
+5. 服务器安全组和防火墙仍需放行 TCP 25；`JULONG_SMTP_PORT` 属于 Docker 宿主机端口映射，默认值为 25，只有更换公网端口时才需要调整部署配置。
+6. 访问生成邮箱的 API 或 HTML 接码地址时，仍使用该邮箱独立的 API key/token；域名邮箱没有 iCloud 远端同步或远端清理步骤。
 
 本地联调可继续使用 `2525`；公网收件还需确保服务器与云厂商允许 TCP 25 入站。若同一域名还要发信，需自行补齐 SPF、DKIM、DMARC 与 PTR/rDNS。
 

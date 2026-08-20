@@ -18,8 +18,12 @@ services:
       IPM_DOMAIN_SMTP_HOST: "${IPM_DOMAIN_SMTP_HOST:-0.0.0.0}"
       IPM_DOMAIN_SMTP_PORT: "${IPM_DOMAIN_SMTP_PORT:-2525}"
       IPM_DOMAIN_SMTP_MAX_MESSAGE_BYTES: "${IPM_DOMAIN_SMTP_MAX_MESSAGE_BYTES:-10485760}"
+      IPM_DOMAIN_SMTP_CERT_FILE: "${IPM_DOMAIN_SMTP_CERT_FILE:-/app/tls/fullchain.pem}"
+      IPM_DOMAIN_SMTP_KEY_FILE: "${IPM_DOMAIN_SMTP_KEY_FILE:-/app/tls/privkey.pem}"
     volumes:
       - julong-data:/app/data
+      # Keep certificates outside the repository so private keys are never committed.
+      - "${JULONG_SMTP_TLS_DIR:-./tls}:/app/tls:ro"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/ >/dev/null || exit 1"]
       interval: 30s

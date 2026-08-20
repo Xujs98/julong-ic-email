@@ -36,6 +36,8 @@ type Config struct {
 	DomainSMTPHost               string `json:"domain_smtp_host"`
 	DomainSMTPPort               int    `json:"domain_smtp_port"`
 	DomainSMTPMaxMessageBytes    int64  `json:"domain_smtp_max_message_bytes"`
+	DomainSMTPCertFile           string `json:"domain_smtp_cert_file"`
+	DomainSMTPKeyFile            string `json:"domain_smtp_key_file"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -66,6 +68,8 @@ func LoadConfig(path string) (Config, error) {
 		DomainSMTPHost:               firstNonEmptyString(strings.TrimSpace(os.Getenv("IPM_DOMAIN_SMTP_HOST")), "0.0.0.0"),
 		DomainSMTPPort:               envPositiveInt("IPM_DOMAIN_SMTP_PORT", 2525),
 		DomainSMTPMaxMessageBytes:    envPositiveInt64("IPM_DOMAIN_SMTP_MAX_MESSAGE_BYTES", 10*1024*1024),
+		DomainSMTPCertFile:           strings.TrimSpace(os.Getenv("IPM_DOMAIN_SMTP_CERT_FILE")),
+		DomainSMTPKeyFile:            strings.TrimSpace(os.Getenv("IPM_DOMAIN_SMTP_KEY_FILE")),
 	}
 	if path == "" {
 		return cfg, nil
@@ -176,6 +180,12 @@ func LoadConfig(path string) (Config, error) {
 	if fromFile.DomainSMTPMaxMessageBytes > 0 {
 		cfg.DomainSMTPMaxMessageBytes = fromFile.DomainSMTPMaxMessageBytes
 	}
+	if strings.TrimSpace(fromFile.DomainSMTPCertFile) != "" {
+		cfg.DomainSMTPCertFile = strings.TrimSpace(fromFile.DomainSMTPCertFile)
+	}
+	if strings.TrimSpace(fromFile.DomainSMTPKeyFile) != "" {
+		cfg.DomainSMTPKeyFile = strings.TrimSpace(fromFile.DomainSMTPKeyFile)
+	}
 	applyDomainSMTPEnvOverrides(&cfg)
 	return cfg, nil
 }
@@ -195,6 +205,12 @@ func applyDomainSMTPEnvOverrides(cfg *Config) {
 	}
 	if _, ok := os.LookupEnv("IPM_DOMAIN_SMTP_MAX_MESSAGE_BYTES"); ok {
 		cfg.DomainSMTPMaxMessageBytes = envPositiveInt64("IPM_DOMAIN_SMTP_MAX_MESSAGE_BYTES", cfg.DomainSMTPMaxMessageBytes)
+	}
+	if value := strings.TrimSpace(os.Getenv("IPM_DOMAIN_SMTP_CERT_FILE")); value != "" {
+		cfg.DomainSMTPCertFile = value
+	}
+	if value := strings.TrimSpace(os.Getenv("IPM_DOMAIN_SMTP_KEY_FILE")); value != "" {
+		cfg.DomainSMTPKeyFile = value
 	}
 }
 

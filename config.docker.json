@@ -23,5 +23,7 @@
   "domain_smtp_enabled": false,
   "domain_smtp_host": "0.0.0.0",
   "domain_smtp_port": 2525,
-  "domain_smtp_max_message_bytes": 10485760
+  "domain_smtp_max_message_bytes": 10485760,
+  "domain_smtp_cert_file": "/app/tls/fullchain.pem",
+  "domain_smtp_key_file": "/app/tls/privkey.pem"
 }

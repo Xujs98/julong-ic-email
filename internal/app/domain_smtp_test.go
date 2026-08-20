@@ -1,9 +1,18 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"io"
 	"log/slog"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/smtp"
@@ -12,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDomainSMTPStoresInboundMailAndServesCode(t *testing.T) {
@@ -77,6 +87,144 @@ func TestDomainSMTPStoresInboundMailAndServesCode(t *testing.T) {
 	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"code":"654321"`)) {
 		t.Fatalf("code response status=%d body=%s", response.StatusCode, body)
 	}
+}
+
+func TestDomainSMTPSTARTTLS(t *testing.T) {
+	store, err := NewFileStore(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	domain, err := store.AddDomainForOwner("", "", "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mailboxes, err := store.AddDomainMailboxesForOwner("", domain.ID, "", "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certFile, keyFile := writeTestSMTPCertificate(t)
+	service, err := StartDomainSMTP(Config{
+		DomainSMTPHost:            "127.0.0.1",
+		DomainSMTPPort:            0,
+		DomainSMTPMaxMessageBytes: 1 << 20,
+		DomainSMTPCertFile:        certFile,
+		DomainSMTPKeyFile:         keyFile,
+	}, store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+
+	conn, err := net.Dial("tcp", service.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+	readReply := func() string {
+		t.Helper()
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		return line
+	}
+	if got := readReply(); !strings.HasPrefix(got, "220 ") {
+		t.Fatalf("greeting = %q", got)
+	}
+	if _, err := io.WriteString(conn, "EHLO test.example\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	seenSTARTTLS := false
+	for {
+		line := readReply()
+		if strings.Contains(line, "STARTTLS") {
+			seenSTARTTLS = true
+		}
+		if strings.HasPrefix(line, "250 ") {
+			break
+		}
+	}
+	if !seenSTARTTLS {
+		t.Fatal("EHLO did not advertise STARTTLS")
+	}
+	if _, err := io.WriteString(conn, "STARTTLS\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readReply(); !strings.HasPrefix(got, "220 ") {
+		t.Fatalf("STARTTLS reply = %q", got)
+	}
+	tlsConn := tls.Client(conn, &tls.Config{InsecureSkipVerify: true, ServerName: "mail.example.test"})
+	if err := tlsConn.Handshake(); err != nil {
+		t.Fatal(err)
+	}
+	reader = bufio.NewReader(tlsConn)
+	if _, err := io.WriteString(tlsConn, "EHLO test.example\r\nMAIL FROM:<sender@example.test>\r\nRCPT TO:<"+mailboxes[0].Email+">\r\nDATA\r\nMessage-ID: <tls-test@example.test>\r\nSubject: TLS code\r\n\r\n654321\r\n.\r\nQUIT\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	var responses []string
+	for len(responses) < 12 {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			break
+		}
+		responses = append(responses, line)
+		if strings.HasPrefix(line, "221 ") {
+			break
+		}
+	}
+	if !strings.Contains(strings.Join(responses, ""), "250 message accepted") {
+		t.Fatalf("TLS SMTP responses = %q", responses)
+	}
+	if messages := store.MessagesForMailbox(mailboxes[0].ID); len(messages) != 1 || !strings.Contains(messages[0].Body, "654321") {
+		t.Fatalf("TLS messages = %#v", messages)
+	}
+}
+
+func writeTestSMTPCertificate(t *testing.T) (string, string) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "mail.example.test"},
+		DNSNames:              []string{"mail.example.test"},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              now.Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certFile := filepath.Join(t.TempDir(), "cert.pem")
+	keyFile := filepath.Join(t.TempDir(), "key.pem")
+	certOut, err := os.Create(certFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
+		t.Fatal(err)
+	}
+	if err := certOut.Close(); err != nil {
+		t.Fatal(err)
+	}
+	keyOut, err := os.Create(keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := keyOut.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return certFile, keyFile
 }
 
 func TestDomainMailboxLifecycleGuards(t *testing.T) {
@@ -181,6 +329,8 @@ func TestLoadConfigDomainSMTPEnvironmentOverridesDockerDefaults(t *testing.T) {
 	t.Setenv("IPM_DOMAIN_SMTP_HOST", "127.0.0.1")
 	t.Setenv("IPM_DOMAIN_SMTP_PORT", "2526")
 	t.Setenv("IPM_DOMAIN_SMTP_MAX_MESSAGE_BYTES", "2097152")
+	t.Setenv("IPM_DOMAIN_SMTP_CERT_FILE", "/tmp/fullchain.pem")
+	t.Setenv("IPM_DOMAIN_SMTP_KEY_FILE", "/tmp/privkey.pem")
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(`{"domain_smtp_enabled":false,"domain_smtp_host":"0.0.0.0","domain_smtp_port":2525,"domain_smtp_max_message_bytes":10485760}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -189,7 +339,7 @@ func TestLoadConfigDomainSMTPEnvironmentOverridesDockerDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.DomainSMTPEnabled || cfg.DomainSMTPHost != "127.0.0.1" || cfg.DomainSMTPPort != 2526 || cfg.DomainSMTPMaxMessageBytes != 2097152 {
+	if !cfg.DomainSMTPEnabled || cfg.DomainSMTPHost != "127.0.0.1" || cfg.DomainSMTPPort != 2526 || cfg.DomainSMTPMaxMessageBytes != 2097152 || cfg.DomainSMTPCertFile != "/tmp/fullchain.pem" || cfg.DomainSMTPKeyFile != "/tmp/privkey.pem" {
 		t.Fatalf("domain smtp config = %+v", cfg)
 	}
 }
