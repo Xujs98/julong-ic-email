@@ -581,6 +581,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/system-settings", s.handleSystemSettings)
 	s.mux.HandleFunc("POST /api/system-settings", s.handleSaveSystemSettings)
 	s.mux.HandleFunc("POST /api/system-settings/theme", s.handleSaveSystemTheme)
+	s.mux.HandleFunc("GET /api/forwarding", s.handleForwardingSettings)
+	s.mux.HandleFunc("POST /api/forwarding", s.handleSaveForwardingSettings)
+	s.mux.HandleFunc("POST /api/forwarding/rotate-secret", s.handleRotateForwardingSecret)
+	s.mux.HandleFunc("POST /api/forwarding/test", s.handleTestForwarding)
 	s.mux.HandleFunc("DELETE /api/admin/users/{id}", s.handleAdminDeleteUser)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("GET /api/update/status", s.handleUpdateStatus)
@@ -589,6 +593,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/create-settings", s.handleSaveCreateSettings)
 	s.mux.HandleFunc("GET /api/manage/data", s.handleManageData)
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	s.mux.HandleFunc("POST /api/v1/forwarding/inbound", s.handleForwardingInbound)
 	s.mux.HandleFunc("POST /api/v1/mailboxes/claim", s.handleClaimMailbox)
 	s.mux.HandleFunc("POST /api/v1/mailboxes/lookup", s.handleLookupMailboxes)
 	s.mux.HandleFunc("GET /api/runtime/export", s.handleExportRuntimeData)
@@ -857,6 +862,13 @@ func (s *Server) handleSaveSystemSettings(w http.ResponseWriter, r *http.Request
 		HTMLPageRefreshSeconds:    htmlPageRefreshSeconds,
 		HTMLLinkLifecycleDisabled: htmlLinkLifecycleDisabled,
 		HTMLExpiryDeleteMailbox:   htmlExpiryDeleteMailbox,
+		ForwardingEnabled:         current.ForwardingEnabled,
+		ForwardingDomain:          current.ForwardingDomain,
+		ForwardingWorkerURL:       current.ForwardingWorkerURL,
+		ForwardingTargetEmail:     current.ForwardingTargetEmail,
+		ForwardingSecret:          current.ForwardingSecret,
+		ForwardingReceivedCount:   current.ForwardingReceivedCount,
+		ForwardingLastReceivedAt:  current.ForwardingLastReceivedAt,
 	}
 	if err := s.ApplyDomainSMTPSettings(settings); err != nil {
 		writeError(w, http.StatusConflict, err)
@@ -5588,6 +5600,9 @@ func (s *Server) requiresAdmin(r *http.Request) bool {
 		return false
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/api/v1/mailboxes/lookup" {
+		return false
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/api/v1/forwarding/inbound" {
 		return false
 	}
 	if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/mailboxes/") && strings.HasSuffix(r.URL.Path, "/code") {

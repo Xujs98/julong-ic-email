@@ -45,6 +45,7 @@ const (
 )
 
 func defaultSystemSettings() SystemSettings {
+	secret, _ := randomToken(32)
 	return SystemSettings{
 		RegistrationEnabled:       true,
 		AdminPath:                 defaultAdminPath,
@@ -55,6 +56,7 @@ func defaultSystemSettings() SystemSettings {
 		HTMLLinkTTLSeconds:        defaultHTMLLinkTTLSeconds,
 		HTMLPageMessageLimit:      defaultHTMLPageMessageLimit,
 		HTMLPageRefreshSeconds:    defaultHTMLPageRefresh,
+		ForwardingSecret:          secret,
 	}
 }
 
@@ -117,6 +119,13 @@ func normalizeSystemSettings(settings SystemSettings) SystemSettings {
 	if settings.HTMLPageRefreshSeconds > maxHTMLPageRefresh {
 		settings.HTMLPageRefreshSeconds = maxHTMLPageRefresh
 	}
+	settings.ForwardingDomain = strings.ToLower(strings.TrimSpace(settings.ForwardingDomain))
+	settings.ForwardingWorkerURL = strings.TrimRight(strings.TrimSpace(settings.ForwardingWorkerURL), "/")
+	settings.ForwardingTargetEmail = strings.TrimSpace(settings.ForwardingTargetEmail)
+	settings.ForwardingSecret = strings.TrimSpace(settings.ForwardingSecret)
+	if settings.ForwardingSecret == "" {
+		settings.ForwardingSecret, _ = randomToken(32)
+	}
 	return settings
 }
 
@@ -156,13 +165,15 @@ func (s *FileStore) load() error {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			s.state.SystemSettings = defaultSystemSettings()
+			s.state.SystemSettings = normalizeSystemSettings(defaultSystemSettings())
+			s.state.SystemSettings.UpdatedAt = time.Now()
 			return s.saveLocked()
 		}
 		return err
 	}
 	if len(strings.TrimSpace(string(data))) == 0 {
-		s.state.SystemSettings = defaultSystemSettings()
+		s.state.SystemSettings = normalizeSystemSettings(defaultSystemSettings())
+		s.state.SystemSettings.UpdatedAt = time.Now()
 		return s.saveLocked()
 	}
 	if err := json.Unmarshal(data, &s.state); err != nil {
@@ -173,7 +184,8 @@ func (s *FileStore) load() error {
 	}
 	changed := false
 	if s.state.SystemSettings.UpdatedAt.IsZero() {
-		s.state.SystemSettings = defaultSystemSettings()
+		s.state.SystemSettings = normalizeSystemSettings(defaultSystemSettings())
+		s.state.SystemSettings.UpdatedAt = time.Now()
 		changed = true
 	} else {
 		normalized := normalizeSystemSettings(s.state.SystemSettings)
@@ -237,6 +249,20 @@ func (s *FileStore) SaveSystemSettings(settings SystemSettings) (SystemSettings,
 	if _, err := s.ensureMailboxHTMLLinksLocked(now); err != nil {
 		return SystemSettings{}, err
 	}
+	return settings, s.saveLocked()
+}
+
+func (s *FileStore) RecordForwardingReceived(receivedAt time.Time) (SystemSettings, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settings := normalizeSystemSettings(s.state.SystemSettings)
+	settings.ForwardingReceivedCount++
+	if receivedAt.IsZero() {
+		receivedAt = time.Now()
+	}
+	settings.ForwardingLastReceivedAt = receivedAt
+	settings.UpdatedAt = time.Now()
+	s.state.SystemSettings = settings
 	return settings, s.saveLocked()
 }
 

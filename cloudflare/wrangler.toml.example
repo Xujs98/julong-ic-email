@@ -1,0 +1,10 @@
+name = "julong-mail-forwarding"
+main = "forwarding-worker.ts"
+compatibility_date = "2026-08-20"
+
+# Set these values in the Cloudflare dashboard or with `wrangler secret put`.
+[vars]
+APP_ENDPOINT = "https://YOUR_APP_HOST/api/v1/forwarding/inbound"
+
+# wrangler secret put FORWARDING_SECRET
+# wrangler secret put FORWARD_TO

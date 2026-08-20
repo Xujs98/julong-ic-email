@@ -61,6 +61,13 @@ type SystemSettings struct {
 	// disabled flag; administrators can turn the lifecycle off explicitly.
 	HTMLLinkLifecycleDisabled bool      `json:"html_link_lifecycle_disabled,omitempty"`
 	HTMLExpiryDeleteMailbox   bool      `json:"html_expiry_delete_mailbox,omitempty"`
+	ForwardingEnabled         bool      `json:"forwarding_enabled,omitempty"`
+	ForwardingDomain          string    `json:"forwarding_domain,omitempty"`
+	ForwardingWorkerURL       string    `json:"forwarding_worker_url,omitempty"`
+	ForwardingTargetEmail     string    `json:"forwarding_target_email,omitempty"`
+	ForwardingSecret          string    `json:"forwarding_secret,omitempty"`
+	ForwardingReceivedCount   int64     `json:"forwarding_received_count,omitempty"`
+	ForwardingLastReceivedAt  time.Time `json:"forwarding_last_received_at,omitempty"`
 	UpdatedAt                 time.Time `json:"updated_at,omitempty"`
 }
 

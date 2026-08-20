@@ -30,6 +30,7 @@ config.local.json
 *.secret.json
 *.key
 *.pem
+cloudflare/wrangler.toml
 
 # Go
 coverage.out

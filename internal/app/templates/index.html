@@ -2012,6 +2012,50 @@
     .domain-table .domain-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     @media (max-width: 760px) { .domain-service-banner { align-items: flex-start; flex-direction: column; margin-left: 20px; margin-right: 20px; } .domain-dns { margin-left: 20px; margin-right: 20px; } }
     @media (max-width: 720px) { .commercial-hero { margin-left: 20px; margin-right: 20px; flex-direction: column; } .commercial-hero-metrics { justify-content: flex-start; } .commercial-section-label { margin-left: 20px; margin-right: 20px; } }
+    .forwarding-panel { overflow: hidden !important; }
+    .forwarding-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+    .forwarding-kicker { display: block; color: var(--green-2); font-size: 10px; font-weight: 950; letter-spacing: .16em; text-transform: uppercase; }
+    .forwarding-banner { display: flex; align-items: center; gap: 10px; margin: 0 30px 18px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; color: var(--muted); background: color-mix(in srgb, var(--dragon-accent-soft) 72%, var(--panel)); }
+    .forwarding-banner strong { color: var(--text); }
+    .forwarding-banner small { margin-left: auto; color: var(--faint); }
+    .forwarding-banner.ready { border-color: var(--ok-line); background: var(--ok-soft); }
+    .forwarding-banner.ready .forwarding-pulse { background: var(--ok); box-shadow: 0 0 0 5px color-mix(in srgb, var(--ok) 16%, transparent); }
+    .forwarding-banner.warn { border-color: var(--warn-line); background: var(--warn-soft); }
+    .forwarding-pulse { width: 10px; height: 10px; flex: 0 0 auto; border-radius: 999px; background: var(--warn); box-shadow: 0 0 0 5px color-mix(in srgb, var(--warn) 16%, transparent); }
+    .forwarding-grid { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(360px, .92fr); gap: 18px; margin: 0 30px 22px; }
+    .forwarding-card, .forwarding-mailboxes { border: 1px solid var(--line); border-radius: 22px; background: color-mix(in srgb, var(--panel) 90%, var(--dragon-accent-soft)); overflow: hidden; }
+    .forwarding-card > header { display: flex; align-items: flex-start; gap: 12px; padding: 20px 20px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--th-bg) 55%, transparent); }
+    .forwarding-card > header h3 { margin: 0; color: var(--text); font-size: 16px; font-weight: 950; }
+    .forwarding-card > header p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .forwarding-card-icon { width: 32px; height: 32px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 11px; color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); font-size: 11px; font-weight: 950; }
+    .forwarding-card-body { display: grid; gap: 18px; padding: 20px; }
+    .forwarding-fields { padding: 0; }
+    .forwarding-input-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+    .forwarding-input-action input { min-width: 0; }
+    .forwarding-input-action button { min-height: 44px; padding: 8px 11px; }
+    .forwarding-actions { padding: 0; align-items: center; }
+    .forwarding-actions .primary { min-height: 44px; }
+    .forwarding-steps { display: grid; gap: 15px; margin: 0; padding: 20px; list-style: none; }
+    .forwarding-steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; }
+    .forwarding-steps li > span { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line)); border-radius: 9px; color: var(--green-2); background: var(--dragon-accent-soft); font-size: 11px; font-weight: 950; }
+    .forwarding-steps strong { display: block; color: var(--text); font-size: 13px; font-weight: 900; }
+    .forwarding-steps small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .forwarding-worker-values { display: grid; gap: 8px; margin: 0 20px 20px; padding: 13px; border: 1px dashed var(--line-strong); border-radius: 14px; background: color-mix(in srgb, var(--th-bg) 72%, transparent); }
+    .forwarding-worker-values div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; align-items: center; }
+    .forwarding-worker-values span { color: var(--faint); font-size: 10px; font-weight: 950; letter-spacing: .08em; }
+    .forwarding-worker-values code { min-width: 0; overflow: hidden; color: var(--green-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .forwarding-mailboxes { margin: 0 30px 30px; }
+    .forwarding-mailboxes-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px; border-bottom: 1px solid var(--line); }
+    .forwarding-mailboxes-head h3 { margin: 4px 0 0; color: var(--text); font-size: 18px; font-weight: 950; }
+    .forwarding-mailboxes-head p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+    .forwarding-mailboxes .table-wrap { margin: 0; border: 0; border-radius: 0; }
+    .forwarding-mailboxes table { min-width: 700px; }
+    .forwarding-mailboxes .table-wrap td, .forwarding-mailboxes .table-wrap th { padding: 13px 16px; }
+    .forwarding-mailbox-email { color: var(--text); font-weight: 900; }
+    .forwarding-mailbox-actions { display: flex; gap: 7px; }
+    .forwarding-mailbox-actions button { min-height: 32px; padding: 6px 9px; font-size: 11px; }
+    @media (max-width: 980px) { .forwarding-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 700px) { .forwarding-head, .forwarding-mailboxes-head { align-items: flex-start; flex-direction: column; } .forwarding-banner, .forwarding-grid, .forwarding-mailboxes { margin-left: 20px; margin-right: 20px; } .forwarding-banner { align-items: flex-start; flex-wrap: wrap; } .forwarding-banner small { width: 100%; margin-left: 20px; } .forwarding-worker-values div { grid-template-columns: 1fr; gap: 4px; } }
   </style>
 </head>
 <body>
@@ -2030,7 +2074,7 @@
         <button class="nav-item" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4.5" y="4.5" width="15" height="15" rx="1.5"/><path d="M8.5 8.5h7v7h-7z"/></svg></span><span>全部邮箱</span><span class="count-dot" id="navMailboxCount">0</span></button>
         <button class="nav-item" data-view="domains" onclick="setActiveView('domains', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v9h-15z"/><path d="m5.3 8.5 6.7 5 6.7-5"/><path d="M7.5 4.5h9"/></svg></span><span>域名邮箱</span><span class="count-dot" id="navDomainCount">0</span></button>
         <button class="nav-item" data-view="create" onclick="setActiveView('create', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg></span><span>新建邮箱</span></button>
-        <button class="nav-item nav-alias" data-view="session" onclick="setActiveView('session', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h9.5a3.5 3.5 0 0 1 0 7H8"/><path d="m9 5-3 3 3 3"/></svg></span><span>转发邮箱</span></button>
+        <button class="nav-item" data-view="forwarding" onclick="setActiveView('forwarding', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h9.5a3.5 3.5 0 0 1 0 7H8"/><path d="m9 5-3 3 3 3"/></svg></span><span>转发邮箱</span><span class="count-dot" id="navForwardingCount">0</span></button>
         <button class="nav-item nav-alias" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v10h-15z"/><path d="m5.5 8.5 6.5 5 6.5-5"/></svg></span><span>统一收件箱</span></button>
         <button class="nav-item" data-view="outbound" onclick="setActiveView('outbound', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 7.5h10M8.5 11.5h7M10 15.5h4"/><path d="M5 3.8h14v16.4H5z"/></svg></span><span>取件码与发货</span><span class="count-dot" id="navOutboundCount">0</span></button>
         <button class="nav-item" data-view="session" onclick="setActiveView('session', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/></svg></span><span>iCloud 账号</span><span class="count-dot" id="navSessionCount">0</span></button>
@@ -2283,6 +2327,72 @@
               </table>
             </div>
           </div>
+        </section>
+
+        <section class="view-section panel forwarding-panel" data-view="forwarding">
+          <div class="panel-head forwarding-head">
+            <div>
+              <span class="forwarding-kicker">CLOUDFLARE EMAIL ROUTING</span>
+              <h2>转发邮箱</h2>
+              <p>通过 Cloudflare Email Worker 将公网邮件安全投递到矩龙邮箱，绕过服务器 TCP 25 端口限制。</p>
+            </div>
+            <span id="forwardingSaveStatus" class="settings-save-state">正在读取配置…</span>
+          </div>
+          <div id="forwardingBanner" class="forwarding-banner"><span class="forwarding-pulse"></span><strong>正在检测转发收件链路</strong><small>读取 Worker、域名和邮箱状态…</small></div>
+          <div class="commercial-hero forwarding-hero">
+            <div class="commercial-hero-copy"><strong>边缘邮件接入网关</strong><span>Cloudflare 负责接收 MX 邮件，Worker 使用 HMAC 签名把原始 MIME 投递到本系统，邮件仍归档到对应域名邮箱。</span></div>
+            <div class="commercial-hero-metrics"><div class="commercial-metric"><strong id="forwardingStatusMetric">待配置</strong><span>网关状态</span></div><div class="commercial-metric"><strong id="forwardingReceivedMetric">0</strong><span>已接收邮件</span></div><div class="commercial-metric"><strong id="forwardingMailboxMetric">0</strong><span>可收件地址</span></div></div>
+          </div>
+          <div class="forwarding-grid">
+            <section class="forwarding-card forwarding-config-card">
+              <header><span class="forwarding-card-icon">01</span><div><h3>接收配置</h3><p>保存后 Worker 可直接向矩龙邮箱投递邮件。</p></div></header>
+              <div class="forwarding-card-body">
+                <label class="settings-toggle">
+                  <input id="forwardingEnabled" type="checkbox" onchange="markForwardingDirty()">
+                  <span class="settings-toggle-track" aria-hidden="true"><span></span></span>
+                  <span class="settings-toggle-copy"><strong>启用 Cloudflare 转发收件</strong><small>启用后只接受通过签名校验的 Worker 请求。</small></span>
+                </label>
+                <div class="field-grid forwarding-fields">
+                  <label>接收域名<input id="forwardingDomain" placeholder="example.com" oninput="markForwardingDirty()"></label>
+                  <label>Worker 地址<input id="forwardingWorkerURL" placeholder="https://mail-forwarder.example.workers.dev" oninput="markForwardingDirty()"></label>
+                  <label class="full">默认外部转发邮箱（选填）<input id="forwardingTargetEmail" type="email" placeholder="name@example.com" oninput="markForwardingDirty()"></label>
+                  <label class="full">矩龙接收 API
+                    <span class="forwarding-input-action"><input id="forwardingEndpoint" readonly><button type="button" onclick="copyForwardingValue('forwardingEndpoint', '接收 API')">复制</button></span>
+                  </label>
+                  <label class="full">Worker 签名密钥
+                    <span class="forwarding-input-action"><input id="forwardingSecret" type="password" autocomplete="new-password" readonly><button id="forwardingSecretReveal" type="button" onclick="toggleForwardingSecret()">显示</button><button type="button" onclick="copyForwardingValue('forwardingSecret', '签名密钥')">复制</button></span>
+                  </label>
+                </div>
+                <div class="toolbar forwarding-actions">
+                  <button class="primary" type="button" onclick="saveForwardingSettings()">保存转发配置</button>
+                  <button type="button" onclick="rotateForwardingSecret()">生成新密钥</button>
+                  <button type="button" onclick="testForwardingSettings()">检测配置</button>
+                  <button type="button" onclick="loadForwardingSettings()">刷新状态</button>
+                </div>
+              </div>
+            </section>
+            <section class="forwarding-card forwarding-guide-card">
+              <header><span class="forwarding-card-icon">02</span><div><h3>Cloudflare 接入向导</h3><p>按顺序完成后，外部验证码邮件会进入对应邮箱。</p></div></header>
+              <ol class="forwarding-steps">
+                <li><span>1</span><div><strong>托管域名 DNS</strong><small>在 Cloudflare 添加接收域名并按提示切换 Nameserver。</small></div></li>
+                <li><span>2</span><div><strong>开启 Email Routing</strong><small>Cloudflare 控制台进入 Email → Email Routing，完成目标地址验证。</small></div></li>
+                <li><span>3</span><div><strong>部署矩龙 Worker</strong><small>使用项目 cloudflare 目录中的 Worker 文件，配置 APP_ENDPOINT、FORWARDING_SECRET 和可选 FORWARD_TO。</small></div></li>
+                <li><span>4</span><div><strong>设置 Catch-all 路由</strong><small>将 Catch-all 的 Action 设为 Send to a Worker，并选择已部署的 Worker。</small></div></li>
+                <li><span>5</span><div><strong>发送真实测试邮件</strong><small>投递到下方任意已生成域名邮箱，在统一收件箱查看邮件与验证码。</small></div></li>
+              </ol>
+              <div class="forwarding-worker-values">
+                <div><span>APP_ENDPOINT</span><code id="forwardingEndpointCode">-</code></div>
+                <div><span>FORWARDING_SECRET</span><code id="forwardingSecretCode">未生成</code></div>
+                <div><span>FORWARD_TO</span><code id="forwardingTargetCode">留空则不外部转发</code></div>
+              </div>
+            </section>
+          </div>
+          <section class="forwarding-mailboxes">
+            <div class="forwarding-mailboxes-head"><div><span class="forwarding-kicker">DELIVERY ADDRESSES</span><h3>可收件域名邮箱</h3><p id="forwardingLastReceived">尚未收到 Cloudflare Worker 投递。</p></div><button type="button" onclick="setActiveView('domains')">生成更多邮箱</button></div>
+            <div class="table-wrap">
+              <table><thead><tr><th>邮箱地址</th><th>状态</th><th>邮件</th><th>最近更新</th><th>操作</th></tr></thead><tbody id="forwardingMailboxRows"><tr><td colspan="5" class="muted empty">正在读取域名邮箱…</td></tr></tbody></table>
+            </div>
+          </section>
         </section>
 
         <section class="view-section panel" data-view="mailboxes">
@@ -2718,12 +2828,15 @@
     let createLogText = '暂无创建记录。';
     let scheduleLogText = '暂无定时创建记录。';
     let lastUpdateStatus = null;
+    let forwardingSettings = null;
+    let forwardingHydrating = false;
     const viewMeta = {
       overview: ['管理总览', '查看矩龙邮箱的账号、库存和收件状态。'],
       session: ['iCloud 账号', '管理创建邮箱与取码所需的 iCloud 登录状态。'],
       create: ['新建邮箱', '按已保存账号创建新的 iCloud 隐私邮箱。'],
       mailboxes: ['全部邮箱', '统一查看 iCloud 隐私邮箱与域名邮箱。'],
       domains: ['域名邮箱', '接入收件域名、查看 DNS 指引并批量生成域名邮箱。'],
+      forwarding: ['转发邮箱', '通过 Cloudflare Email Routing 把公网邮件投递到矩龙邮箱。'],
       outbound: ['取件码与发货', '查看已出库邮箱、邮件和取件码。'],
       logs: ['运行日志', '集中查看运行、创建和定时任务记录。'],
       settings: ['系统设置', '配置注册开关、唯一登录/注册入口和 HTML 接码地址生命周期。']
@@ -2857,6 +2970,7 @@
       }
       if (normalized === 'settings' && currentUser && currentUser.is_admin) loadSystemSettings().catch(err => log('读取系统设置失败：' + err.message));
       if (normalized === 'domains') loadDomains().catch(err => log('读取域名资产失败：' + err.message));
+      if (normalized === 'forwarding' && currentUser && currentUser.is_admin) loadForwardingSettings().catch(err => log('读取转发配置失败：' + err.message));
       renderGlobalLogs();
     }
 
@@ -3037,6 +3151,9 @@
       set('navMailboxCount', inventoryTotal);
       set('navDomainCount', Number(summary.domains || 0));
       set('navOutboundCount', outboundTotal);
+      if ($('navForwardingCount') && forwardingSettings && Array.isArray(forwardingSettings.mailboxes)) {
+        $('navForwardingCount').textContent = String(forwardingSettings.mailboxes.length);
+      }
     }
 
     async function api(path, options = {}) {
@@ -3181,6 +3298,143 @@
       log('系统设置已保存');
       await loadDomains({silent: true}).catch(err => log('刷新 SMTP 状态失败：' + err.message));
       showToast('系统设置已保存');
+    }
+
+    function setForwardingStatus(message, state = '') {
+      const status = $('forwardingSaveStatus');
+      if (!status) return;
+      status.className = `settings-save-state${state ? ` ${state}` : ''}`;
+      status.textContent = message;
+    }
+
+    function markForwardingDirty() {
+      if (!forwardingHydrating) setForwardingStatus('有未保存修改', 'pending');
+    }
+
+    function applyForwardingSettings(settings = {}) {
+      forwardingHydrating = true;
+      forwardingSettings = settings;
+      const mailboxes = settings.mailboxes || [];
+      if ($('forwardingEnabled')) $('forwardingEnabled').checked = !!settings.enabled;
+      if ($('forwardingDomain')) $('forwardingDomain').value = settings.domain || '';
+      if ($('forwardingWorkerURL')) $('forwardingWorkerURL').value = settings.worker_url || '';
+      if ($('forwardingTargetEmail')) $('forwardingTargetEmail').value = settings.target_email || '';
+      if ($('forwardingEndpoint')) $('forwardingEndpoint').value = settings.endpoint_url || '';
+      if ($('forwardingSecret')) $('forwardingSecret').value = settings.secret || '';
+      if ($('forwardingEndpointCode')) $('forwardingEndpointCode').textContent = settings.endpoint_url || '-';
+      if ($('forwardingSecretCode')) $('forwardingSecretCode').textContent = settings.secret_masked || '未生成';
+      if ($('forwardingTargetCode')) $('forwardingTargetCode').textContent = settings.target_email || '留空则不外部转发';
+      if ($('forwardingStatusMetric')) $('forwardingStatusMetric').textContent = settings.enabled ? (settings.cloudflare_setup_ready ? '运行中' : '待完善') : '已关闭';
+      if ($('forwardingReceivedMetric')) $('forwardingReceivedMetric').textContent = String(settings.received_count || 0);
+      if ($('forwardingMailboxMetric')) $('forwardingMailboxMetric').textContent = String(mailboxes.filter(item => item.active).length);
+      if ($('navForwardingCount')) $('navForwardingCount').textContent = String(mailboxes.length);
+      if ($('forwardingLastReceived')) {
+        $('forwardingLastReceived').textContent = settings.last_received_at
+          ? `最近一次 Worker 投递：${formatMailboxDate(settings.last_received_at)}`
+          : '尚未收到 Cloudflare Worker 投递。';
+      }
+      const banner = $('forwardingBanner');
+      if (banner) {
+        banner.className = `forwarding-banner ${settings.enabled && settings.cloudflare_setup_ready ? 'ready' : 'warn'}`;
+        const title = settings.enabled
+          ? (settings.cloudflare_setup_ready ? '转发收件入口已启用' : '转发入口已启用，仍需完成域名或邮箱配置')
+          : '转发收件当前已关闭';
+        const detail = settings.enabled
+          ? `接收 API 已就绪 · ${mailboxes.length} 个域名邮箱 · HMAC 密钥${settings.secret_configured ? '已配置' : '未配置'}`
+          : '保存并开启后，Cloudflare Worker 才能投递新邮件。';
+        banner.innerHTML = `<span class="forwarding-pulse"></span><strong>${esc(title)}</strong><small>${esc(detail)}</small>`;
+      }
+      renderForwardingMailboxes(mailboxes);
+      forwardingHydrating = false;
+    }
+
+    function renderForwardingMailboxes(mailboxes = []) {
+      const target = $('forwardingMailboxRows');
+      if (!target) return;
+      if (!mailboxes.length) {
+        target.innerHTML = '<tr><td colspan="5" class="muted empty">还没有域名邮箱，请先到“域名邮箱”接入域名并生成地址。</td></tr>';
+        return;
+      }
+      const sorted = [...mailboxes].sort((left, right) => String(right.updated_at || '').localeCompare(String(left.updated_at || '')));
+      target.innerHTML = sorted.map(row => {
+        const status = row.active ? '<span class="mailbox-status-badge ok">可收件</span>' : '<span class="mailbox-status-badge off">已停用</span>';
+        const htmlButton = row.html_url ? `<button type="button" onclick="copyForwardingText(${esc(JSON.stringify(row.html_url))}, 'HTML 地址')">复制 HTML</button>` : '';
+        return `<tr><td><button class="copy-email-button forwarding-mailbox-email" type="button" onclick="copyForwardingText(${esc(JSON.stringify(row.email || ''))}, '邮箱地址')">${esc(row.email || '-')}</button></td><td>${status}</td><td><button class="mailbox-message-count-button" type="button" onclick="openMailboxMessages(${esc(JSON.stringify(row.id || ''))})">${Number(row.receive_count || 0)} 封</button></td><td>${esc(row.updated_at ? formatMailboxDate(row.updated_at) : '-')}</td><td><div class="forwarding-mailbox-actions"><button type="button" onclick="copyForwardingText(${esc(JSON.stringify(row.email || ''))}, '邮箱地址')">复制邮箱</button>${htmlButton}</div></td></tr>`;
+      }).join('');
+    }
+
+    async function loadForwardingSettings() {
+      setForwardingStatus('正在同步配置…');
+      const data = await api('/api/forwarding');
+      applyForwardingSettings(data.settings || {});
+      setForwardingStatus('已与服务器同步', 'saved');
+      return data.settings || {};
+    }
+
+    async function saveForwardingSettings() {
+      const payload = {
+        enabled: !!($('forwardingEnabled') && $('forwardingEnabled').checked),
+        domain: (($('forwardingDomain') && $('forwardingDomain').value) || '').trim(),
+        worker_url: (($('forwardingWorkerURL') && $('forwardingWorkerURL').value) || '').trim(),
+        target_email: (($('forwardingTargetEmail') && $('forwardingTargetEmail').value) || '').trim()
+      };
+      setForwardingStatus('正在保存配置…');
+      try {
+        const data = await api('/api/forwarding', {method:'POST', body: JSON.stringify(payload)});
+        applyForwardingSettings(data.settings || {});
+        setForwardingStatus('转发配置已保存', 'saved');
+        log(`Cloudflare 转发收件配置已保存：${payload.domain || '未设置域名'}`);
+        showToast('转发收件配置已保存');
+      } catch (err) {
+        setForwardingStatus('保存失败', 'pending');
+        showToast(`保存失败：${err.message}`);
+        throw err;
+      }
+    }
+
+    async function rotateForwardingSecret() {
+      if (!await askConfirm({title: '生成新签名密钥', message: '旧密钥会立即失效。', detail: '生成后请同步更新 Cloudflare Worker 的 FORWARDING_SECRET Secret。', confirmText: '生成新密钥', tone: 'warning'})) return;
+      const data = await api('/api/forwarding/rotate-secret', {method:'POST', body:'{}'});
+      applyForwardingSettings(data.settings || {});
+      if ($('forwardingSecret')) $('forwardingSecret').value = data.secret || '';
+      setForwardingStatus('新密钥已生成', 'saved');
+      showToast('新密钥已生成，请同步更新 Worker');
+    }
+
+    async function testForwardingSettings() {
+      setForwardingStatus('正在检测配置…');
+      try {
+        const data = await api('/api/forwarding/test', {method:'POST', body:'{}'});
+        setForwardingStatus(data.ready ? '配置检测通过' : '配置仍需完善', data.ready ? 'saved' : 'pending');
+        showToast(data.message || '转发配置检测完成');
+        log(data.message || '转发配置检测完成');
+      } catch (err) {
+        setForwardingStatus('配置检测失败', 'pending');
+        showToast(`检测失败：${err.message}`);
+      }
+    }
+
+    function toggleForwardingSecret() {
+      const input = $('forwardingSecret');
+      if (!input) return;
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      if ($('forwardingSecretReveal')) $('forwardingSecretReveal').textContent = show ? '隐藏' : '显示';
+    }
+
+    async function copyForwardingValue(id, label) {
+      const input = $(id);
+      if (!input) return;
+      await copyForwardingText(input.value || '', label);
+    }
+
+    async function copyForwardingText(value, label) {
+      if (!value) {
+        showToast(`${label}为空`);
+        return;
+      }
+      await writeClipboard(value);
+      showToast(`已复制${label}`);
     }
 
     async function openAdminPage() {
