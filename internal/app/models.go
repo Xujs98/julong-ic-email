@@ -427,6 +427,12 @@ type publicMailboxGroup struct {
 	AccountID string `json:"account_id,omitempty"`
 }
 
+type publicMailboxBatch struct {
+	Name      string `json:"name"`
+	Count     int    `json:"count"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
 type publicPagination struct {
 	Page       int `json:"page"`
 	PageSize   int `json:"page_size"`

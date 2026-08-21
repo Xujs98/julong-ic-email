@@ -1044,6 +1044,28 @@
     .mailbox-export-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
     .mailbox-export-actions button { min-height: 42px; padding: 9px 17px; }
     body.mailbox-messages-open { overflow: hidden; }
+    body.mailbox-batches-open { overflow: hidden; }
+    .mailbox-batches-modal { width: min(720px, 100%); max-height: min(780px, calc(100vh - 40px)); display: flex; flex-direction: column; border-radius: 26px; }
+    .mailbox-batches-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 25px 27px 20px; border-bottom: 1px solid var(--line); background: radial-gradient(circle at 88% 0, color-mix(in srgb, var(--green) 18%, transparent), transparent 34%), linear-gradient(135deg, color-mix(in srgb, var(--panel) 92%, var(--green) 8%), var(--panel)); }
+    .mailbox-batches-head-copy { display: grid; gap: 6px; }
+    .mailbox-batches-kicker { color: var(--green-2); font-size: 9px; font-weight: 950; letter-spacing: .15em; text-transform: uppercase; }
+    .mailbox-batches-head h2 { margin: 0; color: var(--text); font-size: 23px; }
+    .mailbox-batches-head p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .mailbox-batches-head-actions { display: flex; align-items: center; gap: 9px; }
+    .mailbox-batches-total { min-width: 86px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line)); border-radius: 999px; color: var(--green-2); background: var(--dragon-accent-soft); text-align: center; font-size: 11px; font-weight: 950; white-space: nowrap; }
+    .mailbox-batches-list { min-height: 220px; padding: 20px 22px 24px; overflow: auto; display: grid; align-content: start; gap: 9px; background: color-mix(in srgb, var(--bg-soft) 72%, var(--panel)); }
+    .mailbox-batches-empty { padding: 54px 24px; border: 1px dashed var(--line-strong); border-radius: 18px; color: var(--faint); background: var(--panel); text-align: center; }
+    .mailbox-batch-overview-item { width: 100%; min-width: 0; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto 18px; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 16px; color: var(--muted); background: var(--panel); text-align: left; box-shadow: 0 8px 22px rgba(15,23,42,.035); }
+    .mailbox-batch-overview-item:hover { border-color: color-mix(in srgb, var(--green) 48%, var(--line)); color: var(--text); background: color-mix(in srgb, var(--dragon-accent-soft) 46%, var(--panel)); transform: translateY(-1px); }
+    .mailbox-batch-overview-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; color: var(--green-2); background: var(--dragon-accent-soft); }
+    .mailbox-batch-overview-icon svg { width: 19px; height: 19px; }
+    .mailbox-batch-overview-copy { display: grid; gap: 4px; min-width: 0; }
+    .mailbox-batch-overview-copy strong { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 950; text-overflow: ellipsis; white-space: nowrap; }
+    .mailbox-batch-overview-copy small { color: var(--faint); font-size: 9px; font-weight: 700; }
+    .mailbox-batch-overview-count { min-width: 66px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--green-2); background: color-mix(in srgb, var(--dragon-accent-soft) 70%, var(--panel)); text-align: center; font-size: 10px; font-weight: 950; }
+    .mailbox-batch-overview-arrow { width: 8px; height: 8px; border-top: 1.8px solid currentColor; border-right: 1.8px solid currentColor; color: var(--faint); transform: rotate(45deg); }
+    .mailbox-batches-trigger { display: inline-flex; align-items: center; gap: 7px; }
+    .mailbox-batches-trigger span { min-width: 21px; height: 21px; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; border-radius: 999px; color: var(--green-2); background: var(--dragon-accent-soft); font-size: 9px; font-weight: 950; }
     .mailbox-messages-modal { width: min(920px, 100%); max-height: min(820px, calc(100vh - 40px)); display: flex; flex-direction: column; border-radius: 26px; }
     .mailbox-messages-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 25px 26px 20px; border-bottom: 1px solid var(--line); background: linear-gradient(135deg, color-mix(in srgb, var(--panel) 90%, var(--green) 10%), var(--panel)); }
     .mailbox-messages-head h2 { margin: 0; color: var(--text); font-size: 23px; }
@@ -1078,6 +1100,14 @@
       .mailbox-export-format-options { grid-template-columns: 1fr; }
       .mailbox-export-actions { display: grid; grid-template-columns: 1fr 1fr; }
       .mailbox-messages-modal { max-height: calc(100vh - 22px); border-radius: 24px 24px 16px 16px; }
+      .mailbox-batches-backdrop { align-items: flex-end; padding: 11px; }
+      .mailbox-batches-modal { max-height: calc(100vh - 22px); border-radius: 24px 24px 16px 16px; }
+      .mailbox-batches-head { display: block; padding: 20px 18px 16px; }
+      .mailbox-batches-head-actions { margin-top: 14px; justify-content: space-between; }
+      .mailbox-batches-list { padding: 14px; }
+      .mailbox-batch-overview-item { grid-template-columns: 38px minmax(0, 1fr) auto; }
+      .mailbox-batch-overview-icon { width: 38px; height: 38px; }
+      .mailbox-batch-overview-arrow { display: none; }
       .mailbox-messages-backdrop { align-items: flex-end; padding: 11px; }
       .mailbox-messages-head { display: block; padding: 20px 18px 16px; }
       .mailbox-messages-actions { margin-top: 14px; justify-content: flex-start; }
@@ -2001,16 +2031,100 @@
       .settings-save-bar .primary { width: 100%; justify-content: center; }
     }
 
-    /* 域名邮箱资产面板：沿用矩龙工作台的商业化卡片与数据表规范。 */
-    .domain-workbench { display: grid; gap: 18px; }
-    .domain-service-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 30px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--dragon-accent-soft) 76%, var(--panel)); color: var(--muted); }
-    .domain-service-banner strong { color: var(--text); }
-    .domain-service-banner .pill { white-space: nowrap; }
-    .domain-dns { min-height: 24px; margin: 0 30px; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); background: color-mix(in srgb, var(--panel) 84%, transparent); white-space: pre-wrap; line-height: 1.65; }
-    .domain-table .domain-name { color: var(--text); font-weight: 900; }
-    .domain-table .domain-meta { display: block; margin-top: 4px; color: var(--faint); font-size: 12px; }
-    .domain-table .domain-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    @media (max-width: 760px) { .domain-service-banner { align-items: flex-start; flex-direction: column; margin-left: 20px; margin-right: 20px; } .domain-dns { margin-left: 20px; margin-right: 20px; } }
+    /* 域名邮箱：面向多域名运营的商业化资产工作台。 */
+    .domain-panel { overflow: visible; }
+    .domain-workbench { display: grid; gap: 20px; padding-bottom: 28px; }
+    .domain-service-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 30px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 17px; background: linear-gradient(110deg, color-mix(in srgb, var(--dragon-accent-soft) 82%, var(--panel)), color-mix(in srgb, var(--panel) 96%, transparent)); color: var(--muted); box-shadow: inset 0 1px 0 rgb(var(--surface-rgb) / .42); }
+    .domain-service-copy { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .domain-service-icon { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line)); border-radius: 13px; color: var(--green-2); background: color-mix(in srgb, var(--dragon-accent-soft) 68%, var(--panel)); }
+    .domain-service-icon svg { width: 19px; height: 19px; }
+    .domain-service-text { display: grid; gap: 3px; min-width: 0; }
+    .domain-service-text strong { color: var(--text); font-size: 13px; font-weight: 950; }
+    .domain-service-text small { overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .domain-service-state { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: color-mix(in srgb, var(--panel) 82%, transparent); font-size: 11px; font-weight: 900; white-space: nowrap; }
+    .domain-service-state i { width: 8px; height: 8px; border-radius: 999px; background: var(--warn); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 15%, transparent); }
+    .domain-service-state.online { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
+    .domain-service-state.online i { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 15%, transparent); }
+    .domain-operation-grid { display: grid; grid-template-columns: minmax(300px, .72fr) minmax(520px, 1.28fr); gap: 18px; margin: 0 30px; align-items: stretch; }
+    .domain-operation-card, .domain-assets-card { position: relative; border: 1px solid var(--line); border-radius: 22px; background: linear-gradient(145deg, color-mix(in srgb, var(--panel) 96%, transparent), color-mix(in srgb, var(--dragon-accent-soft) 22%, var(--panel))); box-shadow: 0 16px 38px color-mix(in srgb, var(--green) 7%, transparent); }
+    .domain-operation-card { display: flex; min-width: 0; flex-direction: column; }
+    .domain-operation-card::before { content: ""; position: absolute; inset: 0 20px auto; height: 2px; border-radius: 0 0 99px 99px; background: linear-gradient(90deg, transparent, var(--green), transparent); opacity: .72; }
+    .domain-card-head { display: flex; align-items: flex-start; gap: 12px; padding: 20px 20px 15px; border-bottom: 1px solid var(--line); }
+    .domain-card-index { width: 35px; height: 35px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 12px; color: var(--on-accent); background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: 0 10px 22px color-mix(in srgb, var(--green) 24%, transparent); font-size: 11px; font-weight: 950; }
+    .domain-card-title { display: grid; gap: 4px; min-width: 0; }
+    .domain-card-title h3 { margin: 0; color: var(--text); font-size: 15px; font-weight: 950; }
+    .domain-card-title p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .domain-card-body { display: grid; gap: 16px; padding: 20px; }
+    .domain-form-stack { display: grid; gap: 13px; }
+    .domain-form-stack label, .domain-generation-fields label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 900; }
+    .domain-form-stack input, .domain-generation-fields input { min-width: 0; min-height: 46px; }
+    .domain-generation-fields { display: grid; grid-template-columns: minmax(150px, .55fr) minmax(180px, 1fr) minmax(180px, 1fr); gap: 12px; }
+    .domain-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: auto; padding: 0 20px 20px; }
+    .domain-card-actions button { min-height: 42px; }
+    .domain-card-actions .primary { display: inline-flex; align-items: center; gap: 8px; }
+    .domain-card-actions .primary svg { width: 16px; height: 16px; }
+    .domain-card-status { min-width: 0; flex: 1; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .domain-generation-mode { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .domain-generation-mode-copy { display: grid; gap: 3px; }
+    .domain-generation-mode-copy strong { color: var(--text); font-size: 12px; font-weight: 950; }
+    .domain-generation-mode-copy span { color: var(--faint); font-size: 10px; line-height: 1.5; }
+    .domain-random-toggle { display: inline-flex; align-items: center; gap: 10px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 13px; color: var(--muted); background: color-mix(in srgb, var(--panel-2) 72%, transparent); cursor: pointer; user-select: none; transition: border-color .18s ease, background .18s ease, opacity .18s ease; }
+    .domain-random-toggle:hover { border-color: color-mix(in srgb, var(--green) 46%, var(--line)); background: color-mix(in srgb, var(--dragon-accent-soft) 44%, var(--panel)); }
+    .domain-random-toggle.disabled { cursor: not-allowed; opacity: .5; }
+    .domain-random-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+    .domain-random-track { position: relative; width: 38px; height: 22px; flex: 0 0 auto; border: 1px solid var(--line-strong); border-radius: 999px; background: color-mix(in srgb, var(--faint) 18%, var(--panel)); transition: .2s ease; }
+    .domain-random-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 999px; background: var(--panel); box-shadow: 0 2px 8px rgba(15,23,42,.22); transition: transform .2s ease; }
+    .domain-random-toggle input:checked + .domain-random-track { border-color: transparent; background: linear-gradient(135deg, var(--green), var(--green-2)); }
+    .domain-random-toggle input:checked + .domain-random-track::after { transform: translateX(16px); }
+    .domain-random-copy { display: grid; gap: 1px; }
+    .domain-random-copy strong { color: var(--text); font-size: 11px; font-weight: 950; }
+    .domain-random-copy small { color: var(--faint); font-size: 9px; font-weight: 700; }
+    .domain-mailbox-picker { position: relative; min-width: 0; }
+    .domain-picker-trigger { width: 100%; min-height: 58px; display: grid; grid-template-columns: 38px minmax(0, 1fr) 18px; align-items: center; gap: 11px; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 15px; color: var(--text); background: color-mix(in srgb, var(--input-bg) 92%, transparent); text-align: left; box-shadow: inset 0 1px 0 rgb(var(--surface-rgb) / .38); }
+    .domain-picker-trigger:hover { border-color: color-mix(in srgb, var(--green) 52%, var(--line)); background: color-mix(in srgb, var(--dragon-accent-soft) 38%, var(--panel)); transform: none; }
+    .domain-picker-trigger:disabled { cursor: not-allowed; opacity: .72; }
+    .domain-picker-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; color: var(--green-2); background: var(--dragon-accent-soft); }
+    .domain-picker-icon svg { width: 19px; height: 19px; }
+    .domain-picker-copy { display: grid; gap: 3px; min-width: 0; }
+    .domain-picker-copy small { color: var(--faint); font-size: 9px; font-weight: 950; letter-spacing: .11em; text-transform: uppercase; }
+    .domain-picker-copy strong { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 950; text-overflow: ellipsis; white-space: nowrap; }
+    .domain-picker-chevron { width: 8px; height: 8px; border-right: 1.8px solid currentColor; border-bottom: 1.8px solid currentColor; color: var(--muted); transform: rotate(45deg) translateY(-2px); transition: transform .2s ease; }
+    .domain-mailbox-picker.open .domain-picker-chevron { transform: rotate(225deg) translate(-2px,-1px); }
+    .domain-picker-menu { position: absolute; z-index: 70; top: calc(100% + 9px); left: 0; right: 0; display: none; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 18px; background: color-mix(in srgb, var(--panel) 97%, transparent); box-shadow: 0 25px 64px color-mix(in srgb, var(--green) 14%, rgba(15,23,42,.25)); backdrop-filter: blur(22px); }
+    .domain-mailbox-picker.open .domain-picker-menu { display: grid; animation: fadeUp .18s var(--ease-out); }
+    .domain-picker-menu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 2px 3px 5px; }
+    .domain-picker-menu-head strong { color: var(--text); font-size: 12px; font-weight: 950; }
+    .domain-picker-menu-head span { color: var(--faint); font-size: 9px; font-weight: 800; }
+    .domain-picker-options { display: grid; gap: 7px; max-height: 260px; overflow: auto; }
+    .domain-picker-option { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 52px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 13px; color: var(--muted); background: color-mix(in srgb, var(--panel-2) 66%, transparent); text-align: left; }
+    .domain-picker-option:hover { border-color: color-mix(in srgb, var(--green) 50%, var(--line)); color: var(--text); background: color-mix(in srgb, var(--dragon-accent-soft) 50%, var(--panel)); transform: translateY(-1px); }
+    .domain-picker-option.active { border-color: color-mix(in srgb, var(--green) 56%, var(--line)); background: color-mix(in srgb, var(--dragon-accent-soft) 76%, var(--panel)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 12%, transparent); }
+    .domain-picker-option:disabled { cursor: not-allowed; opacity: .48; transform: none; }
+    .domain-option-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; color: var(--green-2); background: color-mix(in srgb, var(--dragon-accent-soft) 75%, var(--panel)); font-size: 11px; font-weight: 950; }
+    .domain-option-copy { display: grid; gap: 2px; min-width: 0; }
+    .domain-option-copy strong { overflow: hidden; color: var(--text); font-size: 12px; font-weight: 950; text-overflow: ellipsis; white-space: nowrap; }
+    .domain-option-copy small { color: var(--faint); font-size: 9px; font-weight: 700; }
+    .domain-option-check { color: var(--green-2); font-size: 14px; font-weight: 950; opacity: 0; }
+    .domain-picker-option.active .domain-option-check { opacity: 1; }
+    .domain-native-select { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; clip-path: inset(50%) !important; white-space: nowrap !important; }
+    .domain-random-summary { display: none; align-items: center; gap: 8px; min-height: 34px; padding: 8px 11px; border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line)); border-radius: 12px; color: var(--green-2); background: var(--dragon-accent-soft); font-size: 10px; font-weight: 850; }
+    .domain-random-summary i { width: 7px; height: 7px; border-radius: 999px; background: var(--green-2); box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 14%, transparent); }
+    .domain-mailbox-picker.random-mode .domain-random-summary { display: flex; }
+    .domain-mailbox-picker.random-mode .domain-picker-trigger { display: none; }
+    .domain-assets-card { margin: 0 30px; overflow: hidden; }
+    .domain-assets-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--th-bg) 58%, transparent); }
+    .domain-assets-title { display: grid; gap: 4px; }
+    .domain-assets-title h3 { margin: 0; color: var(--text); font-size: 15px; font-weight: 950; }
+    .domain-assets-title p { margin: 0; color: var(--muted); font-size: 10px; }
+    .domain-assets-head button { min-height: 36px; }
+    .domain-dns { min-height: 24px; margin: 16px 20px 0; padding: 13px 15px; border: 1px dashed var(--line-strong); border-radius: 13px; color: var(--muted); background: color-mix(in srgb, var(--panel-2) 78%, transparent); white-space: pre-wrap; line-height: 1.65; font-size: 11px; }
+    .domain-table.table-wrap { margin: 16px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+    .domain-table .domain-name { color: var(--text); font-weight: 950; }
+    .domain-table .domain-meta { display: block; margin-top: 4px; color: var(--faint); font-size: 11px; }
+    .domain-table .domain-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .domain-table .domain-actions button { min-height: 32px; padding: 6px 9px; font-size: 10px; }
+    @media (max-width: 1080px) { .domain-operation-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .domain-service-banner { align-items: flex-start; flex-direction: column; margin-left: 20px; margin-right: 20px; } .domain-operation-grid, .domain-assets-card { margin-left: 20px; margin-right: 20px; } .domain-generation-fields { grid-template-columns: 1fr; } .domain-generation-mode { align-items: flex-start; flex-direction: column; } .domain-random-toggle { width: 100%; } .domain-assets-head { align-items: flex-start; flex-direction: column; } }
     @media (max-width: 720px) { .commercial-hero { margin-left: 20px; margin-right: 20px; flex-direction: column; } .commercial-hero-metrics { justify-content: flex-start; } .commercial-section-label { margin-left: 20px; margin-right: 20px; } }
     .forwarding-panel { overflow: hidden !important; }
     .forwarding-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
@@ -2288,44 +2402,76 @@
           </div>
         </section>
 
-        <section class="view-section panel" data-view="domains">
+        <section class="view-section panel domain-panel" data-view="domains">
           <div class="panel-head">
             <h2>域名邮箱</h2>
-            <p>将已配置 MX 的域名接入矩龙邮箱，统一生成、收件、查看邮件和获取验证码。</p>
+            <p>集中管理收件域名、DNS 接入和地址生产策略，支持多域名随机生成与永久历史去重。</p>
           </div>
           <div class="domain-workbench">
-            <div id="domainSMTPInfo" class="domain-service-banner"><span>正在读取 SMTP 服务状态…</span></div>
+            <div id="domainSMTPInfo" class="domain-service-banner">
+              <span class="domain-service-copy"><i class="domain-service-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.5 7.5h15v9h-15z"/><path d="m5.3 8.5 6.7 5 6.7-5"/></svg></i><span class="domain-service-text"><strong>SMTP 收件服务</strong><small>正在读取收件网关状态…</small></span></span>
+              <span class="domain-service-state"><i></i>检测中</span>
+            </div>
             <div class="commercial-hero">
-              <div class="commercial-hero-copy"><strong>域名资产中心</strong><span>从接入、DNS 校验到地址生成，全流程集中管理，适合批量运营和多域名部署。</span></div>
-              <div class="commercial-hero-metrics"><div class="commercial-metric"><strong id="domainMetricCount">0</strong><span>已接入域名</span></div><div class="commercial-metric"><strong id="domainMailboxMetricCount">0</strong><span>域名邮箱</span></div><div class="commercial-metric"><strong>MX</strong><span>收件协议</span></div></div>
+              <div class="commercial-hero-copy"><strong>多域名邮件资产中心</strong><span>从域名接入、收件校验到地址投放全流程集中管理；随机模式可将批量任务分散到多个可用域名。</span></div>
+              <div class="commercial-hero-metrics"><div class="commercial-metric"><strong id="domainMetricCount">0</strong><span>已接入域名</span></div><div class="commercial-metric"><strong id="domainEnabledMetricCount">0</strong><span>可用域名</span></div><div class="commercial-metric"><strong id="domainMailboxMetricCount">0</strong><span>域名邮箱</span></div></div>
             </div>
-            <div class="commercial-section-label">域名接入与地址生成</div>
-            <div class="field-grid">
-              <label>域名别名<input id="domainLabel" placeholder="生产邮箱域名"></label>
-              <label>接收域名<input id="domainName" placeholder="mail.example.com 或 example.com"></label>
+            <div class="commercial-section-label">域名接入与地址生产</div>
+            <div class="domain-operation-grid">
+              <section class="domain-operation-card">
+                <header class="domain-card-head"><span class="domain-card-index">01</span><div class="domain-card-title"><h3>接入收件域名</h3><p>登记已持有的域名，随后按 DNS 指引配置 MX 收件记录。</p></div></header>
+                <div class="domain-card-body">
+                  <div class="domain-form-stack">
+                    <label>域名别名<input id="domainLabel" placeholder="例如：海外注册业务"></label>
+                    <label>接收域名<input id="domainName" placeholder="mail.example.com 或 example.com"></label>
+                  </div>
+                </div>
+                <div class="domain-card-actions">
+                  <button type="button" class="primary" onclick="createDomain()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>接入域名</button>
+                  <span id="domainConnectStatus" class="domain-card-status">完成接入后，在下方资产列表查看 DNS 指引。</span>
+                </div>
+              </section>
+              <section class="domain-operation-card">
+                <header class="domain-card-head"><span class="domain-card-index">02</span><div class="domain-card-title"><h3>批量生成域名邮箱</h3><p>选择固定域名，或开启随机模式将每个新地址独立分配到可用域名。</p></div></header>
+                <div class="domain-card-body">
+                  <div class="domain-generation-mode">
+                    <div class="domain-generation-mode-copy"><strong>生成到域名</strong><span>随机模式需要至少 2 个已启用域名</span></div>
+                    <label id="domainRandomToggle" class="domain-random-toggle"><input id="domainRandomMode" type="checkbox" onchange="setDomainRandomMode(this.checked)"><span class="domain-random-track"></span><span class="domain-random-copy"><strong>随机分配</strong><small id="domainRandomHint">当前域名不足</small></span></label>
+                  </div>
+                  <div id="domainMailboxDomainPicker" class="domain-mailbox-picker">
+                    <button id="domainMailboxDomainTrigger" type="button" class="domain-picker-trigger" aria-haspopup="listbox" aria-expanded="false" onclick="toggleDomainMailboxPicker(event)">
+                      <span class="domain-picker-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M4.5 12h15M12 4a12 12 0 0 1 0 16M12 4a12 12 0 0 0 0 16"/></svg></span>
+                      <span class="domain-picker-copy"><small>接收域名</small><strong id="domainMailboxDomainLabel">请先接入域名</strong></span><span class="domain-picker-chevron"></span>
+                    </button>
+                    <div class="domain-random-summary"><i></i><span id="domainRandomSummary">将在多个可用域名中随机生成</span></div>
+                    <div class="domain-picker-menu" role="listbox" aria-label="选择接收域名">
+                      <div class="domain-picker-menu-head"><strong>选择生成域名</strong><span id="domainPickerAvailableCount">0 个可用</span></div>
+                      <div id="domainMailboxDomainOptions" class="domain-picker-options"><span class="muted">正在读取域名…</span></div>
+                    </div>
+                    <select id="domainMailboxDomain" class="domain-native-select" aria-hidden="true" tabindex="-1"><option value="">请先接入域名</option></select>
+                  </div>
+                  <div class="domain-generation-fields">
+                    <label>生成数量<input id="domainMailboxCount" type="number" min="1" max="500" value="1"></label>
+                    <label>邮箱标签<input id="domainMailboxLabel" placeholder="例如：注册批次 A"></label>
+                    <label>备注<input id="domainMailboxNote" placeholder="选填"></label>
+                  </div>
+                </div>
+                <div class="domain-card-actions">
+                  <button type="button" class="primary" onclick="createDomainMailboxes()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v9h-15z"/><path d="m5.3 8.5 6.7 5 6.7-5"/><path d="M17 4v4M15 6h4"/></svg>批量生成</button>
+                  <span id="domainActionStatus" class="domain-card-status">生成地址将自动写入永久去重历史。</span>
+                </div>
+              </section>
             </div>
-            <div class="toolbar">
-              <button type="button" class="primary" onclick="createDomain()">接入域名</button>
-              <span class="muted">接入后请按 DNS 指引完成 MX 配置，再生成收件邮箱。</span>
-            </div>
-            <div class="field-grid">
-              <label>生成到域名<select id="domainMailboxDomain"><option value="">请先接入域名</option></select></label>
-              <label>生成数量<input id="domainMailboxCount" type="number" min="1" max="500" value="1"></label>
-              <label>邮箱标签<input id="domainMailboxLabel" placeholder="注册批次 A"></label>
-              <label>备注<input id="domainMailboxNote" placeholder="选填"></label>
-            </div>
-            <div class="toolbar">
-              <button type="button" class="primary" onclick="createDomainMailboxes()">批量生成域名邮箱</button>
-              <button type="button" onclick="loadDomains()">刷新域名资产</button>
-              <span id="domainActionStatus" class="muted"></span>
-            </div>
-            <div id="domainDNSHint" class="domain-dns">选择“DNS 指引”可查看当前域名的 MX 与收件服务器记录。</div>
-            <div class="table-wrap domain-table">
-              <table>
-                <thead><tr><th>域名</th><th>状态</th><th>域名邮箱</th><th>创建时间</th><th>操作</th></tr></thead>
-                <tbody id="domainRows"><tr><td colspan="5" class="muted empty">正在读取域名资产…</td></tr></tbody>
-              </table>
-            </div>
+            <section class="domain-assets-card">
+              <header class="domain-assets-head"><div class="domain-assets-title"><h3>域名资产清单</h3><p>查看启用状态、邮箱产量和 DNS 接入信息</p></div><button type="button" onclick="loadDomains()">刷新域名资产</button></header>
+              <div id="domainDNSHint" class="domain-dns">选择“DNS 指引”可查看当前域名的 MX 与收件服务器记录。</div>
+              <div class="table-wrap domain-table">
+                <table>
+                  <thead><tr><th>域名</th><th>状态</th><th>域名邮箱</th><th>创建时间</th><th>操作</th></tr></thead>
+                  <tbody id="domainRows"><tr><td colspan="5" class="muted empty">正在读取域名资产…</td></tr></tbody>
+                </table>
+              </div>
+            </section>
           </div>
         </section>
 
@@ -2428,6 +2574,7 @@
             </div>
             <div class="mailbox-control-stack">
               <div class="mailbox-action-row">
+                <button id="mailboxBatchOverviewButton" type="button" class="mailbox-batches-trigger" onclick="openOutboundBatchOverview()" hidden>所有批次 <span id="mailboxBatchOverviewCount">0</span></button>
                 <button id="mailboxCleanupExpiredButton" type="button" class="danger" onclick="cleanupExpiredHTMLMailboxes()" hidden>清理全部已过期</button>
                 <button id="syncICloudMailboxesButton" onclick="syncICloudMailboxes()">同步已有邮箱</button>
                 <button id="mailboxExportAllButton" type="button" onclick="openMailboxExport('all')" hidden>全部导出</button>
@@ -2678,6 +2825,15 @@
       </main>
     </section>
   </div>
+  <div id="mailboxBatchesModal" class="modal-backdrop mailbox-batches-backdrop" aria-hidden="true" onclick="closeOutboundBatchOverview(event)">
+    <section class="modal mailbox-batches-modal" role="dialog" aria-modal="true" aria-labelledby="mailboxBatchesTitle" onclick="event.stopPropagation()">
+      <header class="mailbox-batches-head">
+        <div class="mailbox-batches-head-copy"><span class="mailbox-batches-kicker">OUTBOUND BATCH CENTER</span><h2 id="mailboxBatchesTitle">当前出库批次</h2><p>展示当前全部批次与邮箱数量；点击任意批次即可回填搜索框并立即筛选。</p></div>
+        <div class="mailbox-batches-head-actions"><span id="mailboxBatchesTotal" class="mailbox-batches-total">0 个批次</span><button id="mailboxBatchesClose" type="button" class="ghost" onclick="closeOutboundBatchOverview()">关闭</button></div>
+      </header>
+      <div id="mailboxBatchesList" class="mailbox-batches-list"><div class="mailbox-batches-empty">正在读取出库批次…</div></div>
+    </section>
+  </div>
   <div id="mailboxMessagesModal" class="modal-backdrop mailbox-messages-backdrop" aria-hidden="true" onclick="closeMailboxMessages(event)">
     <section class="modal mailbox-messages-modal" role="dialog" aria-modal="true" aria-labelledby="mailboxMessagesTitle" onclick="event.stopPropagation()">
       <header class="mailbox-messages-head">
@@ -2777,6 +2933,7 @@
     const sessionCheckEnabledStorage = 'ipm_session_check_enabled';
     const sessionCheckMinutesStorage = 'ipm_session_check_minutes';
     const mailboxColumnStorageKey = 'julong_mailbox_visible_columns';
+    const domainRandomStorageKey = 'julong_domain_random_generation';
     const defaultMailboxColumns = ['id', 'label', 'status', 'email', 'account', 'batch', 'messages', 'created', 'html', 'code', 'actions'];
     const mailboxColumnKeys = new Set(defaultMailboxColumns);
     let mailboxVisibleColumns = new Set(defaultMailboxColumns);
@@ -2784,6 +2941,7 @@
     let lastDomains = [];
     let lastDomainSMTP = {};
     let lastMailboxGroups = [];
+    let lastOutboundBatches = [];
     let lastMailboxPagination = {page: 1, page_size: 10, total: 0, total_all: 0, total_pages: 1};
     let lastStatusSummary = {};
     let lastICloudSessions = [];
@@ -2817,6 +2975,7 @@
     let mailboxMessagesPreviousFocus = null;
     let mailboxExportScope = 'all';
     let mailboxExportPreviousFocus = null;
+    let mailboxBatchesPreviousFocus = null;
     let selectedCreateAccountIDs = new Set();
     let currentUser = null;
     const viewStorageKey = 'julong_mail_active_view';
@@ -2830,6 +2989,8 @@
     let lastUpdateStatus = null;
     let forwardingSettings = null;
     let forwardingHydrating = false;
+    let domainRandomHydrated = false;
+    let domainRandomPreference = false;
     const viewMeta = {
       overview: ['管理总览', '查看矩龙邮箱的账号、库存和收件状态。'],
       session: ['iCloud 账号', '管理创建邮箱与取码所需的 iCloud 登录状态。'],
@@ -2911,6 +3072,11 @@
         closeMailboxMessages();
         return;
       }
+      if (event.key === 'Escape' && $('mailboxBatchesModal').classList.contains('show')) {
+        event.preventDefault();
+        closeOutboundBatchOverview();
+        return;
+      }
       if (event.key === 'Escape' && $('mailboxExportModal').classList.contains('show')) {
         event.preventDefault();
         closeMailboxExport();
@@ -2931,10 +3097,16 @@
         const trigger = themePicker.querySelector('.theme-picker-trigger');
         if (trigger) trigger.setAttribute('aria-expanded', 'false');
       }
+      const domainPicker = $('domainMailboxDomainPicker');
+      if (domainPicker && domainPicker !== except && !domainPicker.contains(except)) {
+        domainPicker.classList.remove('open');
+        const trigger = $('domainMailboxDomainTrigger');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      }
     }
 
     document.addEventListener('click', event => {
-      const popover = event.target.closest('details.header-more, details.mailbox-column-picker, details.mailbox-more, .theme-picker');
+      const popover = event.target.closest('details.header-more, details.mailbox-column-picker, details.mailbox-more, .theme-picker, .domain-mailbox-picker');
       closeOpenPopovers(popover);
     });
 
@@ -2989,6 +3161,8 @@
       if ($('mailboxBatchReturnButton')) $('mailboxBatchReturnButton').hidden = !outbound;
       if ($('mailboxExportAllButton')) $('mailboxExportAllButton').hidden = !outbound;
       if ($('mailboxBatchExportButton')) $('mailboxBatchExportButton').hidden = !outbound;
+      if ($('mailboxBatchOverviewButton')) $('mailboxBatchOverviewButton').hidden = !outbound;
+      if ($('mailboxBatchOverviewCount')) $('mailboxBatchOverviewCount').textContent = String(lastOutboundBatches.length);
       if ($('mailboxCleanupExpiredButton')) $('mailboxCleanupExpiredButton').hidden = !outbound;
       const htmlStateFilter = $('mailboxHTMLStateFilter');
       if (htmlStateFilter) htmlStateFilter.hidden = !outbound;
@@ -4369,22 +4543,104 @@
       );
     }
 
+    function enabledManagedDomains() {
+      return (lastDomains || []).filter(domain => !!domain.enabled);
+    }
+
+    function toggleDomainMailboxPicker(event) {
+      if (event) event.stopPropagation();
+      const picker = $('domainMailboxDomainPicker');
+      const trigger = $('domainMailboxDomainTrigger');
+      if (!picker || !trigger || trigger.disabled || picker.classList.contains('random-mode')) return;
+      closeOpenPopovers(picker);
+      const open = !picker.classList.contains('open');
+      picker.classList.toggle('open', open);
+      trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    function selectDomainMailboxDomain(id) {
+      const select = $('domainMailboxDomain');
+      const picker = $('domainMailboxDomainPicker');
+      if (!select || ![...select.options].some(option => option.value === id && !option.disabled)) return;
+      select.value = id;
+      updateDomainMailboxPicker();
+      if (picker) picker.classList.remove('open');
+      if ($('domainMailboxDomainTrigger')) $('domainMailboxDomainTrigger').setAttribute('aria-expanded', 'false');
+    }
+
+    function updateDomainMailboxPicker() {
+      const select = $('domainMailboxDomain');
+      const label = $('domainMailboxDomainLabel');
+      if (!select || !label) return;
+      const selected = (lastDomains || []).find(domain => domain.id === select.value);
+      label.textContent = selected ? selected.name : (lastDomains.length ? '请选择接收域名' : '请先接入域名');
+      for (const option of document.querySelectorAll('[data-domain-picker-option]')) {
+        const active = option.dataset.domainPickerOption === select.value;
+        option.classList.toggle('active', active);
+        option.setAttribute('aria-selected', active ? 'true' : 'false');
+      }
+    }
+
+    function setDomainRandomMode(enabled, persist = true) {
+      const checkbox = $('domainRandomMode');
+      const toggle = $('domainRandomToggle');
+      const picker = $('domainMailboxDomainPicker');
+      const trigger = $('domainMailboxDomainTrigger');
+      const available = enabledManagedDomains().length;
+      if (persist) {
+        domainRandomPreference = !!enabled;
+        try { localStorage.setItem(domainRandomStorageKey, domainRandomPreference ? '1' : '0'); } catch (_) {}
+      }
+      const allowed = available > 1;
+      const active = allowed && !!enabled;
+      if (checkbox) {
+        checkbox.checked = active;
+        checkbox.disabled = !allowed;
+      }
+      if (toggle) toggle.classList.toggle('disabled', !allowed);
+      if ($('domainRandomHint')) $('domainRandomHint').textContent = allowed ? `${available} 个域名可用` : (available === 1 ? '仅 1 个可用域名' : '当前域名不足');
+      if ($('domainRandomSummary')) $('domainRandomSummary').textContent = `每个新地址将在 ${available} 个可用域名中独立随机分配`;
+      if (picker) {
+        picker.classList.toggle('random-mode', active);
+        picker.classList.remove('open');
+      }
+      if (trigger) {
+        trigger.disabled = active || available === 0;
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+    }
+
     function renderDomains() {
       const rows = $('domainRows');
       const select = $('domainMailboxDomain');
       if (!rows || !select) return;
       const domains = lastDomains || [];
+      const enabledDomains = enabledManagedDomains();
       if ($('domainMetricCount')) $('domainMetricCount').textContent = String(domains.length);
+      if ($('domainEnabledMetricCount')) $('domainEnabledMetricCount').textContent = String(enabledDomains.length);
       if ($('domainMailboxMetricCount')) $('domainMailboxMetricCount').textContent = String(domains.reduce((sum, domain) => sum + Number(domain.mailboxes || 0), 0));
       const previous = select.value;
       select.innerHTML = domains.length
         ? ['<option value="">请选择接收域名</option>', ...domains.map(domain => `<option value="${esc(domain.id)}" ${domain.enabled ? '' : 'disabled'}>${esc(domain.name)}${domain.enabled ? '' : '（已停用）'}</option>`)].join('')
         : '<option value="">请先接入域名</option>';
-      if ([...select.options].some(option => option.value === previous)) select.value = previous;
+      if (previous && [...select.options].some(option => option.value === previous && !option.disabled)) select.value = previous;
+      else if (enabledDomains.length) select.value = enabledDomains[0].id;
+      const optionHost = $('domainMailboxDomainOptions');
+      if (optionHost) {
+        optionHost.innerHTML = domains.length ? domains.map(domain => `<button type="button" class="domain-picker-option ${domain.id === select.value ? 'active' : ''}" data-domain-picker-option="${esc(domain.id)}" role="option" aria-selected="${domain.id === select.value ? 'true' : 'false'}" ${domain.enabled ? `onclick="selectDomainMailboxDomain('${esc(domain.id)}')"` : 'disabled'}><span class="domain-option-icon">@</span><span class="domain-option-copy"><strong>${esc(domain.name)}</strong><small>${domain.enabled ? `${Number(domain.mailboxes || 0)} 个邮箱 · 可用于生成` : '域名已停用'}</small></span><span class="domain-option-check">✓</span></button>`).join('') : '<span class="muted">尚未接入域名</span>';
+      }
+      if ($('domainPickerAvailableCount')) $('domainPickerAvailableCount').textContent = `${enabledDomains.length} 个可用`;
+      updateDomainMailboxPicker();
+      if (!domainRandomHydrated) {
+        try { domainRandomPreference = localStorage.getItem(domainRandomStorageKey) === '1'; } catch (_) {}
+        domainRandomHydrated = true;
+      }
+      setDomainRandomMode(domainRandomPreference, false);
       const smtp = lastDomainSMTP || {};
       const enabled = !!smtp.enabled;
       if ($('domainSMTPInfo')) {
-        $('domainSMTPInfo').innerHTML = `<span><strong>SMTP 收件服务</strong> · ${enabled ? `已启用，监听 ${esc(smtp.host || '0.0.0.0')}:${esc(String(smtp.port || 2525))}` : '未启用；生成邮箱可先完成，部署时启用 SMTP 后开始接收邮件。'}</span><span class="pill ${enabled ? 'status-active' : 'status-disabled'}">${enabled ? '收件在线' : '待启用'}</span>`;
+        const description = enabled ? `网关正在监听 ${esc(smtp.host || '0.0.0.0')}:${esc(String(smtp.port || 2525))}，已启用域名可接收入站邮件。` : '收件网关尚未启用；可以先完成域名接入和地址生成。';
+        $('domainSMTPInfo').innerHTML = `<span class="domain-service-copy"><i class="domain-service-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.5 7.5h15v9h-15z"/><path d="m5.3 8.5 6.7 5 6.7-5"/></svg></i><span class="domain-service-text"><strong>SMTP 收件服务</strong><small>${description}</small></span></span><span class="domain-service-state ${enabled ? 'online' : ''}"><i></i>${enabled ? '收件在线' : '等待启用'}</span>`;
       }
       if (!domains.length) {
         rows.innerHTML = '<tr><td colspan="5" class="muted empty">尚未接入域名。请先填写可管理的收件域名。</td></tr>';
@@ -4420,28 +4676,30 @@
         const data = await api('/api/domains', {method: 'POST', body: JSON.stringify({name, label})});
         $('domainName').value = '';
         $('domainLabel').value = '';
-        if ($('domainActionStatus')) $('domainActionStatus').textContent = `已接入 ${data.domain && data.domain.name ? data.domain.name : name}`;
+        if ($('domainConnectStatus')) $('domainConnectStatus').textContent = `已接入 ${data.domain && data.domain.name ? data.domain.name : name}`;
         await loadDomains({silent: true});
         await refresh();
         showToast('域名已接入');
       } catch (err) {
-        if ($('domainActionStatus')) $('domainActionStatus').textContent = `接入失败：${err.message}`;
+        if ($('domainConnectStatus')) $('domainConnectStatus').textContent = `接入失败：${err.message}`;
         log('接入域名失败：' + err.message);
       }
     }
 
     async function createDomainMailboxes() {
       const domainID = $('domainMailboxDomain').value;
+      const randomDomain = !!($('domainRandomMode') && $('domainRandomMode').checked && !$('domainRandomMode').disabled);
       const count = boundedInt('domainMailboxCount', 1, 1, 500);
-      if (!domainID) { showToast('请选择接收域名'); return; }
+      if (!randomDomain && !domainID) { showToast('请选择接收域名'); return; }
       try {
         const data = await api('/api/domain-mailboxes', {method: 'POST', body: JSON.stringify({
-          domain_id: domainID, count,
+          domain_id: domainID, random_domain: randomDomain, count,
           label: ($('domainMailboxLabel').value || '').trim(),
           note: ($('domainMailboxNote').value || '').trim()
         })});
-        if ($('domainActionStatus')) $('domainActionStatus').textContent = `已生成 ${data.count || 0} 个域名邮箱`;
-        log(`已生成域名邮箱：${data.count || 0} 个`);
+        const modeText = randomDomain ? '随机分配' : ((lastDomains || []).find(domain => domain.id === domainID)?.name || '指定域名');
+        if ($('domainActionStatus')) $('domainActionStatus').textContent = `已生成 ${data.count || 0} 个 · ${modeText}`;
+        log(`已生成域名邮箱：${data.count || 0} 个（${modeText}）`);
         await loadDomains({silent: true});
         await refresh();
         showToast(`已生成 ${data.count || 0} 个域名邮箱`);
@@ -4835,6 +5093,7 @@
       const data = await api('/api/mailboxes?' + mailboxListQuery().toString());
       lastMailboxes = data.mailboxes || [];
       lastMailboxGroups = data.groups || [];
+      if (activeView === 'outbound') lastOutboundBatches = data.batches || [];
       lastMailboxPagination = data.pagination || {
         page: mailboxPage,
         page_size: mailboxPageSize,
@@ -4931,6 +5190,48 @@
       syncMailboxSearchInput();
       mailboxPage = 1;
       loadMailboxPage().catch(err => log('批次搜索失败：' + err.message));
+    }
+
+    function renderOutboundBatchOverview() {
+      const list = $('mailboxBatchesList');
+      const batches = lastOutboundBatches || [];
+      if (!list) return;
+      if ($('mailboxBatchesTotal')) $('mailboxBatchesTotal').textContent = `${batches.length} 个批次`;
+      if ($('mailboxBatchOverviewCount')) $('mailboxBatchOverviewCount').textContent = String(batches.length);
+      if (!batches.length) {
+        list.innerHTML = '<div class="mailbox-batches-empty">当前没有已出库批次</div>';
+        return;
+      }
+      list.innerHTML = batches.map(batch => `<button type="button" class="mailbox-batch-overview-item" onclick="selectOutboundBatchFromOverview(${esc(JSON.stringify(batch.name || ''))})"><span class="mailbox-batch-overview-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v14H5z"/><path d="M8.5 9h7M8.5 12h7M8.5 15h4"/></svg></span><span class="mailbox-batch-overview-copy"><strong>${esc(batch.name || '未命名批次')}</strong><small>最近更新 ${esc(formatMailboxDate(batch.updated_at))}</small></span><span class="mailbox-batch-overview-count">${Number(batch.count || 0)} 个邮箱</span><span class="mailbox-batch-overview-arrow"></span></button>`).join('');
+    }
+
+    function openOutboundBatchOverview() {
+      if (activeView !== 'outbound') return;
+      const modal = $('mailboxBatchesModal');
+      if (!modal) return;
+      mailboxBatchesPreviousFocus = document.activeElement;
+      renderOutboundBatchOverview();
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('mailbox-batches-open');
+      setTimeout(() => $('mailboxBatchesClose') && $('mailboxBatchesClose').focus(), 0);
+    }
+
+    function closeOutboundBatchOverview(event) {
+      if (event && event.target !== event.currentTarget) return;
+      const modal = $('mailboxBatchesModal');
+      if (!modal) return;
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('mailbox-batches-open');
+      if (mailboxBatchesPreviousFocus && typeof mailboxBatchesPreviousFocus.focus === 'function') mailboxBatchesPreviousFocus.focus();
+      mailboxBatchesPreviousFocus = null;
+    }
+
+    function selectOutboundBatchFromOverview(batch) {
+      closeOutboundBatchOverview();
+      setMailboxBatchSearch(batch);
+      if ($('mailboxSearch')) $('mailboxSearch').focus();
     }
 
     function mailboxDisplayID(id) {

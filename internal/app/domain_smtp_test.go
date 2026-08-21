@@ -317,10 +317,58 @@ func TestDomainManagementAPIsAndCommercialWorkbench(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`data-view="domains"`, `id="domainRows"`, `function createDomainMailboxes()`, `function showDomainDNS(id)`, `域名邮箱`} {
+	for _, want := range []string{`data-view="domains"`, `id="domainRows"`, `id="domainRandomMode"`, `class="domain-picker-menu"`, `random_domain: randomDomain`, `class="domain-operation-grid"`, `function createDomainMailboxes()`, `function showDomainDNS(id)`, `域名邮箱`} {
 		if !strings.Contains(string(ui), want) {
 			t.Fatalf("commercial domain workbench missing %q", want)
 		}
+	}
+}
+
+func TestRandomDomainMailboxAPI(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	cookie, _ := registerTestUser(t, handler, "random-domain-user", "domain-password")
+
+	call := func(payload string) *httptest.ResponseRecorder {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/domains", strings.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
+		handler.ServeHTTP(rr, req)
+		return rr
+	}
+	for _, payload := range []string{`{"name":"one.test","label":"主域名"}`, `{"name":"two.test","label":"备用域名"}`} {
+		if rr := call(payload); rr.Code != http.StatusCreated {
+			t.Fatalf("create domain = %d body=%s", rr.Code, rr.Body.String())
+		}
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/domain-mailboxes", strings.NewReader(`{"random_domain":true,"count":24,"label":"随机批次"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated || !strings.Contains(rr.Body.String(), `"random_domain":true`) {
+		t.Fatalf("random create = %d body=%s", rr.Code, rr.Body.String())
+	}
+	snapshot := store.Snapshot()
+	if len(snapshot.Mailboxes) != 24 || len(snapshot.DomainMailboxHistory) != 24 {
+		t.Fatalf("mailboxes=%d history=%d, want 24", len(snapshot.Mailboxes), len(snapshot.DomainMailboxHistory))
+	}
+	validDomains := map[string]bool{}
+	for _, domain := range snapshot.Domains {
+		validDomains[domain.ID] = true
+	}
+	seen := map[string]bool{}
+	for _, mailbox := range snapshot.Mailboxes {
+		if !validDomains[mailbox.DomainID] {
+			t.Fatalf("mailbox used unknown domain: %#v", mailbox)
+		}
+		if seen[mailbox.Email] {
+			t.Fatalf("duplicate random mailbox: %s", mailbox.Email)
+		}
+		seen[mailbox.Email] = true
 	}
 }
 

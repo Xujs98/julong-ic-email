@@ -991,6 +991,52 @@ func (s *FileStore) addDomainMailboxesForOwnerLocked(ownerID, domainID, label, n
 	if strings.TrimSpace(ownerID) != "" && strings.TrimSpace(domain.OwnerID) != "" && !constantTimeEqual(ownerID, domain.OwnerID) {
 		return nil, errCode("domain_access_denied", "无权使用该域名", false)
 	}
+	return s.addDomainMailboxesForDomainsLocked(ownerID, []Domain{domain}, label, note, count, generateLocal, func(int) (int, error) {
+		return 0, nil
+	})
+}
+
+func (s *FileStore) AddRandomDomainMailboxesForOwner(ownerID, label, note string, count int) ([]Mailbox, error) {
+	return s.addRandomDomainMailboxesForOwner(ownerID, label, note, count, func() (string, error) {
+		return randomToken(9)
+	}, randomIndex)
+}
+
+func (s *FileStore) addRandomDomainMailboxesForOwner(ownerID, label, note string, count int, generateLocal func() (string, error), chooseDomain func(int) (int, error)) ([]Mailbox, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ownerID = strings.TrimSpace(ownerID)
+	domains := make([]Domain, 0, len(s.state.Domains))
+	for _, domain := range s.state.Domains {
+		if !domain.Enabled {
+			continue
+		}
+		if ownerID != "" && strings.TrimSpace(domain.OwnerID) != "" && !constantTimeEqual(ownerID, domain.OwnerID) {
+			continue
+		}
+		domains = append(domains, domain)
+	}
+	if len(domains) == 0 {
+		return nil, errCode("domain_random_unavailable", "没有可用于随机生成的已启用域名", false)
+	}
+	return s.addDomainMailboxesForDomainsLocked(ownerID, domains, label, note, count, generateLocal, chooseDomain)
+}
+
+type domainMailboxCandidate struct {
+	domain Domain
+	email  string
+}
+
+func (s *FileStore) addDomainMailboxesForDomainsLocked(ownerID string, domains []Domain, label, note string, count int, generateLocal func() (string, error), chooseDomain func(int) (int, error)) ([]Mailbox, error) {
+	if len(domains) == 0 {
+		return nil, errCode("domain_not_found", "域名不存在", false)
+	}
+	if count < 1 {
+		count = 1
+	}
+	if count > 500 {
+		count = 500
+	}
 	now := time.Now()
 	label = strings.TrimSpace(label)
 	if label == "" {
@@ -1010,25 +1056,33 @@ func (s *FileStore) addDomainMailboxesForOwnerLocked(ownerID, domainID, label, n
 			reserved[email] = struct{}{}
 		}
 	}
-	candidates := make([]string, 0, count)
+	candidates := make([]domainMailboxCandidate, 0, count)
 	maxAttempts := count * domainMailboxAttemptsPerItem
 	for attempts := 0; len(candidates) < count && attempts < maxAttempts; attempts++ {
 		local, err := generateLocal()
 		if err != nil {
 			return nil, err
 		}
+		domainIndex, err := chooseDomain(len(domains))
+		if err != nil {
+			return nil, err
+		}
+		if domainIndex < 0 || domainIndex >= len(domains) {
+			return nil, errCode("domain_random_invalid", "随机域名选择结果无效", true)
+		}
+		domain := domains[domainIndex]
 		email := strings.ToLower("mail-" + strings.TrimSpace(local) + "@" + domain.Name)
 		if _, exists := reserved[email]; exists {
 			continue
 		}
 		reserved[email] = struct{}{}
-		candidates = append(candidates, email)
+		candidates = append(candidates, domainMailboxCandidate{domain: domain, email: email})
 	}
 	if len(candidates) != count {
 		return nil, errCode("domain_mailbox_generation_exhausted", "域名邮箱地址生成冲突次数过多，请重试", true)
 	}
 	mailboxes := make([]Mailbox, 0, count)
-	for _, email := range candidates {
+	for _, candidate := range candidates {
 		apiToken, err := randomToken(24)
 		if err != nil {
 			return nil, err
@@ -1037,9 +1091,9 @@ func (s *FileStore) addDomainMailboxesForOwnerLocked(ownerID, domainID, label, n
 			ID:           s.nextIDLocked("mbx"),
 			OwnerID:      strings.TrimSpace(ownerID),
 			Provider:     MailboxProviderDomain,
-			DomainID:     domain.ID,
+			DomainID:     candidate.domain.ID,
 			Label:        label,
-			Email:        email,
+			Email:        candidate.email,
 			APIToken:     apiToken,
 			APIActive:    true,
 			ICloudActive: true,
@@ -1056,8 +1110,8 @@ func (s *FileStore) addDomainMailboxesForOwnerLocked(ownerID, domainID, label, n
 		s.state.MailboxHTMLLinks = append(s.state.MailboxHTMLLinks, link)
 		s.state.DomainMailboxHistory = append(s.state.DomainMailboxHistory, DomainMailboxHistoryEntry{
 			Email:       mailbox.Email,
-			DomainID:    domain.ID,
-			DomainName:  domain.Name,
+			DomainID:    candidate.domain.ID,
+			DomainName:  candidate.domain.Name,
 			OwnerID:     mailbox.OwnerID,
 			GeneratedAt: now,
 		})

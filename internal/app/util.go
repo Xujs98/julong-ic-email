@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"math/big"
 	"strings"
 	"time"
 )
@@ -26,6 +27,17 @@ func randomUUID() (string, error) {
 	hexed := make([]byte, 32)
 	hex.Encode(hexed, buf)
 	return string(hexed[0:8]) + "-" + string(hexed[8:12]) + "-" + string(hexed[12:16]) + "-" + string(hexed[16:20]) + "-" + string(hexed[20:32]), nil
+}
+
+func randomIndex(size int) (int, error) {
+	if size <= 1 {
+		return 0, nil
+	}
+	value, err := rand.Int(rand.Reader, big.NewInt(int64(size)))
+	if err != nil {
+		return 0, err
+	}
+	return int(value.Int64()), nil
 }
 
 func maskSecret(value string, keep int) string {

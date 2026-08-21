@@ -547,6 +547,11 @@ func TestMailboxOutboundBatchSearchAndColumnPickerTemplate(t *testing.T) {
 		`[批次] && [已激活]`,
 		`![已激活]`,
 		`renderMailboxBatch(row)`,
+		`id="mailboxBatchOverviewButton"`,
+		`id="mailboxBatchesModal"`,
+		`function openOutboundBatchOverview()`,
+		`function selectOutboundBatchFromOverview(batch)`,
+		`setMailboxBatchSearch(batch)`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("outbound batch/search/column template missing %q", want)
@@ -5751,6 +5756,27 @@ func TestMailboxAdvancedSearchCombinesBatchAndHTMLState(t *testing.T) {
 	}
 	if _, err := store.SetMailboxesOutbound([]string{betaActive.ID}, "beta", "test batch"); err != nil {
 		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/mailboxes?status=outbound&search=%5Balpha%5D&page=1&page_size=50", nil)
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("batch overview = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var batchResponse struct {
+		Batches []publicMailboxBatch `json:"batches"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &batchResponse); err != nil {
+		t.Fatal(err)
+	}
+	batchCounts := map[string]int{}
+	for _, batch := range batchResponse.Batches {
+		batchCounts[batch.Name] = batch.Count
+	}
+	if len(batchCounts) != 2 || batchCounts["alpha"] != 2 || batchCounts["beta"] != 1 {
+		t.Fatalf("batch overview = %#v, want alpha=2 beta=1", batchResponse.Batches)
 	}
 
 	now := time.Now()

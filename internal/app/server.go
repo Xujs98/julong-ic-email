@@ -2530,21 +2530,31 @@ func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateDomainMailboxes(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		DomainID string `json:"domain_id"`
-		Count    int    `json:"count"`
-		Label    string `json:"label"`
-		Note     string `json:"note"`
+		DomainID     string `json:"domain_id"`
+		RandomDomain bool   `json:"random_domain"`
+		Count        int    `json:"count"`
+		Label        string `json:"label"`
+		Note         string `json:"note"`
 	}
 	if err := decodeJSON(r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	domain, ok := s.store.FindDomainByID(payload.DomainID)
-	if !ok || !s.canAccessDomain(r, domain) {
-		writeError(w, http.StatusNotFound, errCode("domain_not_found", "域名不存在", false))
-		return
+	ownerID := requestOwnerID(r, s.store)
+	var domain Domain
+	var mailboxes []Mailbox
+	var err error
+	if payload.RandomDomain {
+		mailboxes, err = s.store.AddRandomDomainMailboxesForOwner(ownerID, payload.Label, payload.Note, payload.Count)
+	} else {
+		var ok bool
+		domain, ok = s.store.FindDomainByID(payload.DomainID)
+		if !ok || !s.canAccessDomain(r, domain) {
+			writeError(w, http.StatusNotFound, errCode("domain_not_found", "域名不存在", false))
+			return
+		}
+		mailboxes, err = s.store.AddDomainMailboxesForOwner(ownerID, domain.ID, payload.Label, payload.Note, payload.Count)
 	}
-	mailboxes, err := s.store.AddDomainMailboxesForOwner(requestOwnerID(r, s.store), domain.ID, payload.Label, payload.Note, payload.Count)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -2553,7 +2563,11 @@ func (s *Server) handleCreateDomainMailboxes(w http.ResponseWriter, r *http.Requ
 	for _, mailbox := range mailboxes {
 		out = append(out, s.publicMailbox(r, mailbox))
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"success": true, "domain": s.publicDomain(domain, s.scopedState(r)), "count": len(out), "mailboxes": out})
+	response := map[string]any{"success": true, "random_domain": payload.RandomDomain, "count": len(out), "mailboxes": out}
+	if !payload.RandomDomain {
+		response["domain"] = s.publicDomain(domain, s.scopedState(r))
+	}
+	writeJSON(w, http.StatusCreated, response)
 }
 
 func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
@@ -2601,6 +2615,9 @@ func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 			TotalAll:   len(htmlScopedBase),
 			TotalPages: totalPages(len(filtered), pageSize),
 		},
+	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("status")), StatusOutbound) {
+		response["batches"] = publicOutboundBatches(scopedBase)
 	}
 	writeJSON(w, http.StatusOK, response)
 }
@@ -2963,6 +2980,50 @@ func publicMailboxGroups(mailboxes []Mailbox, accountsByID map[string]Account, d
 		return strings.ToLower(groups[i].Title) < strings.ToLower(groups[j].Title)
 	})
 	return groups
+}
+
+func publicOutboundBatches(mailboxes []Mailbox) []publicMailboxBatch {
+	type batchSummary struct {
+		name      string
+		count     int
+		updatedAt time.Time
+	}
+	byName := make(map[string]batchSummary)
+	for _, mailbox := range mailboxes {
+		name := strings.TrimSpace(mailbox.OutboundBatch)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		summary := byName[key]
+		if summary.name == "" {
+			summary.name = name
+		}
+		summary.count++
+		updatedAt := mailbox.UpdatedAt
+		if updatedAt.IsZero() {
+			updatedAt = mailbox.CreatedAt
+		}
+		if updatedAt.After(summary.updatedAt) {
+			summary.updatedAt = updatedAt
+		}
+		byName[key] = summary
+	}
+	batches := make([]publicMailboxBatch, 0, len(byName))
+	for _, summary := range byName {
+		batches = append(batches, publicMailboxBatch{
+			Name:      summary.name,
+			Count:     summary.count,
+			UpdatedAt: formatTime(summary.updatedAt),
+		})
+	}
+	sort.Slice(batches, func(i, j int) bool {
+		if batches[i].UpdatedAt == batches[j].UpdatedAt {
+			return strings.ToLower(batches[i].Name) < strings.ToLower(batches[j].Name)
+		}
+		return batches[i].UpdatedAt > batches[j].UpdatedAt
+	})
+	return batches
 }
 
 func mailboxListAccountKey(mailbox Mailbox, accountsByID map[string]Account, domainsByID map[string]Domain) string {

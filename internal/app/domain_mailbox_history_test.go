@@ -161,3 +161,57 @@ func TestConcurrentDomainMailboxGenerationRemainsUnique(t *testing.T) {
 		seen[mailbox.Email] = struct{}{}
 	}
 }
+
+func TestRandomDomainMailboxGenerationUsesEnabledDomains(t *testing.T) {
+	store, err := NewFileStore(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.AddDomainForOwner("owner-1", "主域名", "one.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.AddDomainForOwner("owner-1", "备用域名", "two.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := store.AddDomainForOwner("owner-1", "停用域名", "disabled.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetDomainEnabled(disabled.ID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	locals := []string{"alpha", "bravo", "charlie", "delta"}
+	selected := []int{0, 1, 0, 1}
+	localCall := 0
+	selectCall := 0
+	mailboxes, err := store.addRandomDomainMailboxesForOwner("owner-1", "随机批次", "", len(locals), func() (string, error) {
+		local := locals[localCall]
+		localCall++
+		return local, nil
+	}, func(size int) (int, error) {
+		if size != 2 {
+			t.Fatalf("random domain pool size = %d, want 2", size)
+		}
+		index := selected[selectCall]
+		selectCall++
+		return index, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDomains := []string{first.ID, second.ID, first.ID, second.ID}
+	for i, mailbox := range mailboxes {
+		if mailbox.DomainID != wantDomains[i] {
+			t.Fatalf("mailbox[%d].domain_id = %q, want %q", i, mailbox.DomainID, wantDomains[i])
+		}
+		if mailbox.DomainID == disabled.ID {
+			t.Fatalf("mailbox generated on disabled domain: %#v", mailbox)
+		}
+	}
+	if history := store.Snapshot().DomainMailboxHistory; len(history) != len(locals) {
+		t.Fatalf("history = %#v, want %d entries", history, len(locals))
+	}
+}
