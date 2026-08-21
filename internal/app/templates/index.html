@@ -612,19 +612,36 @@
     .toolbar, .form { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px 18px; align-items: end; }
     .list-toolbar {
       display: grid;
-      grid-template-columns: minmax(280px, 520px) minmax(520px, 560px);
-      gap: 10px 12px;
+      grid-template-columns: minmax(0, 1.55fr) minmax(260px, .65fr);
+      gap: 18px 20px;
       align-items: start;
-      justify-content: space-between;
     }
-    .search-field { min-width: 0; max-width: none; }
+    .mailbox-workbench-intro { grid-column: 1 / -1; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; min-width: 0; }
+    .mailbox-workbench-heading { display: grid; gap: 6px; min-width: 0; }
+    .mailbox-workbench-kicker { color: var(--green-2); font-size: 10px; font-weight: 950; letter-spacing: .16em; text-transform: uppercase; }
+    .mailbox-workbench-heading strong { color: var(--text); font-size: 18px; font-weight: 950; letter-spacing: -.02em; }
+    .mailbox-workbench-heading p { max-width: 780px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .mailbox-workbench-mode { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--green) 30%, var(--line)); border-radius: 999px; color: var(--green-2); background: var(--dragon-accent-soft); font-size: 11px; font-weight: 950; }
+    .mailbox-workbench-mode::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 12%, transparent); }
+    .search-field { min-width: 0; max-width: none; color: var(--muted); font-size: 12px; font-weight: 800; }
+    .mailbox-search-input-wrap { position: relative; display: block; margin-top: 8px; }
+    .mailbox-search-input-wrap > svg { position: absolute; z-index: 1; left: 16px; top: 50%; width: 18px; height: 18px; color: var(--faint); pointer-events: none; transform: translateY(-50%); }
+    .mailbox-search-input-wrap input { width: 100%; min-height: 52px; padding: 11px 50px 11px 46px; border-radius: 16px; font-size: 14px; font-weight: 750; }
+    .mailbox-search-clear { position: absolute; z-index: 2; top: 50%; right: 10px; width: 34px; height: 34px; min-height: 34px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 10px; color: var(--muted); background: color-mix(in srgb, var(--th-bg) 84%, var(--panel)); box-shadow: none; transform: translateY(-50%); }
+    .mailbox-search-clear[hidden] { display: none; }
+    .mailbox-search-clear:hover { color: var(--green-2); background: var(--dragon-accent-soft-2); transform: translateY(-50%); }
+    .mailbox-search-clear svg { width: 16px; height: 16px; }
     .mailbox-filter-row { display: flex; gap: 8px; align-items: flex-end; justify-content: flex-end; min-width: 0; }
-    .mailbox-filter-field { width: 100%; color: var(--muted); font-size: 12px; font-weight: 700; }
-    .mailbox-html-state-filter { grid-column: 1; display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .mailbox-filter-field { width: 100%; color: var(--muted); font-size: 12px; font-weight: 800; }
+    .mailbox-filter-field select { min-height: 52px; margin-top: 8px; border-radius: 16px; }
+    .mailbox-html-state-filter { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 13px 15px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--panel) 76%, transparent); }
     .mailbox-html-state-filter[hidden] { display: none; }
     .mailbox-html-state-label { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-weight: 800; }
-    .mailbox-control-stack { grid-column: 2; display: grid; gap: 8px; justify-items: end; align-items: start; }
-    .mailbox-action-row { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; justify-content: flex-end; }
+    .mailbox-control-stack { grid-column: 1 / -1; width: 100%; display: grid; gap: 12px; min-width: 0; padding-top: 2px; }
+    .mailbox-control-group { width: 100%; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; align-items: center; min-width: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+    .mailbox-control-label { color: var(--faint); font-size: 10px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+    .mailbox-action-row { min-width: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+    .mailbox-action-row > button, .mailbox-action-row > details > summary { min-height: 42px; }
     .mailbox-search-hint { display: block; margin-top: 7px; color: var(--faint); font-size: 11px; font-weight: 650; line-height: 1.55; }
     .mailbox-search-hint code { color: var(--green-2); font-family: inherit; font-weight: 850; }
     .mailbox-column-picker { position: relative; }
@@ -645,7 +662,7 @@
     .mailbox-column-foot span { color: var(--faint); font-size: 11px; }
     .mailbox-column-reset { min-height: 36px; margin: 0; padding: 7px 12px; }
     @media (max-width: 620px) { .mailbox-column-menu { position: fixed; left: 16px; right: 16px; top: 110px; width: auto; } .mailbox-column-grid { grid-template-columns: 1fr; max-height: 58vh; overflow: auto; } }
-    .pager { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; justify-content: flex-end; color: var(--muted); font-size: 13px; }
+    .pager { min-width: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; color: var(--muted); font-size: 13px; }
     .pager button { padding: 8px 11px; border-radius: 8px; }
     #mailboxPageInfo { white-space: nowrap; }
     .mailbox-filter-field select { width: 100%; min-width: 180px; padding: 8px 10px; }
@@ -1466,7 +1483,26 @@
     .panel-head h2 { color: var(--text); font-size: 24px; font-weight: 950; }
     .panel-head p { margin-top: 10px; color: var(--muted); font-size: 16px; }
     .toolbar, .form, .field-grid { padding-left: 30px; padding-right: 30px; }
-    .list-toolbar { grid-template-columns: minmax(260px, 1fr) minmax(300px, .8fr); padding-top: 0; padding-bottom: 22px; }
+    .list-toolbar { grid-template-columns: minmax(0, 1.55fr) minmax(260px, .65fr); padding-top: 0; padding-bottom: 22px; }
+    .toolbar.mailbox-operations {
+      margin: 0 30px 24px;
+      padding: 22px;
+      overflow: visible;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background:
+        radial-gradient(circle at 100% 0, color-mix(in srgb, var(--green) 10%, transparent), transparent 34%),
+        color-mix(in srgb, var(--panel) 94%, var(--bg-soft));
+      box-shadow: 0 16px 40px color-mix(in srgb, var(--green) 6%, transparent);
+    }
+    .mailbox-workspace[data-mailbox-mode="outbound"] .mailbox-operations {
+      border-color: color-mix(in srgb, var(--green) 24%, var(--line));
+      background:
+        radial-gradient(circle at 100% 0, color-mix(in srgb, var(--green) 16%, transparent), transparent 38%),
+        linear-gradient(135deg, color-mix(in srgb, var(--panel) 96%, var(--green) 4%), var(--panel));
+    }
+    .mailbox-workspace[data-mailbox-mode="outbound"] .mailbox-workbench-mode { color: var(--on-accent); border-color: transparent; background: linear-gradient(135deg, var(--green), var(--green-2)); box-shadow: var(--dragon-accent-shadow); }
+    .mailbox-workspace[data-mailbox-mode="outbound"] .mailbox-workbench-kicker { letter-spacing: .19em; }
     .search-field, .mailbox-filter-field { color: var(--muted); }
     input, textarea, select { border-color: var(--line); border-radius: 13px; color: var(--text); background: var(--input-bg); min-height: 44px; }
     input::placeholder, textarea::placeholder { color: var(--faint); }
@@ -1721,6 +1757,9 @@
       .backend-status { width: auto; }
       .list-toolbar { grid-template-columns: 1fr; }
       .mailbox-control-stack { grid-column: 1; justify-items: start; }
+      .mailbox-workbench-intro { align-items: flex-start; }
+      .mailbox-control-group { grid-template-columns: 1fr; gap: 9px; align-items: start; }
+      .mailbox-action-row, .pager { justify-content: flex-start; }
       .mailbox-batch-bar { align-items: flex-start; flex-direction: column; }
       .mailbox-batch-actions { justify-content: flex-start; }
     }
@@ -1735,6 +1774,13 @@
       .view-section[data-view="overview"].active { padding: 18px; }
       .panel-head { padding: 24px 20px 16px; }
       .toolbar, .form, .field-grid { padding-left: 20px; padding-right: 20px; }
+      .toolbar.mailbox-operations { margin: 0 20px 20px; padding: 18px; border-radius: 18px; }
+      .mailbox-workbench-intro { display: grid; gap: 14px; }
+      .mailbox-workbench-mode { justify-self: start; }
+      .mailbox-search-hint { font-size: 10px; }
+      .mailbox-html-state-filter { align-items: flex-start; flex-direction: column; }
+      .mailbox-action-row > button, .mailbox-action-row > details { flex: 1 1 auto; }
+      .mailbox-action-row > button, .mailbox-action-row > details > summary { width: 100%; justify-content: center; }
       .table-wrap { margin-left: 20px; margin-right: 20px; }
       .mailbox-batch-bar { margin-left: 20px; margin-right: 20px; }
       .global-log-panel { margin-left: 16px; margin-right: 16px; }
@@ -2541,7 +2587,7 @@
           </section>
         </section>
 
-        <section class="view-section panel" data-view="mailboxes">
+        <section id="mailboxWorkspace" class="view-section panel mailbox-workspace" data-view="mailboxes" data-mailbox-mode="inventory">
           <div class="panel-head">
             <h2 id="mailboxPanelTitle">全部邮箱</h2>
             <p id="mailboxPanelSubtitle">查看尚未出库的邮箱库存，勾选后可批量出库。</p>
@@ -2550,10 +2596,22 @@
             <div class="commercial-hero-copy"><strong>邮箱资产运营台</strong><span>搜索、筛选、同步、出库与导出均在同一工作区完成，列表按最新业务更新时间优先。</span></div>
             <div class="commercial-hero-metrics"><div class="commercial-metric"><strong id="mailboxMetricCount">0</strong><span>当前结果</span></div><div class="commercial-metric"><strong id="mailboxSelectedMetric">0</strong><span>已选择</span></div><div class="commercial-metric"><strong id="mailboxModeMetric">库存</strong><span>工作模式</span></div></div>
           </div>
-          <div class="commercial-section-label">筛选与批量操作</div>
-          <div class="toolbar list-toolbar">
+          <div class="commercial-section-label">邮箱业务工作台</div>
+          <div class="toolbar list-toolbar mailbox-operations">
+            <div class="mailbox-workbench-intro">
+              <div class="mailbox-workbench-heading">
+                <span id="mailboxWorkbenchKicker" class="mailbox-workbench-kicker">MAILBOX INVENTORY</span>
+                <strong id="mailboxWorkbenchTitle">资产检索与库存调度</strong>
+                <p id="mailboxWorkbenchDescription">集中检索邮箱资产、同步收件状态并执行批量出库，操作区会根据当前业务模式自动调整。</p>
+              </div>
+              <span id="mailboxWorkbenchMode" class="mailbox-workbench-mode">库存运营</span>
+            </div>
             <label class="search-field">全局搜索邮箱
-              <input id="mailboxSearch" placeholder="邮箱/标签，或 [批次] && [已激活]" oninput="setMailboxSearch()">
+              <span class="mailbox-search-input-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+                <input id="mailboxSearch" placeholder="邮箱/标签，或 [批次] && [已激活]" oninput="setMailboxSearch()" onkeydown="handleMailboxSearchKeydown(event)" autocomplete="off">
+                <button id="mailboxSearchClear" class="mailbox-search-clear" type="button" onclick="clearMailboxSearch()" aria-label="清空搜索" title="清空搜索" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+              </span>
               <span class="mailbox-search-hint">联合搜索：<code>[批次]</code> 查批次，<code>![批次]</code> 排除批次，<code>[已激活]</code> / <code>![已激活]</code> 筛选 HTML 状态，使用 <code>&amp;&amp;</code> 组合条件。</span>
             </label>
             <div class="mailbox-filter-row">
@@ -2573,41 +2631,46 @@
               </div>
             </div>
             <div class="mailbox-control-stack">
-              <div class="mailbox-action-row">
-                <button id="mailboxBatchOverviewButton" type="button" class="mailbox-batches-trigger" onclick="openOutboundBatchOverview()" hidden>所有批次 <span id="mailboxBatchOverviewCount">0</span></button>
-                <button id="mailboxCleanupExpiredButton" type="button" class="danger" onclick="cleanupExpiredHTMLMailboxes()" hidden>清理全部已过期</button>
-                <button id="syncICloudMailboxesButton" onclick="syncICloudMailboxes()">同步已有邮箱</button>
-                <button id="mailboxExportAllButton" type="button" onclick="openMailboxExport('all')" hidden>全部导出</button>
-                <details id="mailboxColumnPicker" class="mailbox-column-picker">
-                  <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M9 5v14M15 5v14"/></svg>查看列</summary>
-                  <div class="mailbox-column-menu" onclick="event.stopPropagation()">
-                    <div class="mailbox-column-head"><div><strong>表格字段管理</strong><span>按业务场景自定义当前表格显示内容</span></div><span id="mailboxColumnVisibleCount" class="mailbox-column-count">0 列启用</span></div>
-                    <div class="mailbox-column-grid">
-                      <label class="mailbox-column-option">ID<input type="checkbox" data-mailbox-column-toggle="id" onchange="toggleMailboxColumn('id', this.checked)"></label>
-                      <label class="mailbox-column-option">标签<input type="checkbox" data-mailbox-column-toggle="label" onchange="toggleMailboxColumn('label', this.checked)"></label>
-                      <label class="mailbox-column-option">状态<input type="checkbox" data-mailbox-column-toggle="status" onchange="toggleMailboxColumn('status', this.checked)"></label>
-                      <label class="mailbox-column-option">邮箱<input type="checkbox" data-mailbox-column-toggle="email" onchange="toggleMailboxColumn('email', this.checked)"></label>
-                      <label class="mailbox-column-option">Apple 账号<input type="checkbox" data-mailbox-column-toggle="account" onchange="toggleMailboxColumn('account', this.checked)"></label>
-                      <label class="mailbox-column-option">批次<input type="checkbox" data-mailbox-column-toggle="batch" onchange="toggleMailboxColumn('batch', this.checked)"></label>
-                      <label class="mailbox-column-option">邮件<input type="checkbox" data-mailbox-column-toggle="messages" onchange="toggleMailboxColumn('messages', this.checked)"></label>
-                      <label class="mailbox-column-option"><span id="mailboxCreatedColumnLabel">创建时间</span><input type="checkbox" data-mailbox-column-toggle="created" onchange="toggleMailboxColumn('created', this.checked)"></label>
-                      <label class="mailbox-column-option">HTML 过期时间<input type="checkbox" data-mailbox-column-toggle="html" onchange="toggleMailboxColumn('html', this.checked)"></label>
-                      <label class="mailbox-column-option">取件码<input type="checkbox" data-mailbox-column-toggle="code" onchange="toggleMailboxColumn('code', this.checked)"></label>
-                      <label class="mailbox-column-option">操作<input type="checkbox" data-mailbox-column-toggle="actions" onchange="toggleMailboxColumn('actions', this.checked)"></label>
+              <div class="mailbox-control-group">
+                <span class="mailbox-control-label">业务操作</span>
+                <div class="mailbox-action-row">
+                  <button id="mailboxBatchOverviewButton" type="button" class="mailbox-batches-trigger" onclick="openOutboundBatchOverview()" hidden>所有批次 <span id="mailboxBatchOverviewCount">0</span></button>
+                  <button id="mailboxCleanupExpiredButton" type="button" class="danger" onclick="cleanupExpiredHTMLMailboxes()" hidden>清理全部已过期</button>
+                  <button id="syncICloudMailboxesButton" onclick="syncICloudMailboxes()">同步已有邮箱</button>
+                  <button id="mailboxExportAllButton" type="button" onclick="openMailboxExport('all')" hidden>全部导出</button>
+                  <details id="mailboxColumnPicker" class="mailbox-column-picker">
+                    <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M9 5v14M15 5v14"/></svg>查看列</summary>
+                    <div class="mailbox-column-menu" onclick="event.stopPropagation()">
+                      <div class="mailbox-column-head"><div><strong>表格字段管理</strong><span>按业务场景自定义当前表格显示内容</span></div><span id="mailboxColumnVisibleCount" class="mailbox-column-count">0 列启用</span></div>
+                      <div class="mailbox-column-grid">
+                        <label class="mailbox-column-option">ID<input type="checkbox" data-mailbox-column-toggle="id" onchange="toggleMailboxColumn('id', this.checked)"></label>
+                        <label class="mailbox-column-option">标签<input type="checkbox" data-mailbox-column-toggle="label" onchange="toggleMailboxColumn('label', this.checked)"></label>
+                        <label class="mailbox-column-option">状态<input type="checkbox" data-mailbox-column-toggle="status" onchange="toggleMailboxColumn('status', this.checked)"></label>
+                        <label class="mailbox-column-option">邮箱<input type="checkbox" data-mailbox-column-toggle="email" onchange="toggleMailboxColumn('email', this.checked)"></label>
+                        <label class="mailbox-column-option">Apple 账号<input type="checkbox" data-mailbox-column-toggle="account" onchange="toggleMailboxColumn('account', this.checked)"></label>
+                        <label class="mailbox-column-option">批次<input type="checkbox" data-mailbox-column-toggle="batch" onchange="toggleMailboxColumn('batch', this.checked)"></label>
+                        <label class="mailbox-column-option">邮件<input type="checkbox" data-mailbox-column-toggle="messages" onchange="toggleMailboxColumn('messages', this.checked)"></label>
+                        <label class="mailbox-column-option"><span id="mailboxCreatedColumnLabel">创建时间</span><input type="checkbox" data-mailbox-column-toggle="created" onchange="toggleMailboxColumn('created', this.checked)"></label>
+                        <label class="mailbox-column-option">HTML 过期时间<input type="checkbox" data-mailbox-column-toggle="html" onchange="toggleMailboxColumn('html', this.checked)"></label>
+                        <label class="mailbox-column-option">取件码<input type="checkbox" data-mailbox-column-toggle="code" onchange="toggleMailboxColumn('code', this.checked)"></label>
+                        <label class="mailbox-column-option">操作<input type="checkbox" data-mailbox-column-toggle="actions" onchange="toggleMailboxColumn('actions', this.checked)"></label>
+                      </div>
+                      <div class="mailbox-column-foot"><span>选择会自动保存到当前浏览器</span><button type="button" class="mailbox-column-reset" onclick="resetMailboxColumns()">恢复默认</button></div>
                     </div>
-                    <div class="mailbox-column-foot"><span>选择会自动保存到当前浏览器</span><button type="button" class="mailbox-column-reset" onclick="resetMailboxColumns()">恢复默认</button></div>
-                  </div>
-                </details>
-                <button onclick="clearMailboxSearch()">清空搜索</button>
+                  </details>
+                </div>
               </div>
-              <div class="pager">
-                <label class="page-size-control">每页
-                  <input id="mailboxPageSize" type="number" min="1" max="500" value="10" onchange="setMailboxPageSize()">
-                </label>
-                <button type="button" onclick="saveCreateSettings()">保存配置</button>
-                <button id="mailboxPrevPage" onclick="changeMailboxPage(-1)">上一页</button>
-                <span id="mailboxPageInfo">第 1/1 页</span>
-                <button id="mailboxNextPage" onclick="changeMailboxPage(1)">下一页</button>
+              <div class="mailbox-control-group">
+                <span class="mailbox-control-label">分页管理</span>
+                <div class="pager">
+                  <label class="page-size-control">每页
+                    <input id="mailboxPageSize" type="number" min="1" max="500" value="10" onchange="setMailboxPageSize()">
+                  </label>
+                  <button type="button" onclick="saveCreateSettings()">保存配置</button>
+                  <button id="mailboxPrevPage" onclick="changeMailboxPage(-1)">上一页</button>
+                  <span id="mailboxPageInfo">第 1/1 页</span>
+                  <button id="mailboxNextPage" onclick="changeMailboxPage(1)">下一页</button>
+                </div>
               </div>
             </div>
           </div>
@@ -3148,12 +3211,22 @@
 
     function renderMailboxViewMode() {
       const outbound = activeView === 'outbound';
+      if ($('mailboxWorkspace')) $('mailboxWorkspace').dataset.mailboxMode = outbound ? 'outbound' : 'inventory';
       if ($('mailboxPanelTitle')) $('mailboxPanelTitle').textContent = outbound ? '取件码与发货' : '全部邮箱';
       if ($('mailboxPanelSubtitle')) {
         $('mailboxPanelSubtitle').textContent = outbound
           ? '这里集中显示已出库邮箱，可继续查询邮件、验证码并处理发货。'
           : '查看尚未出库的邮箱库存，勾选后可批量出库。';
       }
+      if ($('mailboxWorkbenchKicker')) $('mailboxWorkbenchKicker').textContent = outbound ? 'OUTBOUND DELIVERY CENTER' : 'MAILBOX INVENTORY';
+      if ($('mailboxWorkbenchTitle')) $('mailboxWorkbenchTitle').textContent = outbound ? '交付检索与出库管理' : '资产检索与库存调度';
+      if ($('mailboxWorkbenchDescription')) {
+        $('mailboxWorkbenchDescription').textContent = outbound
+          ? '按批次、邮箱和 HTML 状态快速定位已出库资产，统一完成同步、导出、取码与交付管理。'
+          : '集中检索邮箱资产、同步收件状态并执行批量出库，操作区会根据当前业务模式自动调整。';
+      }
+      if ($('mailboxWorkbenchMode')) $('mailboxWorkbenchMode').textContent = outbound ? '交付运营' : '库存运营';
+      if ($('mailboxModeMetric')) $('mailboxModeMetric').textContent = outbound ? '出库' : '库存';
       if ($('mailboxBatchOutboundButton')) $('mailboxBatchOutboundButton').hidden = outbound;
       const createdColumnTitle = outbound ? '更新时间' : '创建时间';
       if ($('mailboxCreatedColumnTitle')) $('mailboxCreatedColumnTitle').textContent = createdColumnTitle;
@@ -4942,6 +5015,14 @@
 
     function syncMailboxSearchInput() {
       if ($('mailboxSearch')) $('mailboxSearch').value = activeMailboxSearchValue();
+      updateMailboxSearchClearButton();
+    }
+
+    function updateMailboxSearchClearButton() {
+      const input = $('mailboxSearch');
+      const clearButton = $('mailboxSearchClear');
+      if (!clearButton) return;
+      clearButton.hidden = !input || !input.value.trim();
     }
 
     function setMailboxSearch() {
@@ -4951,11 +5032,18 @@
       } else {
         inventoryMailboxSearch = value;
       }
+      updateMailboxSearchClearButton();
       mailboxPage = 1;
       if (mailboxSearchTimer) clearTimeout(mailboxSearchTimer);
       mailboxSearchTimer = setTimeout(() => {
         loadMailboxPage().catch(err => log('邮箱搜索失败：' + err.message));
       }, 260);
+    }
+
+    function handleMailboxSearchKeydown(event) {
+      if (event.key !== 'Escape' || !($('mailboxSearch') && $('mailboxSearch').value)) return;
+      event.preventDefault();
+      clearMailboxSearch();
     }
 
     function setMailboxHTMLStateFilter(value) {
@@ -4968,6 +5056,10 @@
     }
 
     function clearMailboxSearch() {
+      if (mailboxSearchTimer) {
+        clearTimeout(mailboxSearchTimer);
+        mailboxSearchTimer = null;
+      }
       if (activeView === 'outbound') {
         outboundMailboxSearch = '';
       } else {
@@ -4975,6 +5067,7 @@
       }
       syncMailboxSearchInput();
       mailboxPage = 1;
+      if ($('mailboxSearch')) $('mailboxSearch').focus({preventScroll: true});
       loadMailboxPage().catch(err => log('清空邮箱搜索失败：' + err.message));
     }
 

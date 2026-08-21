@@ -438,6 +438,41 @@ func TestManagementWorkbenchCommercialUIAndIndependentLogs(t *testing.T) {
 	}
 }
 
+func TestMailboxInventoryAndOutboundUseCommercialResponsiveWorkbench(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`id="mailboxWorkspace" class="view-section panel mailbox-workspace"`,
+		`data-mailbox-mode="inventory"`,
+		`class="toolbar list-toolbar mailbox-operations"`,
+		`id="mailboxWorkbenchKicker"`,
+		`id="mailboxWorkbenchTitle"`,
+		`id="mailboxWorkbenchMode"`,
+		`class="mailbox-control-group"`,
+		`class="mailbox-search-input-wrap"`,
+		`id="mailboxSearchClear"`,
+		`aria-label="清空搜索"`,
+		`function updateMailboxSearchClearButton()`,
+		`function handleMailboxSearchKeydown(event)`,
+		`clearButton.hidden = !input || !input.value.trim();`,
+		`dataset.mailboxMode = outbound ? 'outbound' : 'inventory'`,
+		`OUTBOUND DELIVERY CENTER`,
+		`.mailbox-control-stack { grid-column: 1 / -1;`,
+		`flex-wrap: wrap;`,
+		`.mailbox-workspace[data-mailbox-mode="outbound"] .mailbox-operations`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("commercial mailbox workbench source missing %q", want)
+		}
+	}
+	if strings.Contains(source, `<button onclick="clearMailboxSearch()">清空搜索</button>`) {
+		t.Fatal("mailbox clear search action should live inside the search input instead of the business action row")
+	}
+}
+
 func TestSystemThemePersistsAndPublicMailboxUsesIt(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
