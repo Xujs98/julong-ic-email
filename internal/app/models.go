@@ -26,18 +26,19 @@ const (
 )
 
 type State struct {
-	NextID           int               `json:"next_id"`
-	Users            []User            `json:"users,omitempty"`
-	WebSessions      []WebSession      `json:"web_sessions,omitempty"`
-	Accounts         []Account         `json:"accounts"`
-	Domains          []Domain          `json:"domains,omitempty"`
-	Mailboxes        []Mailbox         `json:"mailboxes"`
-	Messages         []Message         `json:"messages"`
-	ICloudSession    *ICloudSession    `json:"icloud_session,omitempty"`
-	ICloudSessions   []ICloudSession   `json:"icloud_sessions,omitempty"`
-	CreateSettings   []CreateSettings  `json:"create_settings,omitempty"`
-	SystemSettings   SystemSettings    `json:"system_settings,omitempty"`
-	MailboxHTMLLinks []MailboxHTMLLink `json:"mailbox_html_links,omitempty"`
+	NextID               int                         `json:"next_id"`
+	Users                []User                      `json:"users,omitempty"`
+	WebSessions          []WebSession                `json:"web_sessions,omitempty"`
+	Accounts             []Account                   `json:"accounts"`
+	Domains              []Domain                    `json:"domains,omitempty"`
+	Mailboxes            []Mailbox                   `json:"mailboxes"`
+	DomainMailboxHistory []DomainMailboxHistoryEntry `json:"domain_mailbox_history,omitempty"`
+	Messages             []Message                   `json:"messages"`
+	ICloudSession        *ICloudSession              `json:"icloud_session,omitempty"`
+	ICloudSessions       []ICloudSession             `json:"icloud_sessions,omitempty"`
+	CreateSettings       []CreateSettings            `json:"create_settings,omitempty"`
+	SystemSettings       SystemSettings              `json:"system_settings,omitempty"`
+	MailboxHTMLLinks     []MailboxHTMLLink           `json:"mailbox_html_links,omitempty"`
 }
 
 // SystemSettings controls public registration, message retention, the
@@ -149,6 +150,16 @@ type Mailbox struct {
 	LastCodeAt        time.Time `json:"last_code_at,omitempty"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// DomainMailboxHistoryEntry permanently reserves a generated domain mailbox
+// address, even after the corresponding mailbox, owner, or domain is deleted.
+type DomainMailboxHistoryEntry struct {
+	Email       string    `json:"email"`
+	DomainID    string    `json:"domain_id,omitempty"`
+	DomainName  string    `json:"domain_name,omitempty"`
+	OwnerID     string    `json:"owner_id,omitempty"`
+	GeneratedAt time.Time `json:"generated_at"`
 }
 
 func normalizeMailboxProvider(value string) string {

@@ -26,22 +26,23 @@ var supportedUIThemes = map[string]struct{}{
 }
 
 const (
-	defaultAdminPath            = "/manage"
-	defaultDomainSMTPHost       = "0.0.0.0"
-	defaultDomainSMTPPort       = 2525
-	defaultDomainSMTPMaxBytes   = 10 * 1024 * 1024
-	minDomainSMTPPort           = 1024
-	maxDomainSMTPPort           = 65535
-	minDomainSMTPMaxBytes       = 64 * 1024
-	maxDomainSMTPMaxBytes       = 100 * 1024 * 1024
-	secondsPerDay               = 24 * 60 * 60
-	defaultHTMLLinkTTLSeconds   = 7 * secondsPerDay
-	maxHTMLLinkTTLSeconds       = 3650 * secondsPerDay
-	defaultHTMLPageMessageLimit = 50
-	maxHTMLPageMessageLimit     = 500
-	defaultHTMLPageRefresh      = 20
-	minHTMLPageRefresh          = 5
-	maxHTMLPageRefresh          = 3600
+	defaultAdminPath             = "/manage"
+	defaultDomainSMTPHost        = "0.0.0.0"
+	defaultDomainSMTPPort        = 2525
+	defaultDomainSMTPMaxBytes    = 10 * 1024 * 1024
+	minDomainSMTPPort            = 1024
+	maxDomainSMTPPort            = 65535
+	minDomainSMTPMaxBytes        = 64 * 1024
+	maxDomainSMTPMaxBytes        = 100 * 1024 * 1024
+	secondsPerDay                = 24 * 60 * 60
+	defaultHTMLLinkTTLSeconds    = 7 * secondsPerDay
+	maxHTMLLinkTTLSeconds        = 3650 * secondsPerDay
+	defaultHTMLPageMessageLimit  = 50
+	maxHTMLPageMessageLimit      = 500
+	defaultHTMLPageRefresh       = 20
+	minHTMLPageRefresh           = 5
+	maxHTMLPageRefresh           = 3600
+	domainMailboxAttemptsPerItem = 100
 )
 
 func defaultSystemSettings() SystemSettings {
@@ -202,6 +203,9 @@ func (s *FileStore) load() error {
 		changed = true
 	}
 	if s.migrateMailboxProvidersLocked() {
+		changed = true
+	}
+	if s.migrateDomainMailboxHistoryLocked(now) {
 		changed = true
 	}
 	linksChanged, err := s.ensureMailboxHTMLLinksLocked(now)
@@ -807,6 +811,7 @@ func (s *FileStore) SetPath(path string) (State, error) {
 			next.NextID = 1
 		}
 		s.state = next
+		s.migrateDomainMailboxHistoryLocked(time.Now())
 	case err == nil:
 		s.state = current
 	case errors.Is(err, os.ErrNotExist):
@@ -949,8 +954,18 @@ func (s *FileStore) DeleteDomain(id string) error {
 }
 
 func (s *FileStore) AddDomainMailboxesForOwner(ownerID, domainID, label, note string, count int) ([]Mailbox, error) {
+	return s.addDomainMailboxesForOwner(ownerID, domainID, label, note, count, func() (string, error) {
+		return randomToken(9)
+	})
+}
+
+func (s *FileStore) addDomainMailboxesForOwner(ownerID, domainID, label, note string, count int, generateLocal func() (string, error)) ([]Mailbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.addDomainMailboxesForOwnerLocked(ownerID, domainID, label, note, count, generateLocal)
+}
+
+func (s *FileStore) addDomainMailboxesForOwnerLocked(ownerID, domainID, label, note string, count int, generateLocal func() (string, error)) ([]Mailbox, error) {
 	if count < 1 {
 		count = 1
 	}
@@ -982,23 +997,38 @@ func (s *FileStore) AddDomainMailboxesForOwner(ownerID, domainID, label, note st
 		label = "域名邮箱"
 	}
 	note = strings.TrimSpace(note)
-	mailboxes := make([]Mailbox, 0, count)
-	for len(mailboxes) < count {
-		local, err := randomToken(9)
+	reserved := make(map[string]struct{}, len(s.state.Mailboxes)+len(s.state.DomainMailboxHistory)+count)
+	for _, mailbox := range s.state.Mailboxes {
+		email := strings.ToLower(strings.TrimSpace(mailbox.Email))
+		if email != "" {
+			reserved[email] = struct{}{}
+		}
+	}
+	for _, entry := range s.state.DomainMailboxHistory {
+		email := strings.ToLower(strings.TrimSpace(entry.Email))
+		if email != "" {
+			reserved[email] = struct{}{}
+		}
+	}
+	candidates := make([]string, 0, count)
+	maxAttempts := count * domainMailboxAttemptsPerItem
+	for attempts := 0; len(candidates) < count && attempts < maxAttempts; attempts++ {
+		local, err := generateLocal()
 		if err != nil {
 			return nil, err
 		}
-		email := strings.ToLower("mail-" + local + "@" + domain.Name)
-		exists := false
-		for _, mailbox := range s.state.Mailboxes {
-			if strings.EqualFold(mailbox.Email, email) {
-				exists = true
-				break
-			}
-		}
-		if exists {
+		email := strings.ToLower("mail-" + strings.TrimSpace(local) + "@" + domain.Name)
+		if _, exists := reserved[email]; exists {
 			continue
 		}
+		reserved[email] = struct{}{}
+		candidates = append(candidates, email)
+	}
+	if len(candidates) != count {
+		return nil, errCode("domain_mailbox_generation_exhausted", "域名邮箱地址生成冲突次数过多，请重试", true)
+	}
+	mailboxes := make([]Mailbox, 0, count)
+	for _, email := range candidates {
 		apiToken, err := randomToken(24)
 		if err != nil {
 			return nil, err
@@ -1024,12 +1054,94 @@ func (s *FileStore) AddDomainMailboxesForOwner(ownerID, domainID, label, note st
 		}
 		s.state.Mailboxes = append(s.state.Mailboxes, mailbox)
 		s.state.MailboxHTMLLinks = append(s.state.MailboxHTMLLinks, link)
+		s.state.DomainMailboxHistory = append(s.state.DomainMailboxHistory, DomainMailboxHistoryEntry{
+			Email:       mailbox.Email,
+			DomainID:    domain.ID,
+			DomainName:  domain.Name,
+			OwnerID:     mailbox.OwnerID,
+			GeneratedAt: now,
+		})
 		mailboxes = append(mailboxes, mailbox)
 	}
 	if err := s.saveLocked(); err != nil {
 		return nil, err
 	}
 	return mailboxes, nil
+}
+
+func (s *FileStore) migrateDomainMailboxHistoryLocked(now time.Time) bool {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	original := s.state.DomainMailboxHistory
+	normalized := make([]DomainMailboxHistoryEntry, 0, len(original)+len(s.state.Mailboxes))
+	indexes := make(map[string]int, len(original)+len(s.state.Mailboxes))
+	merge := func(entry DomainMailboxHistoryEntry) {
+		entry.Email = strings.ToLower(strings.TrimSpace(entry.Email))
+		entry.DomainID = strings.TrimSpace(entry.DomainID)
+		entry.DomainName = strings.ToLower(strings.TrimSpace(entry.DomainName))
+		entry.OwnerID = strings.TrimSpace(entry.OwnerID)
+		if entry.Email == "" {
+			return
+		}
+		if index, exists := indexes[entry.Email]; exists {
+			current := &normalized[index]
+			if current.DomainID == "" {
+				current.DomainID = entry.DomainID
+			}
+			if current.DomainName == "" {
+				current.DomainName = entry.DomainName
+			}
+			if current.OwnerID == "" {
+				current.OwnerID = entry.OwnerID
+			}
+			if current.GeneratedAt.IsZero() || (!entry.GeneratedAt.IsZero() && entry.GeneratedAt.Before(current.GeneratedAt)) {
+				current.GeneratedAt = entry.GeneratedAt
+			}
+			return
+		}
+		indexes[entry.Email] = len(normalized)
+		normalized = append(normalized, entry)
+	}
+	for _, entry := range original {
+		merge(entry)
+	}
+	domainNames := make(map[string]string, len(s.state.Domains))
+	for _, domain := range s.state.Domains {
+		domainNames[domain.ID] = strings.ToLower(strings.TrimSpace(domain.Name))
+	}
+	for _, mailbox := range s.state.Mailboxes {
+		if mailbox.ProviderKind() != MailboxProviderDomain {
+			continue
+		}
+		generatedAt := mailbox.CreatedAt
+		if generatedAt.IsZero() {
+			generatedAt = now
+		}
+		merge(DomainMailboxHistoryEntry{
+			Email:       mailbox.Email,
+			DomainID:    mailbox.DomainID,
+			DomainName:  domainNames[mailbox.DomainID],
+			OwnerID:     mailbox.OwnerID,
+			GeneratedAt: generatedAt,
+		})
+	}
+	for i := range normalized {
+		if normalized[i].GeneratedAt.IsZero() {
+			normalized[i].GeneratedAt = now
+		}
+	}
+	changed := len(normalized) != len(original)
+	if !changed {
+		for i := range normalized {
+			if normalized[i] != original[i] {
+				changed = true
+				break
+			}
+		}
+	}
+	s.state.DomainMailboxHistory = normalized
+	return changed
 }
 
 func (s *FileStore) AddMailbox(accountID, label, email string) (Mailbox, error) {
@@ -1906,6 +2018,7 @@ func cloneState(in State) State {
 	out.Accounts = append([]Account(nil), in.Accounts...)
 	out.Domains = append([]Domain(nil), in.Domains...)
 	out.Mailboxes = append([]Mailbox(nil), in.Mailboxes...)
+	out.DomainMailboxHistory = append([]DomainMailboxHistoryEntry(nil), in.DomainMailboxHistory...)
 	out.Messages = append([]Message(nil), in.Messages...)
 	if in.ICloudSession != nil {
 		session := cloneICloudSession(*in.ICloudSession)
