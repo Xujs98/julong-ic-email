@@ -2545,7 +2545,7 @@
                   <span class="settings-toggle-copy"><strong>启用 Cloudflare 转发收件</strong><small>启用后只接受通过签名校验的 Worker 请求。</small></span>
                 </label>
                 <div class="field-grid forwarding-fields">
-                  <label>接收域名<input id="forwardingDomain" placeholder="example.com" oninput="markForwardingDirty()"></label>
+                  <label>主接收域名（多域名共用入口）<input id="forwardingDomain" placeholder="example.com" oninput="markForwardingDirty()"></label>
                   <label>Worker 地址<input id="forwardingWorkerURL" placeholder="https://mail-forwarder.example.workers.dev" oninput="markForwardingDirty()"></label>
                   <label class="full">默认外部转发邮箱（选填）<input id="forwardingTargetEmail" type="email" placeholder="name@example.com" oninput="markForwardingDirty()"></label>
                   <label class="full">矩龙接收 API
@@ -3562,6 +3562,7 @@
       forwardingHydrating = true;
       forwardingSettings = settings;
       const mailboxes = settings.mailboxes || [];
+      const domains = settings.domains || [];
       if ($('forwardingEnabled')) $('forwardingEnabled').checked = !!settings.enabled;
       if ($('forwardingDomain')) $('forwardingDomain').value = settings.domain || '';
       if ($('forwardingWorkerURL')) $('forwardingWorkerURL').value = settings.worker_url || '';
@@ -3587,7 +3588,7 @@
           ? (settings.cloudflare_setup_ready ? '转发收件入口已启用' : '转发入口已启用，仍需完成域名或邮箱配置')
           : '转发收件当前已关闭';
         const detail = settings.enabled
-          ? `接收 API 已就绪 · ${mailboxes.length} 个域名邮箱 · HMAC 密钥${settings.secret_configured ? '已配置' : '未配置'}`
+          ? `接收 API 已就绪 · ${domains.length} 个接收域名 · ${mailboxes.length} 个域名邮箱 · HMAC 密钥${settings.secret_configured ? '已配置' : '未配置'}`
           : '保存并开启后，Cloudflare Worker 才能投递新邮件。';
         banner.innerHTML = `<span class="forwarding-pulse"></span><strong>${esc(title)}</strong><small>${esc(detail)}</small>`;
       }

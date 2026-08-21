@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -187,10 +188,6 @@ func (s *Server) handleForwardingInbound(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	domain := strings.ToLower(strings.TrimSpace(payload.To[strings.LastIndex(payload.To, "@")+1:]))
-	if configuredDomain := strings.ToLower(strings.TrimSpace(settings.ForwardingDomain)); configuredDomain != "" && domain != configuredDomain {
-		writeError(w, http.StatusNotFound, errCode("forwarding_domain_mismatch", "收件域名与转发配置不匹配", false))
-		return
-	}
 	if _, ok := s.store.FindEnabledDomainByName(domain); !ok {
 		writeError(w, http.StatusNotFound, errCode("forwarding_domain_not_found", "收件域名未接入矩龙邮箱", false))
 		return
@@ -278,6 +275,13 @@ func (s *Server) forwardingSettingsResponse(r *http.Request) map[string]any {
 func (s *Server) forwardingSettingsResponseWith(settings SystemSettings, r *http.Request) map[string]any {
 	mailboxes := make([]map[string]any, 0)
 	state := s.store.Snapshot()
+	domains := make([]string, 0)
+	for _, domain := range state.Domains {
+		if domain.Enabled {
+			domains = append(domains, domain.Name)
+		}
+	}
+	sort.Strings(domains)
 	for _, mailbox := range state.Mailboxes {
 		if mailbox.ProviderKind() != MailboxProviderDomain {
 			continue
@@ -303,6 +307,7 @@ func (s *Server) forwardingSettingsResponseWith(settings SystemSettings, r *http
 	return map[string]any{
 		"enabled":                settings.ForwardingEnabled,
 		"domain":                 settings.ForwardingDomain,
+		"domains":                domains,
 		"worker_url":             settings.ForwardingWorkerURL,
 		"target_email":           settings.ForwardingTargetEmail,
 		"endpoint_url":           endpoint,
@@ -312,7 +317,7 @@ func (s *Server) forwardingSettingsResponseWith(settings SystemSettings, r *http
 		"received_count":         settings.ForwardingReceivedCount,
 		"last_received_at":       formatTime(settings.ForwardingLastReceivedAt),
 		"mailboxes":              mailboxes,
-		"cloudflare_setup_ready": settings.ForwardingEnabled && settings.ForwardingDomain != "" && len(mailboxes) > 0,
+		"cloudflare_setup_ready": settings.ForwardingEnabled && settings.ForwardingDomain != "" && len(domains) > 0 && len(mailboxes) > 0,
 	}
 }
 

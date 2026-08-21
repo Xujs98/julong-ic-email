@@ -21,7 +21,7 @@
 - 隐私邮箱创建：优先调用 Apple Account 新接口创建，账号只有旧登录态时回落 iCloud Hide My Email `generate + reserve`。
 - 域名资产管理：在矩龙邮箱原有商业化工作台接入、启停和删除收件域名；面板提供 MX/A DNS 指引、SMTP 服务状态与域名邮箱数量。
 - 域名邮箱生成与收件：按已启用域名批量生成地址；内置 receive-only SMTP 服务只接收已生成且启用的地址，保留纯文本/HTML 邮件并复用现有邮件弹窗、HTML 接码页和单邮箱取码 API。
-- Cloudflare 转发收件：左侧“转发邮箱”提供 Email Routing/Worker 配置、HMAC 密钥轮换、入站测试、收件统计和可收件地址列表；`cloudflare/forwarding-worker.ts` 将 Cloudflare 收到的原始 MIME 通过 HTTPS 投递到矩龙邮箱，支持可选外部副本转发。接入模型参考 [cloudflare_temp_email](https://github.com/dreamhunter2333/cloudflare_temp_email) 的 Email Worker/Email Routing 思路，本项目保留自己的 Go 存储与商业化 UI。
+- Cloudflare 转发收件：左侧“转发邮箱”提供 Email Routing/Worker 配置、HMAC 密钥轮换、入站测试、收件统计和可收件地址列表；`cloudflare/forwarding-worker.ts` 将 Cloudflare 收到的原始 MIME 通过 HTTPS 投递到矩龙邮箱，支持多个已接入域名共用同一 Worker 和签名密钥，并支持可选外部副本转发。接入模型参考 [cloudflare_temp_email](https://github.com/dreamhunter2333/cloudflare_temp_email) 的 Email Worker/Email Routing 思路，本项目保留自己的 Go 存储与商业化 UI。
 - 批量/定时创建：可勾选多个 Apple 登录态；手动创建会让选中账号同时跑一轮，定时只设置间隔，失败账号只在本次定时创建中临时跳过，其他账号继续创建，直到本次账号全部失败后等待下一次。
 - 邮件同步：创建邮箱的 Apple 登录态只用于创建；收件使用 iCloud 邮箱账号 + App 专用密码，通过 IMAP 监听和同步邮件。默认只保存验证码邮件，管理员关闭过滤后会保存隐藏邮箱收到的全部邮件，取码 API 仍只提取验证码。
 - 取码 API：每个隐私邮箱自动生成独立 `mailbox_key` 和 API 地址。
@@ -160,6 +160,8 @@ Copy-Item .\config.example.json .\config.json
 2. 在矩龙后台开启转发收件，填写接收域名，复制 `APP_ENDPOINT` 和签名密钥。
 3. 将 `cloudflare/wrangler.toml.example` 复制为 `wrangler.toml`，配置 `APP_ENDPOINT`，使用 `npx wrangler secret put FORWARDING_SECRET` 保存密钥。
 4. 执行 `npx wrangler deploy`，在 Email Routing 中将 Catch-all 或指定地址发送到该 Worker。
+
+新增第二个及后续域名时，无需重复部署 Worker 或更换 `FORWARDING_SECRET`：先在“域名邮箱”接入新域名并生成地址，再将新域名托管到 Cloudflare，为该 Zone 启用 Email Routing，并把 Catch-all 指向同一个 Worker。入站接口会依据项目中已启用的域名和实际邮箱地址校验收件人。
 5. 可选设置 `FORWARD_TO` 将邮件同时投递到外部邮箱；本地矩龙邮箱副本始终先入库。
 
 普通 Cloudflare 橙云代理不代理 SMTP；收件必须使用 Email Routing + Email Worker。Worker 入口默认是 `POST /api/v1/forwarding/inbound`，仅接受时间窗口内的 HMAC 签名请求。
