@@ -3458,6 +3458,43 @@ func TestICloudClientDeletePrivacyMailboxAcceptsEmptyMutationResponses(t *testin
 	}
 }
 
+func TestICloudClientDeletePrivacyMailboxUsesSavedICloudWebLoginState(t *testing.T) {
+	var mutationCalls int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v2/hme/list":
+			_, _ = w.Write([]byte(`{"success":true,"result":{"hmeEmails":[{"anonymousId":"state-only","hme":"State.Only@icloud.com","isActive":true}]}}`))
+		case "POST /v1/hme/deactivate", "POST /v1/hme/delete":
+			mutationCalls++
+			_, _ = w.Write([]byte(`{"success":true,"result":{}}`))
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	result, err := (&ICloudClient{client: ts.Client()}).DeletePrivacyMailbox(t.Context(), ICloudSession{
+		PremiumMailBaseURL: ts.URL,
+		DSID:               "state-only-dsid",
+		Host:               "www.icloud.com",
+		LoginStates: []LoginState{{
+			Kind:    LoginStateICloudWeb,
+			Host:    "www.icloud.com",
+			Cookies: []SessionCookie{{Name: "session", Value: "state-cookie", Domain: "127.0.0.1", Path: "/"}},
+		}},
+	}, "state.only@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mutationCalls != 2 {
+		t.Fatalf("mutation calls = %d, want deactivate and delete", mutationCalls)
+	}
+	if !result.Found || !result.Deactivated || !result.Deleted || result.AlreadyMissing {
+		t.Fatalf("delete result = %+v", result)
+	}
+}
+
 func TestICloudClientListPrivacyMailboxesRetriesEOF(t *testing.T) {
 	attempts := 0
 	client := &ICloudClient{client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {

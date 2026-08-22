@@ -227,7 +227,8 @@ func withAppleAccountLoginState(session ICloudSession, next LoginState) ICloudSe
 }
 
 func (c *ICloudClient) CreatePrivacyMailbox(ctx context.Context, session ICloudSession, label, note string) (ICloudRemoteMailbox, error) {
-	if strings.TrimSpace(session.PremiumMailBaseURL) == "" || strings.TrimSpace(session.DSID) == "" || len(session.Cookies) == 0 {
+	session, hasICloudWebLogin := effectiveICloudWebSession(session)
+	if strings.TrimSpace(session.PremiumMailBaseURL) == "" || strings.TrimSpace(session.DSID) == "" || !hasICloudWebLogin {
 		return ICloudRemoteMailbox{}, errCode("icloud_session_missing", "未保存 iCloud 登录态，请先协议登录", true)
 	}
 	if !session.IsICloudPlus || !session.CanCreateHME {
@@ -666,7 +667,8 @@ func (c *ICloudClient) callAppleAccountPortalOnce(ctx context.Context, loginStat
 }
 
 func (c *ICloudClient) ListPrivacyMailboxes(ctx context.Context, session ICloudSession) ([]ICloudRemoteMailbox, error) {
-	if strings.TrimSpace(session.PremiumMailBaseURL) == "" || strings.TrimSpace(session.DSID) == "" || len(session.Cookies) == 0 {
+	session, hasICloudWebLogin := effectiveICloudWebSession(session)
+	if strings.TrimSpace(session.PremiumMailBaseURL) == "" || strings.TrimSpace(session.DSID) == "" || !hasICloudWebLogin {
 		return nil, errCode("icloud_session_missing", "未保存 iCloud 登录态，请先协议登录", true)
 	}
 	var out struct {
@@ -708,7 +710,8 @@ func (c *ICloudClient) DeletePrivacyMailbox(ctx context.Context, session ICloudS
 	if email == "" {
 		return result, errCode("mailbox_email_missing", "邮箱地址为空", false)
 	}
-	if strings.TrimSpace(session.PremiumMailBaseURL) == "" || strings.TrimSpace(session.DSID) == "" || len(session.Cookies) == 0 {
+	session, hasICloudWebLogin := effectiveICloudWebSession(session)
+	if strings.TrimSpace(session.PremiumMailBaseURL) == "" || strings.TrimSpace(session.DSID) == "" || !hasICloudWebLogin {
 		return result, errCode("icloud_delete_session_missing", "永久删除邮箱需要该 Apple 账号的旧接口 iCloud 登录态，请先保存旧接口登录态", true)
 	}
 	remotes, err := c.ListPrivacyMailboxes(ctx, session)
@@ -1440,7 +1443,8 @@ func isICloudHMELimitMessage(message string) bool {
 }
 
 func (c *ICloudClient) SyncMailboxMessages(ctx context.Context, session ICloudSession, mailbox Mailbox, after time.Time, keyword string, maxThreads int) ([]ICloudSyncedMessage, error) {
-	if strings.TrimSpace(session.DSID) == "" || len(session.Cookies) == 0 {
+	session, hasICloudWebLogin := effectiveICloudWebSession(session)
+	if strings.TrimSpace(session.DSID) == "" || !hasICloudWebLogin {
 		return nil, errCode("icloud_session_missing", "未保存 iCloud 登录态，请先协议登录", true)
 	}
 	if strings.TrimSpace(mailbox.Email) == "" {
@@ -1486,7 +1490,8 @@ func (c *ICloudClient) SyncMailboxMessages(ctx context.Context, session ICloudSe
 }
 
 func (c *ICloudClient) SyncMailboxMessagesBatch(ctx context.Context, session ICloudSession, mailboxes []Mailbox, after time.Time, keyword string, maxThreads int) (map[string][]ICloudSyncedMessage, error) {
-	if strings.TrimSpace(session.DSID) == "" || len(session.Cookies) == 0 {
+	session, hasICloudWebLogin := effectiveICloudWebSession(session)
+	if strings.TrimSpace(session.DSID) == "" || !hasICloudWebLogin {
 		return nil, errCode("icloud_session_missing", "未保存 iCloud 登录态，请先协议登录", true)
 	}
 	if maxThreads <= 0 || maxThreads > 50 {
@@ -1589,8 +1594,29 @@ func shouldIncludeSyncedMessage(text, keyword string) bool {
 	return strings.TrimSpace(keyword) == allMailboxMessagesKeyword || looksLikeVerificationText(text, keyword)
 }
 
+// effectiveICloudWebSession keeps the legacy session fields and the newer
+// per-login-state representation interchangeable. Login state checks and
+// account merging can legitimately leave the iCloud Web cookies under
+// login_states[icloud_web] while the top-level legacy Cookies field is empty.
+// All old iCloud mail APIs need the same effective cookie set.
+func effectiveICloudWebSession(session ICloudSession) (ICloudSession, bool) {
+	if len(session.Cookies) > 0 {
+		return session, true
+	}
+	state, ok := iCloudWebLoginState(session)
+	if !ok || len(state.Cookies) == 0 {
+		return session, false
+	}
+	session.Cookies = append([]SessionCookie(nil), state.Cookies...)
+	if strings.TrimSpace(session.Host) == "" {
+		session.Host = strings.TrimSpace(state.Host)
+	}
+	return session, true
+}
+
 func (c *ICloudClient) CheckMailSession(ctx context.Context, session ICloudSession) error {
-	if strings.TrimSpace(session.DSID) == "" || len(session.Cookies) == 0 {
+	session, hasICloudWebLogin := effectiveICloudWebSession(session)
+	if strings.TrimSpace(session.DSID) == "" || !hasICloudWebLogin {
 		return errCode("icloud_session_missing", "未保存 iCloud 登录态，请先协议登录", true)
 	}
 	if _, err := mailGatewayBaseURL(session); err != nil {
@@ -1838,7 +1864,8 @@ func (c *ICloudClient) messageBody(ctx context.Context, session ICloudSession, f
 
 func (c *ICloudClient) MoveRemoteMessagesToTrash(ctx context.Context, session ICloudSession, remoteIDs []string) (ICloudMailCleanupResult, error) {
 	var result ICloudMailCleanupResult
-	if strings.TrimSpace(session.DSID) == "" || len(session.Cookies) == 0 {
+	session, hasICloudWebLogin := effectiveICloudWebSession(session)
+	if strings.TrimSpace(session.DSID) == "" || !hasICloudWebLogin {
 		return result, errCode("icloud_session_missing", "未保存 iCloud 登录态，请先协议登录", true)
 	}
 	folders, err := c.mailFolders(ctx, session)
@@ -1888,7 +1915,8 @@ func (c *ICloudClient) MoveRemoteMessagesToTrash(ctx context.Context, session IC
 }
 
 func (c *ICloudClient) EmptyTrash(ctx context.Context, session ICloudSession) (int, error) {
-	if strings.TrimSpace(session.DSID) == "" || len(session.Cookies) == 0 {
+	session, hasICloudWebLogin := effectiveICloudWebSession(session)
+	if strings.TrimSpace(session.DSID) == "" || !hasICloudWebLogin {
 		return 0, errCode("icloud_session_missing", "未保存 iCloud 登录态，请先协议登录", true)
 	}
 	folders, err := c.mailFolders(ctx, session)
