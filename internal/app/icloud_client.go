@@ -866,7 +866,7 @@ func appleAccountRemoteMissingStatus(status int) bool {
 }
 
 func (c *ICloudClient) listPrivacyMailboxesWithAppleAccountState(ctx context.Context, session ICloudSession, loginState *LoginState, apiKey string) ([]ICloudRemoteMailbox, error) {
-	cacheKey := "apple_account:" + appleAccountOperationKey(session, *loginState)
+	cacheKey := "apple_account:" + appleAccountDeleteCacheKey(session)
 	if remotes, ok := c.privacyMailboxDeleteCacheGet(cacheKey); ok {
 		return remotes, nil
 	}
@@ -891,6 +891,12 @@ func (c *ICloudClient) listPrivacyMailboxesWithAppleAccountState(ctx context.Con
 	markAppleAccountManageOK(loginState)
 	c.privacyMailboxDeleteCachePut(cacheKey, remotes)
 	return remotes, nil
+}
+
+func appleAccountDeleteCacheKey(session ICloudSession) string {
+	owner := firstNonEmpty(strings.TrimSpace(session.OwnerID), "global")
+	identity := firstNonEmpty(strings.TrimSpace(session.AccountID), strings.TrimSpace(session.DSID), strings.TrimSpace(session.AppleID), "default")
+	return owner + ":" + identity
 }
 
 type appleAccountPrivateEmail struct {
