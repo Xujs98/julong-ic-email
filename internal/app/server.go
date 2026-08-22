@@ -265,9 +265,6 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 	s.keepAliveAppleAccountState = func(ctx context.Context, state LoginState) (LoginState, error) {
 		return NewICloudClient().keepAliveAppleAccountManageStateUnlocked(ctx, state)
 	}
-	s.deletePrivacyMailbox = func(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error) {
-		return NewICloudClient().DeletePrivacyMailbox(ctx, session, email)
-	}
 	s.syncMailboxMessages = func(ctx context.Context, session ICloudSession, mailbox Mailbox, after time.Time, keyword string, maxThreads int) ([]ICloudSyncedMessage, error) {
 		return NewICloudClient().SyncMailboxMessages(ctx, session, mailbox, after, keyword, maxThreads)
 	}
@@ -509,10 +506,7 @@ func (s *Server) cleanupExpiredHTMLMailboxes(ctx context.Context, now time.Time)
 	if ctx == nil || ctx.Err() != nil || !s.store.SystemSettings().HTMLExpiryDeleteMailbox {
 		return
 	}
-	deleteRemote := s.deletePrivacyMailbox
-	if deleteRemote == nil {
-		deleteRemote = NewICloudClient().DeletePrivacyMailbox
-	}
+	deleteClient := NewICloudClient()
 	for _, link := range s.store.ExpiredMailboxHTMLLinks(now) {
 		if ctx.Err() != nil {
 			return
@@ -525,7 +519,7 @@ func (s *Server) cleanupExpiredHTMLMailboxes(ctx context.Context, now time.Time)
 		_, _, err := s.deleteMailboxRemoteThenLocal(deleteCtx, mailbox.ID, mailboxDeleteConditions{
 			RequireExpired: true,
 			ExpiredAt:      now,
-			DeleteRemote:   deleteRemote,
+			DeleteClient:   deleteClient,
 		})
 		cancel()
 		if err != nil {
@@ -3403,6 +3397,7 @@ type mailboxDeleteConditions struct {
 	RequireOutbound bool
 	ExpiredAt       time.Time
 	DeleteRemote    func(context.Context, ICloudSession, string) (ICloudMailboxDeleteResult, error)
+	DeleteClient    *ICloudClient
 }
 
 func (s *Server) deleteMailboxRemoteThenLocal(ctx context.Context, mailboxID string, conditions mailboxDeleteConditions) (Mailbox, ICloudMailboxDeleteResult, error) {
@@ -3447,10 +3442,22 @@ func (s *Server) deleteMailboxRemoteThenLocal(ctx context.Context, mailboxID str
 	if deleteRemote == nil {
 		deleteRemote = s.deletePrivacyMailbox
 	}
-	if deleteRemote == nil {
-		deleteRemote = NewICloudClient().DeletePrivacyMailbox
+	var deletion ICloudMailboxDeleteResult
+	if deleteRemote != nil {
+		deletion, err = deleteRemote(ctx, session, mailbox.Email)
+	} else {
+		client := conditions.DeleteClient
+		if client == nil {
+			client = NewICloudClient()
+		}
+		var updatedSession ICloudSession
+		deletion, updatedSession, err = client.DeletePrivacyMailboxWithRemote(ctx, session, s.cfg.AppleAccountAPIKey, mailbox.Email, mailbox.RemoteID, mailbox.RemoteOrigin, mailbox.ICloudActive)
+		if _, ok := appleAccountLoginState(updatedSession); ok {
+			if saveErr := s.store.SaveICloudSessionForOwner(mailbox.OwnerID, updatedSession); saveErr != nil && err == nil {
+				err = saveErr
+			}
+		}
 	}
-	deletion, err := deleteRemote(ctx, session, mailbox.Email)
 	if err != nil {
 		return mailbox, ICloudMailboxDeleteResult{}, err
 	}
@@ -3481,12 +3488,14 @@ func (s *Server) handleCleanupExpiredHTMLMailboxes(w http.ResponseWriter, r *htt
 	failures := make([]cleanupFailure, 0)
 	deleted := 0
 	skipped := 0
+	deleteClient := NewICloudClient()
 	for _, candidate := range candidates {
 		deleteCtx, cancel := context.WithTimeout(r.Context(), htmlExpiryMailboxDeleteTimeout)
 		mailbox, _, err := s.deleteMailboxRemoteThenLocal(deleteCtx, candidate.ID, mailboxDeleteConditions{
 			RequireExpired:  true,
 			RequireOutbound: true,
 			ExpiredAt:       now,
+			DeleteClient:    deleteClient,
 		})
 		cancel()
 		if err == nil {
@@ -4924,6 +4933,10 @@ func (s *Server) createICloudMailboxForOwner(ctx context.Context, ownerID, accou
 		if updateErr == nil {
 			mailbox = updated
 		}
+	}
+	mailbox, err = s.store.SetMailboxRemoteIdentity(mailbox.ID, remote.AnonymousID, remote.Origin)
+	if err != nil {
+		return Mailbox{}, remote, err
 	}
 	return mailbox, remote, nil
 }

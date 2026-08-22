@@ -3495,6 +3495,156 @@ func TestICloudClientDeletePrivacyMailboxUsesSavedICloudWebLoginState(t *testing
 	}
 }
 
+func TestICloudClientDeletePrivacyMailboxUsesAppleAccountInterface(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	var paths []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		if r.Header.Get("X-Apple-Api-Key") != "delete-key" {
+			t.Fatalf("api key = %q, want delete-key", r.Header.Get("X-Apple-Api-Key"))
+		}
+		if r.Header.Get("scnt") != "delete-scnt" {
+			t.Fatalf("scnt = %q, want delete-scnt", r.Header.Get("scnt"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /account/manage/email/private":
+			_, _ = w.Write([]byte(`{"privateEmailList":[{"id":"apple-remote-1","emailAddress":"Apple.Delete@icloud.com","label":"new-api"}],"inactivePrivateEmailList":[]}`))
+		case "DELETE /account/manage/email/private/apple-remote-1/stop", "DELETE /account/manage/email/private/apple-remote-1/remove":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+
+	now := time.Now()
+	result, updatedSession, err := (&ICloudClient{client: ts.Client()}).DeletePrivacyMailboxWithRemote(t.Context(), ICloudSession{
+		AccountID: "acc-new-api",
+		LoginStates: []LoginState{{
+			Kind:            LoginStateAppleAccount,
+			Origin:          ts.URL,
+			Scnt:            "delete-scnt",
+			APIKey:          "delete-key",
+			LastCheckedAt:   now,
+			ManageExpiresAt: now.Add(15 * time.Minute),
+			LastCheckOK:     true,
+		}},
+	}, "", "apple.delete@icloud.com", "", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Found || !result.Deactivated || !result.Deleted || result.AlreadyMissing || result.AnonymousID != "apple-remote-1" {
+		t.Fatalf("delete result = %+v", result)
+	}
+	if state, ok := appleAccountLoginState(updatedSession); !ok || !state.LastCheckOK {
+		t.Fatalf("updated Apple Account state = %+v ok=%v", state, ok)
+	}
+	wantPaths := []string{
+		"GET /account/manage/email/private",
+		"DELETE /account/manage/email/private/apple-remote-1/stop",
+		"DELETE /account/manage/email/private/apple-remote-1/remove",
+	}
+	if !reflect.DeepEqual(paths, wantPaths) {
+		t.Fatalf("paths = %#v, want %#v", paths, wantPaths)
+	}
+}
+
+func TestICloudClientDeletePrivacyMailboxUsesSavedAppleRemoteID(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	var paths []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		if r.Method != http.MethodDelete {
+			t.Fatalf("unexpected list request %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+
+	now := time.Now()
+	result, _, err := (&ICloudClient{client: ts.Client()}).DeletePrivacyMailboxWithRemote(t.Context(), ICloudSession{
+		AccountID: "acc-saved-id",
+		LoginStates: []LoginState{{
+			Kind:            LoginStateAppleAccount,
+			Origin:          ts.URL,
+			Scnt:            "saved-id-scnt",
+			APIKey:          "saved-id-key",
+			LastCheckedAt:   now,
+			ManageExpiresAt: now.Add(15 * time.Minute),
+			LastCheckOK:     true,
+		}},
+	}, "", "saved.id@icloud.com", "saved-remote-id", "APPLE_ACCOUNT", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Found || !result.Deactivated || !result.Deleted || result.AnonymousID != "saved-remote-id" {
+		t.Fatalf("delete result = %+v", result)
+	}
+	wantPaths := []string{
+		"DELETE /account/manage/email/private/saved-remote-id/stop",
+		"DELETE /account/manage/email/private/saved-remote-id/remove",
+	}
+	if !reflect.DeepEqual(paths, wantPaths) {
+		t.Fatalf("paths = %#v, want %#v", paths, wantPaths)
+	}
+}
+
+func TestICloudClientDeletePrivacyMailboxCachesAppleAccountList(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	listCalls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/account/manage/email/private":
+			listCalls++
+			_, _ = w.Write([]byte(`{"privateEmailList":[{"id":"cache-1","emailAddress":"cache.one@icloud.com"},{"id":"cache-2","emailAddress":"cache.two@icloud.com"}],"inactivePrivateEmailList":[]}`))
+		case r.Method == http.MethodDelete:
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+
+	now := time.Now()
+	session := ICloudSession{
+		AccountID: "acc-cache",
+		LoginStates: []LoginState{{
+			Kind:            LoginStateAppleAccount,
+			Origin:          ts.URL,
+			Scnt:            "cache-scnt",
+			APIKey:          "cache-key",
+			LastCheckedAt:   now,
+			ManageExpiresAt: now.Add(15 * time.Minute),
+			LastCheckOK:     true,
+		}},
+	}
+	client := &ICloudClient{client: ts.Client()}
+	for _, email := range []string{"cache.one@icloud.com", "cache.two@icloud.com"} {
+		result, updatedSession, err := client.DeletePrivacyMailboxWithRemote(t.Context(), session, "", email, "", "", true)
+		if err != nil {
+			t.Fatalf("delete %s: %v", email, err)
+		}
+		if !result.Deleted {
+			t.Fatalf("delete %s result = %+v", email, result)
+		}
+		session = updatedSession
+	}
+	if listCalls != 1 {
+		t.Fatalf("Apple Account list calls = %d, want 1", listCalls)
+	}
+}
+
 func TestICloudClientListPrivacyMailboxesRetriesEOF(t *testing.T) {
 	attempts := 0
 	client := &ICloudClient{client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -3541,12 +3691,13 @@ func TestUpsertMailboxFromRemoteCreatesAndUpdates(t *testing.T) {
 		Label:          "PHONE",
 		ForwardToEmail: "main@example.com",
 		IsActive:       true,
+		Origin:         "APPLE_ACCOUNT",
 	}
 	mailbox, created, err := store.UpsertMailboxFromRemote("usr_1", "acc_1", remote, "synced from iCloud")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !created || mailbox.OwnerID != "usr_1" || mailbox.AccountID != "acc_1" || mailbox.Email != "phone.created@icloud.com" || mailbox.Status != StatusAvailable {
+	if !created || mailbox.OwnerID != "usr_1" || mailbox.AccountID != "acc_1" || mailbox.Email != "phone.created@icloud.com" || mailbox.Status != StatusAvailable || mailbox.RemoteID != "a1" || mailbox.RemoteOrigin != "APPLE_ACCOUNT" {
 		t.Fatalf("created mailbox = %+v created=%v", mailbox, created)
 	}
 	token := mailbox.APIToken
@@ -6185,6 +6336,68 @@ func TestDeleteMailboxKeepsLocalDataWhenRemoteDeleteFails(t *testing.T) {
 	}
 	if link, ok := store.MailboxHTMLLinkForMailbox(mailbox.ID); !ok || link.Token == "" {
 		t.Fatal("HTML link was deleted after remote failure")
+	}
+}
+
+func TestDeleteMailboxKeepsLocalDataWhenAppleAccountRemoveFails(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "DELETE /account/manage/email/private/apple-fail-id/stop":
+			w.WriteHeader(http.StatusNoContent)
+		case "DELETE /account/manage/email/private/apple-fail-id/remove":
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"error":"still active"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	cookie, user := registerTestUser(t, handler, "delete-apple-fail", "delete123")
+	now := time.Now()
+	if err := store.SaveICloudSessionForOwner(user.ID, ICloudSession{
+		OwnerID:   user.ID,
+		AccountID: "acc-apple-fail",
+		AppleID:   "delete-apple-fail@icloud.com",
+		LoginStates: []LoginState{{
+			Kind:            LoginStateAppleAccount,
+			Origin:          ts.URL,
+			Scnt:            "apple-fail-scnt",
+			APIKey:          "apple-fail-key",
+			LastCheckedAt:   now,
+			ManageExpiresAt: now.Add(15 * time.Minute),
+			LastCheckOK:     true,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := store.AddMailboxForOwner(user.ID, "acc-apple-fail", "keep", "keep-apple@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err = store.SetMailboxRemoteIdentity(mailbox.ID, "apple-fail-id", "APPLE_ACCOUNT")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/mailboxes/"+url.PathEscape(mailbox.ID), nil)
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("failed Apple Account delete = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if _, ok := store.FindMailboxByID(mailbox.ID); !ok {
+		t.Fatal("local mailbox was deleted after Apple Account remove failure")
+	}
+	if link, ok := store.MailboxHTMLLinkForMailbox(mailbox.ID); !ok || link.Token == "" {
+		t.Fatal("HTML link was deleted after Apple Account remove failure")
 	}
 }
 

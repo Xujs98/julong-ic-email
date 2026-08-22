@@ -20,7 +20,9 @@ import (
 )
 
 type ICloudClient struct {
-	client *http.Client
+	client                    *http.Client
+	privacyMailboxCacheMu     sync.Mutex
+	privacyMailboxDeleteCache map[string][]ICloudRemoteMailbox
 }
 
 type ICloudRemoteMailbox struct {
@@ -705,24 +707,273 @@ func (c *ICloudClient) ListPrivacyMailboxes(ctx context.Context, session ICloudS
 }
 
 func (c *ICloudClient) DeletePrivacyMailbox(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error) {
+	result, _, err := c.DeletePrivacyMailboxWithRemote(ctx, session, "", email, "", "", true)
+	return result, err
+}
+
+func (c *ICloudClient) DeletePrivacyMailboxWithRemote(ctx context.Context, session ICloudSession, fallbackAPIKey, email, remoteID, remoteOrigin string, remoteActive bool) (ICloudMailboxDeleteResult, ICloudSession, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	result := ICloudMailboxDeleteResult{Email: email}
 	if email == "" {
-		return result, errCode("mailbox_email_missing", "邮箱地址为空", false)
+		return result, session, errCode("mailbox_email_missing", "邮箱地址为空", false)
 	}
+	remoteID = strings.TrimSpace(remoteID)
+	remoteOrigin = strings.ToUpper(strings.TrimSpace(remoteOrigin))
+	_, hasAppleAccountLogin := appleAccountLoginState(session)
+	_, hasICloudWebLogin := effectiveICloudWebSession(session)
+
+	if remoteOrigin == "APPLE_ACCOUNT" {
+		if !hasAppleAccountLogin {
+			return result, session, errCode("apple_account_session_missing", "该邮箱由新接口创建，但当前账号未保存 Apple Account 新接口登录态，已保留本地邮箱", true)
+		}
+		return c.deletePrivacyMailboxWithAppleAccount(ctx, session, fallbackAPIKey, email, remoteID, remoteActive)
+	}
+	if remoteOrigin != "" && remoteOrigin != "APPLE_ACCOUNT" {
+		result, err := c.deletePrivacyMailboxWithICloudWeb(ctx, session, email, remoteID, remoteActive)
+		return result, session, err
+	}
+
+	var appleErr error
+	if hasAppleAccountLogin {
+		var updatedSession ICloudSession
+		result, updatedSession, appleErr = c.deletePrivacyMailboxWithAppleAccount(ctx, session, fallbackAPIKey, email, "", remoteActive)
+		session = updatedSession
+		if appleErr == nil && !result.AlreadyMissing {
+			return result, session, nil
+		}
+	}
+	if hasICloudWebLogin {
+		legacyResult, legacyErr := c.deletePrivacyMailboxWithICloudWeb(ctx, session, email, "", remoteActive)
+		if legacyErr == nil && !legacyResult.AlreadyMissing {
+			return legacyResult, session, nil
+		}
+		if appleErr != nil {
+			if legacyErr != nil {
+				return result, session, errCode("icloud_mailbox_delete_all_interfaces_failed", "新接口删除失败："+appleErr.Error()+"；旧接口删除失败："+legacyErr.Error(), true)
+			}
+			return result, session, appleErr
+		}
+		if legacyErr != nil {
+			return legacyResult, session, legacyErr
+		}
+		legacyResult.AlreadyMissing = true
+		return legacyResult, session, nil
+	}
+	if appleErr != nil {
+		return result, session, appleErr
+	}
+	if hasAppleAccountLogin {
+		result.AlreadyMissing = true
+		return result, session, nil
+	}
+	return result, session, errCode("icloud_delete_session_missing", "永久删除邮箱需要该 Apple 账号的新接口或旧接口登录态，请重新登录", true)
+}
+
+func (c *ICloudClient) deletePrivacyMailboxWithAppleAccount(ctx context.Context, session ICloudSession, fallbackAPIKey, email, remoteID string, remoteActive bool) (ICloudMailboxDeleteResult, ICloudSession, error) {
+	result := ICloudMailboxDeleteResult{Email: email}
+	loginState, ok := appleAccountLoginState(session)
+	if !ok {
+		return result, session, errCode("apple_account_session_missing", "未保存 Apple Account 新接口登录态，请重新登录", true)
+	}
+	release, err := acquireAppleAccountOperationGate(ctx, appleAccountOperationKey(session, loginState))
+	if err != nil {
+		return result, session, err
+	}
+	defer release()
+
+	fallbackAPIKey = strings.TrimSpace(fallbackAPIKey)
+	refreshed := false
+	if appleAccountManageNeedsCreateRefresh(loginState, time.Now()) {
+		refreshed = true
+		loginState, session, err = c.refreshAppleAccountManageStateForCreate(ctx, session, loginState, fallbackAPIKey)
+		if err != nil {
+			return result, session, err
+		}
+	}
+
+	deleteAttempt := func() (ICloudMailboxDeleteResult, error) {
+		apiKey := strings.TrimSpace(firstNonEmpty(loginState.APIKey, fallbackAPIKey))
+		if apiKey == "" {
+			return result, errCode("apple_account_api_key_missing", "Apple Account 管理态缺少 api_key，请重新完成新接口登录", true)
+		}
+		loginState.APIKey = apiKey
+		matchedID := strings.TrimSpace(remoteID)
+		isActive := remoteActive
+		if matchedID == "" {
+			remotes, listErr := c.listPrivacyMailboxesWithAppleAccountState(ctx, session, &loginState, apiKey)
+			if listErr != nil {
+				return result, listErr
+			}
+			for _, remote := range remotes {
+				if !strings.EqualFold(strings.TrimSpace(remote.Email), email) {
+					continue
+				}
+				matchedID = strings.TrimSpace(remote.AnonymousID)
+				isActive = remote.IsActive
+				break
+			}
+			if matchedID == "" {
+				result.AlreadyMissing = true
+				return result, nil
+			}
+		}
+
+		result.Found = true
+		result.AnonymousID = matchedID
+		basePath := "/account/manage/email/private/" + url.PathEscape(matchedID)
+		if isActive {
+			raw, stopErr := c.callAppleAccountRaw(ctx, &loginState, apiKey, http.MethodDelete, basePath+"/stop", nil, nil)
+			if stopErr != nil && !appleAccountRemoteMissingStatus(raw.StatusCode) {
+				if isCodedError(stopErr, "apple_account_auth_failed") || isCodedError(stopErr, "apple_account_auth_suspect") {
+					return result, stopErr
+				}
+				return result, errCode("apple_account_mailbox_stop_failed", "停用 Apple Account 隐私邮箱失败："+stopErr.Error(), true)
+			}
+			if stopErr == nil {
+				result.Deactivated = true
+			}
+		}
+		raw, removeErr := c.callAppleAccountRaw(ctx, &loginState, apiKey, http.MethodDelete, basePath+"/remove", nil, nil)
+		if removeErr != nil {
+			if appleAccountRemoteMissingStatus(raw.StatusCode) {
+				result.AlreadyMissing = true
+				return result, nil
+			}
+			if isCodedError(removeErr, "apple_account_auth_failed") || isCodedError(removeErr, "apple_account_auth_suspect") {
+				return result, removeErr
+			}
+			return result, errCode("apple_account_mailbox_delete_failed", "永久删除 Apple Account 隐私邮箱失败："+removeErr.Error(), true)
+		}
+		result.Deleted = true
+		markAppleAccountManageOK(&loginState)
+		c.removePrivacyMailboxFromDeleteCache(email)
+		return result, nil
+	}
+
+	result, err = deleteAttempt()
+	if err != nil && !refreshed && (isCodedError(err, "apple_account_auth_failed") || isCodedError(err, "apple_account_auth_suspect")) {
+		loginState, session, err = c.refreshAppleAccountManageStateForCreate(ctx, session, loginState, fallbackAPIKey)
+		if err == nil {
+			result, err = deleteAttempt()
+		}
+	}
+	session = withAppleAccountLoginState(session, loginState)
+	return result, session, err
+}
+
+func appleAccountRemoteMissingStatus(status int) bool {
+	return status == http.StatusNotFound || status == http.StatusGone
+}
+
+func (c *ICloudClient) listPrivacyMailboxesWithAppleAccountState(ctx context.Context, session ICloudSession, loginState *LoginState, apiKey string) ([]ICloudRemoteMailbox, error) {
+	cacheKey := "apple_account:" + appleAccountOperationKey(session, *loginState)
+	if remotes, ok := c.privacyMailboxDeleteCacheGet(cacheKey); ok {
+		return remotes, nil
+	}
+	var out struct {
+		PrivateEmailList         []appleAccountPrivateEmail `json:"privateEmailList"`
+		InactivePrivateEmailList []appleAccountPrivateEmail `json:"inactivePrivateEmailList"`
+	}
+	if _, err := c.callAppleAccountRaw(ctx, loginState, apiKey, http.MethodGet, "/account/manage/email/private", nil, &out); err != nil {
+		return nil, err
+	}
+	remotes := make([]ICloudRemoteMailbox, 0, len(out.PrivateEmailList)+len(out.InactivePrivateEmailList))
+	for _, item := range out.PrivateEmailList {
+		if remote, ok := item.remote(true); ok {
+			remotes = append(remotes, remote)
+		}
+	}
+	for _, item := range out.InactivePrivateEmailList {
+		if remote, ok := item.remote(false); ok {
+			remotes = append(remotes, remote)
+		}
+	}
+	markAppleAccountManageOK(loginState)
+	c.privacyMailboxDeleteCachePut(cacheKey, remotes)
+	return remotes, nil
+}
+
+type appleAccountPrivateEmail struct {
+	ID             string `json:"id"`
+	EmailAddress   string `json:"emailAddress"`
+	Label          string `json:"label"`
+	Note           string `json:"note"`
+	ForwardToEmail string `json:"forwardToEmail"`
+}
+
+func (item appleAccountPrivateEmail) remote(active bool) (ICloudRemoteMailbox, bool) {
+	email := strings.ToLower(strings.TrimSpace(item.EmailAddress))
+	if email == "" || strings.TrimSpace(item.ID) == "" {
+		return ICloudRemoteMailbox{}, false
+	}
+	return ICloudRemoteMailbox{
+		AnonymousID:    strings.TrimSpace(item.ID),
+		Email:          email,
+		Label:          strings.TrimSpace(item.Label),
+		Note:           strings.TrimSpace(item.Note),
+		ForwardToEmail: strings.TrimSpace(item.ForwardToEmail),
+		IsActive:       active,
+		Origin:         "APPLE_ACCOUNT",
+	}, true
+}
+
+func (c *ICloudClient) privacyMailboxDeleteCacheGet(key string) ([]ICloudRemoteMailbox, bool) {
+	c.privacyMailboxCacheMu.Lock()
+	defer c.privacyMailboxCacheMu.Unlock()
+	if c.privacyMailboxDeleteCache == nil {
+		return nil, false
+	}
+	remotes, ok := c.privacyMailboxDeleteCache[key]
+	return append([]ICloudRemoteMailbox(nil), remotes...), ok
+}
+
+func (c *ICloudClient) privacyMailboxDeleteCachePut(key string, remotes []ICloudRemoteMailbox) {
+	c.privacyMailboxCacheMu.Lock()
+	defer c.privacyMailboxCacheMu.Unlock()
+	if c.privacyMailboxDeleteCache == nil {
+		c.privacyMailboxDeleteCache = make(map[string][]ICloudRemoteMailbox)
+	}
+	c.privacyMailboxDeleteCache[key] = append([]ICloudRemoteMailbox(nil), remotes...)
+}
+
+func (c *ICloudClient) removePrivacyMailboxFromDeleteCache(email string) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return
+	}
+	c.privacyMailboxCacheMu.Lock()
+	defer c.privacyMailboxCacheMu.Unlock()
+	for key, remotes := range c.privacyMailboxDeleteCache {
+		filtered := remotes[:0]
+		for _, remote := range remotes {
+			if strings.EqualFold(strings.TrimSpace(remote.Email), email) {
+				continue
+			}
+			filtered = append(filtered, remote)
+		}
+		c.privacyMailboxDeleteCache[key] = filtered
+	}
+}
+
+func (c *ICloudClient) deletePrivacyMailboxWithICloudWeb(ctx context.Context, session ICloudSession, email, remoteID string, remoteActive bool) (ICloudMailboxDeleteResult, error) {
+	result := ICloudMailboxDeleteResult{Email: email}
 	session, hasICloudWebLogin := effectiveICloudWebSession(session)
 	if strings.TrimSpace(session.PremiumMailBaseURL) == "" || strings.TrimSpace(session.DSID) == "" || !hasICloudWebLogin {
 		return result, errCode("icloud_delete_session_missing", "永久删除邮箱需要该 Apple 账号的旧接口 iCloud 登录态，请先保存旧接口登录态", true)
 	}
-	remotes, err := c.ListPrivacyMailboxes(ctx, session)
-	if err != nil {
-		return result, err
-	}
 	var remote ICloudRemoteMailbox
-	for _, item := range remotes {
-		if strings.EqualFold(strings.TrimSpace(item.Email), email) {
-			remote = item
-			break
+	if remoteID != "" {
+		remote = ICloudRemoteMailbox{AnonymousID: strings.TrimSpace(remoteID), Email: email, IsActive: remoteActive, Origin: "ICLOUD_WEB"}
+	} else {
+		remotes, err := c.ListPrivacyMailboxes(ctx, session)
+		if err != nil {
+			return result, err
+		}
+		for _, item := range remotes {
+			if strings.EqualFold(strings.TrimSpace(item.Email), email) {
+				remote = item
+				break
+			}
 		}
 	}
 	if strings.TrimSpace(remote.Email) == "" {
@@ -745,6 +996,7 @@ func (c *ICloudClient) DeletePrivacyMailbox(ctx context.Context, session ICloudS
 		return result, errCode("icloud_mailbox_delete_failed", "永久删除 iCloud 隐私邮箱失败："+err.Error(), true)
 	}
 	result.Deleted = true
+	c.removePrivacyMailboxFromDeleteCache(email)
 	return result, nil
 }
 
@@ -1337,8 +1589,14 @@ func appleAccountRequestStage(method, path string) string {
 		return "生成候选隐私邮箱"
 	case method == http.MethodPut && path == "/account/manage/email/private/add/complete":
 		return "确认创建隐私邮箱"
+	case method == http.MethodGet && path == "/account/manage/email/private":
+		return "读取新接口隐私邮箱列表"
 	case method == http.MethodGet && strings.HasPrefix(path, "/account/manage/email/private/") && strings.HasSuffix(path, ".em"):
 		return "确认隐私邮箱详情"
+	case method == http.MethodDelete && strings.HasSuffix(path, "/stop"):
+		return "停用新接口隐私邮箱"
+	case method == http.MethodDelete && strings.HasSuffix(path, "/remove"):
+		return "永久删除新接口隐私邮箱"
 	default:
 		return strings.TrimSpace(method + " " + path)
 	}

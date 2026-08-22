@@ -1270,6 +1270,12 @@ func (s *FileStore) UpsertMailboxFromRemote(ownerID, accountID string, remote IC
 		if accountID != "" && strings.TrimSpace(s.state.Mailboxes[i].AccountID) != accountID {
 			s.state.Mailboxes[i].AccountID = accountID
 		}
+		if remoteID := strings.TrimSpace(remote.AnonymousID); remoteID != "" {
+			s.state.Mailboxes[i].RemoteID = remoteID
+		}
+		if remoteOrigin := strings.TrimSpace(remote.Origin); remoteOrigin != "" {
+			s.state.Mailboxes[i].RemoteOrigin = remoteOrigin
+		}
 		s.state.Mailboxes[i].ICloudActive = remote.IsActive
 		note := strings.TrimSpace(remote.Note)
 		if note == "" {
@@ -1305,6 +1311,8 @@ func (s *FileStore) UpsertMailboxFromRemote(ownerID, accountID string, remote IC
 		ID:           s.nextIDLocked("mbx"),
 		OwnerID:      ownerID,
 		AccountID:    accountID,
+		RemoteID:     strings.TrimSpace(remote.AnonymousID),
+		RemoteOrigin: strings.TrimSpace(remote.Origin),
 		Label:        label,
 		Email:        email,
 		APIToken:     token,
@@ -1322,6 +1330,20 @@ func (s *FileStore) UpsertMailboxFromRemote(ownerID, accountID string, remote IC
 	s.state.Mailboxes = append(s.state.Mailboxes, mailbox)
 	s.state.MailboxHTMLLinks = append(s.state.MailboxHTMLLinks, htmlLink)
 	return mailbox, true, s.saveLocked()
+}
+
+func (s *FileStore) SetMailboxRemoteIdentity(mailboxID, remoteID, remoteOrigin string) (Mailbox, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	idx := s.mailboxIndexLocked(mailboxID)
+	if idx < 0 {
+		return Mailbox{}, errCode("mailbox_not_found", "邮箱不存在", false)
+	}
+	s.state.Mailboxes[idx].RemoteID = strings.TrimSpace(remoteID)
+	s.state.Mailboxes[idx].RemoteOrigin = strings.TrimSpace(remoteOrigin)
+	s.state.Mailboxes[idx].UpdatedAt = time.Now()
+	return s.state.Mailboxes[idx], s.saveLocked()
 }
 
 func (s *FileStore) ClaimAvailableMailbox(note string) (Mailbox, error) {

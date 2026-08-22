@@ -135,6 +135,8 @@ type Mailbox struct {
 	Provider          string    `json:"provider,omitempty"`
 	DomainID          string    `json:"domain_id,omitempty"`
 	AccountID         string    `json:"account_id"`
+	RemoteID          string    `json:"remote_id,omitempty"`
+	RemoteOrigin      string    `json:"remote_origin,omitempty"`
 	Label             string    `json:"label"`
 	Email             string    `json:"email"`
 	APIToken          string    `json:"api_token"`
