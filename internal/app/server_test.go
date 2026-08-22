@@ -3425,6 +3425,39 @@ func TestICloudClientDeletePrivacyMailboxTreatsMissingRemoteAsDeleted(t *testing
 	}
 }
 
+func TestICloudClientDeletePrivacyMailboxAcceptsEmptyMutationResponses(t *testing.T) {
+	var mutationCalls int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v2/hme/list":
+			_, _ = w.Write([]byte(`{"success":true,"result":{"hmeEmails":[{"anonymousId":"remote-empty","hme":"Empty.Response@icloud.com","isActive":true}]}}`))
+		case "POST /v1/hme/deactivate", "POST /v1/hme/delete":
+			mutationCalls++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	result, err := (&ICloudClient{client: ts.Client()}).DeletePrivacyMailbox(t.Context(), ICloudSession{
+		PremiumMailBaseURL: ts.URL,
+		DSID:               "123",
+		Host:               "www.icloud.com",
+		Cookies:            []SessionCookie{{Name: "session", Value: "x", Domain: "127.0.0.1", Path: "/"}},
+	}, "empty.response@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mutationCalls != 2 {
+		t.Fatalf("mutation calls = %d, want deactivate and delete", mutationCalls)
+	}
+	if !result.Found || !result.Deactivated || !result.Deleted || result.AlreadyMissing {
+		t.Fatalf("delete result = %+v", result)
+	}
+}
+
 func TestICloudClientListPrivacyMailboxesRetriesEOF(t *testing.T) {
 	attempts := 0
 	client := &ICloudClient{client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {

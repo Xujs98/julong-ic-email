@@ -1388,6 +1388,12 @@ func (c *ICloudClient) callEnvelope(ctx context.Context, session ICloudSession, 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("icloud HTTP %d: %s", resp.StatusCode, trimForError(data))
 	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		if result == nil {
+			return nil
+		}
+		return errCode("icloud_bad_response", "iCloud 返回为空，无法解析结果", true)
+	}
 	var envelope struct {
 		Success bool            `json:"success"`
 		Result  json.RawMessage `json:"result"`
