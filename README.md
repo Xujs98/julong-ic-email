@@ -495,22 +495,20 @@ Docker Hub 仓库设置为 Public 后，服务器拉取镜像无需登录；Priv
 git clone https://github.com/Xujs98/julong-ic-email.git
 cd julong-ic-email
 cp .env.example .env
-docker compose pull
 docker compose up -d
 docker compose ps
 ```
 
-Compose 已内置 Docker Hub 默认镜像，服务器即使不创建 `.env` 也会拉取 `qq1371446705/julong-ic-email:latest`。默认只发布到宿主机 `127.0.0.1:8787`，适合 Nginx/Caddy 反向代理。直接通过服务器 IP 访问时，将 `.env` 中的 `JULONG_BIND_IP` 设置为 `0.0.0.0`。运行数据保存在 Docker 命名卷 `julong-ic-email-data`，更新容器不会覆盖。
+Compose 已内置 Docker Hub 默认镜像并设置 `pull_policy: always`，所以 `docker compose up -d` 会自动拉取最新 `latest` 镜像；服务器不需要执行本地构建。默认只发布到宿主机 `127.0.0.1:8787`，适合 Nginx/Caddy 反向代理。直接通过服务器 IP 访问时，将 `.env` 中的 `JULONG_BIND_IP` 设置为 `0.0.0.0`。运行数据保存在 Docker 命名卷 `julong-ic-email-data`，更新容器不会覆盖。
 
 后续更新：本地重新构建并推送 `latest`，服务器执行：
 
 ```bash
 git pull --ff-only
-docker compose pull app
 docker compose up -d --force-recreate --remove-orphans app
 ```
 
-`compose.yaml` 默认使用滚动标签 `docker.io/qq1371446705/julong-ic-email:latest` 并设置 `pull_policy: always`，服务器更新时不需要修改版本号。若服务器 `.env` 曾手动写过 `JULONG_IMAGE=...:<旧版本>`，删除该行或改回 `JULONG_IMAGE=docker.io/qq1371446705/julong-ic-email:latest`，之后一直使用上面的两条命令即可。
+`compose.yaml` 默认使用滚动标签 `docker.io/qq1371446705/julong-ic-email:latest` 并设置 `pull_policy: always`，服务器更新时不需要修改版本号。若服务器 `.env` 曾手动写过 `JULONG_IMAGE=...:<旧版本>`，删除该行或改回 `JULONG_IMAGE=docker.io/qq1371446705/julong-ic-email:latest`。
 
 ## 服务器部署（二进制方式）
 
