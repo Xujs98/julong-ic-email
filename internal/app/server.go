@@ -516,7 +516,7 @@ func (s *Server) cleanupExpiredHTMLMailboxes(ctx context.Context, now time.Time)
 			continue
 		}
 		deleteCtx, cancel := context.WithTimeout(ctx, htmlExpiryMailboxDeleteTimeout)
-		_, _, err := s.deleteMailboxRemoteThenLocal(deleteCtx, mailbox.ID, mailboxDeleteConditions{
+		_, deletion, err := s.deleteMailboxRemoteThenLocal(deleteCtx, mailbox.ID, mailboxDeleteConditions{
 			RequireExpired: true,
 			ExpiredAt:      now,
 			DeleteClient:   deleteClient,
@@ -529,7 +529,11 @@ func (s *Server) cleanupExpiredHTMLMailboxes(ctx context.Context, now time.Time)
 			continue
 		}
 		if s.logger != nil {
-			s.logger.Info("expired HTML mailbox deleted", "mailbox_id", mailbox.ID, "email", mailbox.Email)
+			if deletion.RemotePending {
+				s.logger.Info("expired HTML mailbox cleaned locally; remote deletion pending", "mailbox_id", mailbox.ID, "email", mailbox.Email)
+			} else {
+				s.logger.Info("expired HTML mailbox deleted", "mailbox_id", mailbox.ID, "email", mailbox.Email)
+			}
 		}
 	}
 }
