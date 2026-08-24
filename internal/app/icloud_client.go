@@ -724,13 +724,37 @@ func (c *ICloudClient) DeletePrivacyMailboxWithRemote(ctx context.Context, sessi
 
 	if remoteOrigin == "APPLE_ACCOUNT" {
 		if !hasAppleAccountLogin {
-			return result, session, errCode("apple_account_session_missing", "该邮箱由新接口创建，但当前账号未保存 Apple Account 新接口登录态，已保留本地邮箱", true)
+			// Historical records may contain an Apple Account origin even though
+			// the account was later re-authenticated through the legacy iCloud
+			// flow. Treat the persisted origin as a preference, not a hard lock.
+			if hasICloudWebLogin {
+				legacyResult, legacyErr := c.deletePrivacyMailboxWithICloudWeb(ctx, session, email, "", remoteActive)
+				return legacyResult, session, legacyErr
+			}
+			return result, session, errCode("apple_account_session_missing", "该邮箱由新接口创建，但当前账号未保存可用的 Apple 登录态，已保留本地邮箱", true)
 		}
-		return c.deletePrivacyMailboxWithAppleAccount(ctx, session, fallbackAPIKey, email, remoteID, remoteActive)
+		appleResult, updatedSession, appleErr := c.deletePrivacyMailboxWithAppleAccount(ctx, session, fallbackAPIKey, email, remoteID, remoteActive)
+		if appleErr == nil || !hasICloudWebLogin {
+			return appleResult, updatedSession, appleErr
+		}
+		// If the saved remote ID/origin is stale, retry the other interface by
+		// email. This covers mailboxes created before the interface migration.
+		legacyResult, legacyErr := c.deletePrivacyMailboxWithICloudWeb(ctx, updatedSession, email, "", remoteActive)
+		if legacyErr == nil {
+			return legacyResult, updatedSession, nil
+		}
+		return appleResult, updatedSession, errCode("icloud_mailbox_delete_all_interfaces_failed", "新接口删除失败："+appleErr.Error()+"；旧接口删除失败："+legacyErr.Error(), true)
 	}
 	if remoteOrigin != "" && remoteOrigin != "APPLE_ACCOUNT" {
-		result, err := c.deletePrivacyMailboxWithICloudWeb(ctx, session, email, remoteID, remoteActive)
-		return result, session, err
+		legacyResult, legacyErr := c.deletePrivacyMailboxWithICloudWeb(ctx, session, email, remoteID, remoteActive)
+		if legacyErr == nil || !hasAppleAccountLogin {
+			return legacyResult, session, legacyErr
+		}
+		appleResult, updatedSession, appleErr := c.deletePrivacyMailboxWithAppleAccount(ctx, session, fallbackAPIKey, email, "", remoteActive)
+		if appleErr == nil {
+			return appleResult, updatedSession, nil
+		}
+		return legacyResult, updatedSession, errCode("icloud_mailbox_delete_all_interfaces_failed", "旧接口删除失败："+legacyErr.Error()+"；新接口删除失败："+appleErr.Error(), true)
 	}
 
 	var appleErr error
@@ -822,7 +846,9 @@ func (c *ICloudClient) deletePrivacyMailboxWithAppleAccount(ctx context.Context,
 		result.AnonymousID = matchedID
 		basePath := "/account/manage/email/private/" + url.PathEscape(matchedID)
 		if isActive {
-			raw, stopErr := c.callAppleAccountRaw(ctx, &loginState, apiKey, http.MethodDelete, basePath+"/stop", nil, nil)
+			raw, stopErr := retryAppleAccountMailboxMutation(ctx, func() (appleAccountRawResponse, error) {
+				return c.callAppleAccountRaw(ctx, &loginState, apiKey, http.MethodDelete, basePath+"/stop", nil, nil)
+			})
 			if stopErr != nil && !appleAccountRemoteMissingStatus(raw.StatusCode) {
 				if isCodedError(stopErr, "apple_account_auth_failed") || isCodedError(stopErr, "apple_account_auth_suspect") {
 					return result, stopErr
@@ -833,7 +859,9 @@ func (c *ICloudClient) deletePrivacyMailboxWithAppleAccount(ctx context.Context,
 				result.Deactivated = true
 			}
 		}
-		raw, removeErr := c.callAppleAccountRaw(ctx, &loginState, apiKey, http.MethodDelete, basePath+"/remove", nil, nil)
+		raw, removeErr := retryAppleAccountMailboxMutation(ctx, func() (appleAccountRawResponse, error) {
+			return c.callAppleAccountRaw(ctx, &loginState, apiKey, http.MethodDelete, basePath+"/remove", nil, nil)
+		})
 		if removeErr != nil {
 			if appleAccountRemoteMissingStatus(raw.StatusCode) {
 				result.AlreadyMissing = true
@@ -859,6 +887,37 @@ func (c *ICloudClient) deletePrivacyMailboxWithAppleAccount(ctx context.Context,
 	}
 	session = withAppleAccountLoginState(session, loginState)
 	return result, session, err
+}
+
+// Apple can acknowledge /stop before the management service has propagated the
+// inactive state. During that short window /remove returns HTTP 409. Retry the
+// mutation itself instead of making the user click delete repeatedly.
+func retryAppleAccountMailboxMutation(ctx context.Context, fn func() (appleAccountRawResponse, error)) (appleAccountRawResponse, error) {
+	var lastRaw appleAccountRawResponse
+	var lastErr error
+	for attempt := 0; attempt < 4; attempt++ {
+		raw, err := fn()
+		lastRaw, lastErr = raw, err
+		if err == nil || !appleAccountMailboxMutationRetryable(raw.StatusCode, err) || attempt == 3 {
+			return raw, err
+		}
+		delay := time.Duration(attempt+1) * 450 * time.Millisecond
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return lastRaw, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return lastRaw, lastErr
+}
+
+func appleAccountMailboxMutationRetryable(status int, err error) bool {
+	if status == http.StatusConflict || status == http.StatusTooEarly || status == http.StatusTooManyRequests || status >= 500 {
+		return true
+	}
+	return isCodedError(err, "apple_account_transient")
 }
 
 func appleAccountRemoteMissingStatus(status int) bool {
@@ -1131,10 +1190,10 @@ func (c *ICloudClient) callAppleAccountRaw(ctx context.Context, loginState *Logi
 	var raw appleAccountRawResponse
 	err := retryAppleTransient(ctx, func() error {
 		next, err := c.callAppleAccountRawOnce(ctx, loginState, apiKey, method, path, body, result)
+		raw = next
 		if err != nil {
 			return err
 		}
-		raw = next
 		return nil
 	})
 	return raw, err

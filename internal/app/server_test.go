@@ -887,6 +887,23 @@ func TestRetryAppleTransientRetriesEOF(t *testing.T) {
 	}
 }
 
+func TestRetryAppleTransientRetriesAppleAccount503(t *testing.T) {
+	attempts := 0
+	_, err := retryAppleAccountMailboxMutation(t.Context(), func() (appleAccountRawResponse, error) {
+		attempts++
+		if attempts < 2 {
+			return appleAccountRawResponse{StatusCode: http.StatusServiceUnavailable}, appleAccountAPIError(http.StatusServiceUnavailable, []byte(`{"error":"temporarily unavailable"}`), "删除隐私邮箱")
+		}
+		return appleAccountRawResponse{StatusCode: http.StatusNoContent}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
 func TestCookieHeaderFiltersByDomainAndExpiry(t *testing.T) {
 	cookies := []SessionCookie{
 		{Name: "ok", Value: "1", Domain: ".icloud.com.cn", Path: "/"},
@@ -3495,6 +3512,40 @@ func TestICloudClientDeletePrivacyMailboxUsesSavedICloudWebLoginState(t *testing
 	}
 }
 
+func TestICloudClientDeletePrivacyMailboxFallsBackWhenSavedOriginIsStale(t *testing.T) {
+	var mutationCalls int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v2/hme/list":
+			_, _ = w.Write([]byte(`{"success":true,"result":{"hmeEmails":[{"anonymousId":"legacy-fallback","hme":"Fallback.Mail@icloud.com","isActive":true}]}}`))
+		case "POST /v1/hme/deactivate", "POST /v1/hme/delete":
+			mutationCalls++
+			_, _ = w.Write([]byte(`{"success":true,"result":{}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+
+	result, _, err := (&ICloudClient{client: ts.Client()}).DeletePrivacyMailboxWithRemote(t.Context(), ICloudSession{
+		PremiumMailBaseURL: ts.URL,
+		DSID:               "fallback-dsid",
+		Host:               "www.icloud.com",
+		LoginStates: []LoginState{{
+			Kind:    LoginStateICloudWeb,
+			Host:    "www.icloud.com",
+			Cookies: []SessionCookie{{Name: "session", Value: "fallback-cookie", Domain: "127.0.0.1", Path: "/"}},
+		}},
+	}, "", "fallback.mail@icloud.com", "stale-new-api-id", "APPLE_ACCOUNT", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mutationCalls != 2 || !result.Found || !result.Deactivated || !result.Deleted || result.AnonymousID != "legacy-fallback" {
+		t.Fatalf("fallback delete result = %+v mutation_calls=%d", result, mutationCalls)
+	}
+}
+
 func TestICloudClientDeletePrivacyMailboxUsesAppleAccountInterface(t *testing.T) {
 	oldBaseURL := appleAccountManageBaseURL
 	defer func() { appleAccountManageBaseURL = oldBaseURL }()
@@ -3593,6 +3644,89 @@ func TestICloudClientDeletePrivacyMailboxUsesSavedAppleRemoteID(t *testing.T) {
 	}
 	if !reflect.DeepEqual(paths, wantPaths) {
 		t.Fatalf("paths = %#v, want %#v", paths, wantPaths)
+	}
+}
+
+func TestICloudClientDeletePrivacyMailboxRetriesPropagationConflict(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	removeCalls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if strings.HasSuffix(r.URL.Path, "/stop") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if !strings.HasSuffix(r.URL.Path, "/remove") {
+			t.Fatalf("unexpected delete path %s", r.URL.Path)
+		}
+		removeCalls++
+		if removeCalls < 3 {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"error":"still active"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+
+	now := time.Now()
+	result, _, err := (&ICloudClient{client: ts.Client()}).DeletePrivacyMailboxWithRemote(t.Context(), ICloudSession{
+		AccountID: "acc-propagation",
+		LoginStates: []LoginState{{
+			Kind:            LoginStateAppleAccount,
+			Origin:          ts.URL,
+			Scnt:            "propagation-scnt",
+			APIKey:          "propagation-key",
+			LastCheckedAt:   now,
+			ManageExpiresAt: now.Add(15 * time.Minute),
+			LastCheckOK:     true,
+		}},
+	}, "", "propagation@icloud.com", "propagation-id", "APPLE_ACCOUNT", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removeCalls != 3 || !result.Deactivated || !result.Deleted {
+		t.Fatalf("delete result=%+v remove_calls=%d", result, removeCalls)
+	}
+}
+
+func TestICloudClientDeletePrivacyMailboxTreatsRemote404AsAlreadyMissing(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"already removed"}`))
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+
+	now := time.Now()
+	result, _, err := (&ICloudClient{client: ts.Client()}).DeletePrivacyMailboxWithRemote(t.Context(), ICloudSession{
+		AccountID: "acc-missing",
+		LoginStates: []LoginState{{
+			Kind:            LoginStateAppleAccount,
+			Origin:          ts.URL,
+			Scnt:            "missing-scnt",
+			APIKey:          "missing-key",
+			LastCheckedAt:   now,
+			ManageExpiresAt: now.Add(15 * time.Minute),
+			LastCheckOK:     true,
+		}},
+	}, "", "already.removed@icloud.com", "missing-id", "APPLE_ACCOUNT", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Found || !result.AlreadyMissing || result.Deleted {
+		t.Fatalf("404 delete result = %+v", result)
 	}
 }
 
