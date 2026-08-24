@@ -3463,12 +3463,11 @@ func (s *Server) deleteMailboxRemoteThenLocal(ctx context.Context, mailboxID str
 		}
 	}
 	if err != nil {
-		// When an HTML mailbox is already expired and Apple is returning a
-		// transient gateway outage (503/502/500/429), keeping the local row
-		// forever makes both manual delete and batch cleanup unusable. Remove the
+		// When Apple is returning a transient gateway outage (503/502/500/429),
+		// keeping the local row forever makes manual delete unusable. Remove the
 		// local mailbox now and report that the remote mutation is pending; the
 		// next successful Apple login/sync can reconcile the remote record.
-		if isTransientRemoteDeleteError(err) && s.mailboxHTMLExpired(mailbox.ID, time.Now()) {
+		if isTransientRemoteDeleteError(err) {
 			deferred := ICloudMailboxDeleteResult{Email: mailbox.Email, RemotePending: true}
 			if localErr := s.store.DeleteMailbox(mailbox.ID); localErr != nil {
 				return mailbox, ICloudMailboxDeleteResult{}, localErr

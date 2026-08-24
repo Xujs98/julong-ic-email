@@ -1140,6 +1140,22 @@ func (c *ICloudClient) fetchAppleAccountManageTokenScnt(ctx context.Context, log
 		}
 		return nil
 	})
+	if err != nil && isAppleAccountTransientError(err) && appleAccountShouldTryAlternateManageHost(loginState) {
+		alternate := loginState
+		alternate.Host = "account.apple.com"
+		alternate.Origin = "https://account.apple.com"
+		var alternateScnt string
+		alternateErr := retryAppleTransient(ctx, func() error {
+			next, nextErr := c.fetchAppleAccountManageTokenScntOnce(ctx, alternate, result)
+			if strings.TrimSpace(next) != "" {
+				alternateScnt = next
+			}
+			return nextErr
+		})
+		if alternateErr == nil || strings.TrimSpace(alternateScnt) != "" {
+			return alternateScnt, alternateErr
+		}
+	}
 	return scnt, err
 }
 
@@ -1196,21 +1212,58 @@ func (c *ICloudClient) fetchAppleAccountManageTokenScntOnce(ctx context.Context,
 }
 
 func (c *ICloudClient) callAppleAccountRaw(ctx context.Context, loginState *LoginState, apiKey, method, path string, body any, result any) (appleAccountRawResponse, error) {
-	if path == "/account/manage/gs/ws/token" {
-		return retryAppleAccountMailboxMutation(ctx, func() (appleAccountRawResponse, error) {
-			return c.callAppleAccountRawOnce(ctx, loginState, apiKey, method, path, body, result)
-		})
-	}
-	var raw appleAccountRawResponse
-	err := retryAppleTransient(ctx, func() error {
-		next, err := c.callAppleAccountRawOnce(ctx, loginState, apiKey, method, path, body, result)
-		raw = next
-		if err != nil {
-			return err
+	callWithRetry := func(state *LoginState) (appleAccountRawResponse, error) {
+		if path == "/account/manage/gs/ws/token" {
+			return retryAppleAccountMailboxMutation(ctx, func() (appleAccountRawResponse, error) {
+				return c.callAppleAccountRawOnce(ctx, state, apiKey, method, path, body, result)
+			})
 		}
-		return nil
-	})
+		var raw appleAccountRawResponse
+		err := retryAppleTransient(ctx, func() error {
+			next, err := c.callAppleAccountRawOnce(ctx, state, apiKey, method, path, body, result)
+			raw = next
+			return err
+		})
+		return raw, err
+	}
+	if loginState == nil {
+		return appleAccountRawResponse{}, errCode("apple_account_session_missing", "当前登录态缺少 Apple Account 管理态，请重新协议登录", true)
+	}
+	raw, err := callWithRetry(loginState)
+	if err == nil || !isAppleAccountTransientError(err) || !appleAccountShouldTryAlternateManageHost(*loginState) {
+		return raw, err
+	}
+	// Apple occasionally serves the token route from one management host while
+	// the other host remains healthy. Reuse the same cookies/scnt/API key and
+	// transparently retry through account.apple.com before surfacing 503.
+	alternate := *loginState
+	alternate.Host = "account.apple.com"
+	alternate.Origin = "https://account.apple.com"
+	alternateRaw, alternateErr := callWithRetry(&alternate)
+	if alternateErr == nil {
+		*loginState = alternate
+		return alternateRaw, nil
+	}
 	return raw, err
+}
+
+func isAppleAccountTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "http 429") || strings.Contains(message, "http 500") ||
+		strings.Contains(message, "http 502") || strings.Contains(message, "http 503") ||
+		strings.Contains(message, "temporarily unavailable") || strings.Contains(message, "timeout") ||
+		isCodedError(err, "apple_account_transient")
+}
+
+func appleAccountShouldTryAlternateManageHost(state LoginState) bool {
+	if strings.TrimRight(strings.TrimSpace(appleAccountManageBaseURL), "/") != "https://appleid.apple.com" {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(state.Host))
+	return host == "" || host == "appleid.apple.com" || strings.Contains(host, "appleid.apple.com")
 }
 
 func (c *ICloudClient) callAppleAccountRawOnce(ctx context.Context, loginState *LoginState, apiKey, method, path string, body any, result any) (appleAccountRawResponse, error) {
