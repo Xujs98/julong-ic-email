@@ -25,7 +25,7 @@
 <body>
   <main class="wrap">
     <header class="head"><div><div class="brand"><img class="logo" src="/logo.png" alt=""><span>矩龙邮箱</span></div><div class="muted" id="email">正在读取邮箱…</div></div><div class="toolbar"><span class="badge" id="expiry">链接检查中</span><button onclick="loadData()">刷新</button></div></header>
-    <section class="card latest"><div><div class="tiny">最新验证码</div><div class="code" id="code">—</div><div class="muted" id="codeMeta">等待邮件</div></div><div class="muted" id="count">0 封邮件</div></section>
+    <section class="card latest"><div><div class="tiny">最新验证码</div><code class="code" id="code">—</code><div class="muted" id="codeMeta">等待邮件</div></div><div class="muted" id="count">0 封邮件</div></section>
     <section class="card"><div class="toolbar" style="justify-content:space-between"><div><strong>最近邮件</strong><div class="tiny" id="refreshInfo">页面默认每 20 秒自动刷新，API 地址永不过期。</div></div><span class="tiny" id="updated">—</span></div><div id="messages" class="empty">正在读取…</div></section>
   </main>
   <script>

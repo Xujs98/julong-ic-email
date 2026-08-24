@@ -110,6 +110,7 @@ func TestMailboxHTMLPageShowsDayHourMinuteSecondCountdown(t *testing.T) {
 	}
 	source := string(data)
 	for _, want := range []string{
+		`<code class="code" id="code">—</code>`,
 		`剩余 ${d}天 ${h}时 ${m}分 ${s}秒`,
 		`setTTL(data.ttl_seconds)`,
 		`Date.now()-ttlMeasuredAt`,
