@@ -58,6 +58,7 @@ type ICloudMailboxDeleteResult struct {
 	Deactivated    bool   `json:"deactivated"`
 	Deleted        bool   `json:"deleted"`
 	AlreadyMissing bool   `json:"already_missing"`
+	RemotePending  bool   `json:"remote_pending,omitempty"`
 }
 
 func NewICloudClient() *ICloudClient {

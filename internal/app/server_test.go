@@ -6541,6 +6541,63 @@ func TestDeleteMailboxKeepsLocalDataWhenRemoteDeleteFails(t *testing.T) {
 	}
 }
 
+func TestDeleteExpiredMailboxRemovesLocalWhenAppleIsTemporarilyUnavailable(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	cookie, user := registerTestUser(t, handler, "delete-expired-fallback", "delete123")
+	if err := store.SaveICloudSessionForOwner(user.ID, ICloudSession{
+		OwnerID: user.ID, AppleID: "delete-expired-fallback@icloud.com", DSID: "delete-expired-dsid",
+		PremiumMailBaseURL: "https://mail.example.invalid", Cookies: []SessionCookie{{Name: "session", Value: "x"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := store.AddMailboxForOwner(user.ID, "", "expired", "expired-fallback@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := store.CreateMailboxHTMLLink(mailbox.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	for i := range store.state.MailboxHTMLLinks {
+		if store.state.MailboxHTMLLinks[i].Token == link.Token {
+			store.state.MailboxHTMLLinks[i].ActivatedAt = time.Now().Add(-2 * time.Hour)
+			store.state.MailboxHTMLLinks[i].ExpiresAt = time.Now().Add(-time.Hour)
+		}
+	}
+	if err := store.saveLocked(); err != nil {
+		store.mu.Unlock()
+		t.Fatal(err)
+	}
+	store.mu.Unlock()
+	server.deletePrivacyMailbox = func(context.Context, ICloudSession, string) (ICloudMailboxDeleteResult, error) {
+		return ICloudMailboxDeleteResult{}, errCode("apple_account_mailbox_delete_failed", "永久删除失败：Apple Account 服务暂时不可用；HTTP 503", true)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/mailboxes/"+url.PathEscape(mailbox.ID), nil)
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expired delete fallback = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		LocalDeleted bool                      `json:"local_deleted"`
+		Remote       ICloudMailboxDeleteResult `json:"remote"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.LocalDeleted || !body.Remote.RemotePending {
+		t.Fatalf("expired delete fallback response = %+v body=%s", body, rr.Body.String())
+	}
+	if _, ok := store.FindMailboxByID(mailbox.ID); ok {
+		t.Fatal("expired mailbox remains after local fallback")
+	}
+}
+
 func TestDeleteMailboxKeepsLocalDataWhenAppleAccountRemoveFails(t *testing.T) {
 	oldBaseURL := appleAccountManageBaseURL
 	defer func() { appleAccountManageBaseURL = oldBaseURL }()

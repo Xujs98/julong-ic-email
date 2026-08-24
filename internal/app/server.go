@@ -3459,12 +3459,57 @@ func (s *Server) deleteMailboxRemoteThenLocal(ctx context.Context, mailboxID str
 		}
 	}
 	if err != nil {
+		// When an HTML mailbox is already expired and Apple is returning a
+		// transient gateway outage (503/502/500/429), keeping the local row
+		// forever makes both manual delete and batch cleanup unusable. Remove the
+		// local mailbox now and report that the remote mutation is pending; the
+		// next successful Apple login/sync can reconcile the remote record.
+		if isTransientRemoteDeleteError(err) && s.mailboxHTMLExpired(mailbox.ID, time.Now()) {
+			deferred := ICloudMailboxDeleteResult{Email: mailbox.Email, RemotePending: true}
+			if localErr := s.store.DeleteMailbox(mailbox.ID); localErr != nil {
+				return mailbox, ICloudMailboxDeleteResult{}, localErr
+			}
+			if s.logger != nil {
+				s.logger.Warn("expired mailbox removed locally while remote deletion is pending", "mailbox_id", mailbox.ID, "email", mailbox.Email, "err", err)
+			}
+			return mailbox, deferred, nil
+		}
 		return mailbox, ICloudMailboxDeleteResult{}, err
 	}
 	if err := s.store.DeleteMailbox(mailbox.ID); err != nil {
 		return mailbox, deletion, err
 	}
 	return mailbox, deletion, nil
+}
+
+func (s *Server) mailboxHTMLExpired(mailboxID string, now time.Time) bool {
+	link, ok := s.store.MailboxHTMLLinkForMailbox(mailboxID)
+	if !ok {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return mailboxHTMLState(link, true, now) == "expired"
+}
+
+func isTransientRemoteDeleteError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if isCodedError(err, "apple_account_transient") ||
+		isCodedError(err, "icloud_mailbox_delete_failed") ||
+		isCodedError(err, "apple_account_mailbox_delete_failed") ||
+		isCodedError(err, "apple_account_mailbox_stop_failed") {
+		message := strings.ToLower(err.Error())
+		return strings.Contains(message, "http 429") || strings.Contains(message, "http 500") ||
+			strings.Contains(message, "http 502") || strings.Contains(message, "http 503") ||
+			strings.Contains(message, "temporarily unavailable") || strings.Contains(message, "timeout")
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "http 429") || strings.Contains(message, "http 500") ||
+		strings.Contains(message, "http 502") || strings.Contains(message, "http 503") ||
+		strings.Contains(message, "temporarily unavailable")
 }
 
 func (s *Server) handleCleanupExpiredHTMLMailboxes(w http.ResponseWriter, r *http.Request) {
@@ -3487,11 +3532,12 @@ func (s *Server) handleCleanupExpiredHTMLMailboxes(w http.ResponseWriter, r *htt
 	}
 	failures := make([]cleanupFailure, 0)
 	deleted := 0
+	remotePending := 0
 	skipped := 0
 	deleteClient := NewICloudClient()
 	for _, candidate := range candidates {
 		deleteCtx, cancel := context.WithTimeout(r.Context(), htmlExpiryMailboxDeleteTimeout)
-		mailbox, _, err := s.deleteMailboxRemoteThenLocal(deleteCtx, candidate.ID, mailboxDeleteConditions{
+		mailbox, deletion, err := s.deleteMailboxRemoteThenLocal(deleteCtx, candidate.ID, mailboxDeleteConditions{
 			RequireExpired:  true,
 			RequireOutbound: true,
 			ExpiredAt:       now,
@@ -3500,6 +3546,9 @@ func (s *Server) handleCleanupExpiredHTMLMailboxes(w http.ResponseWriter, r *htt
 		cancel()
 		if err == nil {
 			deleted++
+			if deletion.RemotePending {
+				remotePending++
+			}
 			continue
 		}
 		if isCodedError(err, "mailbox_cleanup_skipped") || isCodedError(err, "mailbox_not_found") {
@@ -3518,12 +3567,13 @@ func (s *Server) handleCleanupExpiredHTMLMailboxes(w http.ResponseWriter, r *htt
 		status = http.StatusMultiStatus
 	}
 	writeJSON(w, status, map[string]any{
-		"success":  true,
-		"matched":  len(candidates),
-		"deleted":  deleted,
-		"skipped":  skipped,
-		"failed":   len(failures),
-		"failures": failures,
+		"success":        true,
+		"matched":        len(candidates),
+		"deleted":        deleted,
+		"remote_pending": remotePending,
+		"skipped":        skipped,
+		"failed":         len(failures),
+		"failures":       failures,
 	})
 }
 

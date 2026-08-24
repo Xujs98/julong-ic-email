@@ -5774,12 +5774,15 @@
       try {
         const data = await api('/api/mailboxes/html-expired/cleanup', {method:'POST', body:'{}'});
         const deleted = Number(data.deleted || 0);
+        const remotePending = Number(data.remote_pending || 0);
         const failed = Number(data.failed || 0);
         const skipped = Number(data.skipped || 0);
         clearMailboxSelection();
         mailboxPage = 1;
-        log(`过期邮箱清理完成：匹配 ${data.matched || 0}，删除 ${deleted}，跳过 ${skipped}，失败 ${failed}`);
-        showToast(failed > 0 ? `清理完成：删除 ${deleted}，失败 ${failed}` : `已清理 ${deleted} 个过期邮箱`);
+        log(`过期邮箱清理完成：匹配 ${data.matched || 0}，删除 ${deleted}，远端待重试 ${remotePending}，跳过 ${skipped}，失败 ${failed}`);
+        showToast(failed > 0
+          ? `清理完成：删除 ${deleted}，远端待重试 ${remotePending}，失败 ${failed}`
+          : `已清理 ${deleted} 个过期邮箱${remotePending ? `；远端待重试 ${remotePending}` : ''}`);
         await refresh();
       } catch (err) {
         log('清理全部已过期邮箱失败：' + err.message);
@@ -6452,9 +6455,9 @@
         selectedMailboxIDs.delete(id);
         selectedMailboxRows.delete(id);
         const remote = data.remote || {};
-        const detail = data.provider === 'domain' ? '本地域名邮箱与收件数据已删除' : (remote.already_missing ? '远端已不存在，本地记录已清理' : 'iCloud 远端与本地记录均已删除');
+        const detail = data.provider === 'domain' ? '本地域名邮箱与收件数据已删除' : (remote.remote_pending ? '本地记录已清理，iCloud 远端删除待服务恢复后重试' : (remote.already_missing ? '远端已不存在，本地记录已清理' : 'iCloud 远端与本地记录均已删除'));
         log(`邮箱已永久删除：${email}（${detail}）`);
-        showToast(`已永久删除邮箱：${email}`);
+        showToast(remote.remote_pending ? `已清理本地邮箱：${email}；远端待重试` : `已永久删除邮箱：${email}`);
         await refresh();
       } catch (err) {
         log(`永久删除邮箱失败：${email}；${err.message}`);
