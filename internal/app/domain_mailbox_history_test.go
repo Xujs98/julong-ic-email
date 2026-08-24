@@ -4,10 +4,32 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestDomainMailboxGenerationUsesSplitRandomLocalPart(t *testing.T) {
+	store, err := NewFileStore(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	domain, err := store.AddDomainForOwner("owner-1", "", "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mailboxes, err := store.AddDomainMailboxesForOwner("owner-1", domain.ID, "", "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := regexp.MustCompile(`^[a-z0-9]{6}-[a-z0-9]{8}@example\.test$`)
+	for _, mailbox := range mailboxes {
+		if !pattern.MatchString(mailbox.Email) {
+			t.Fatalf("mailbox email %q does not match split-random format", mailbox.Email)
+		}
+	}
+}
 
 func TestDomainMailboxHistoryPersistsAfterDelete(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
@@ -50,7 +72,7 @@ func TestDomainMailboxGenerationSkipsHistoricalAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	first, err := store.addDomainMailboxesForOwner("", domain.ID, "", "", 1, func() (string, error) {
-		return "reused", nil
+		return "reused-token", nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +81,7 @@ func TestDomainMailboxGenerationSkipsHistoricalAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	locals := []string{"reused", "fresh"}
+	locals := []string{"reused-token", "fresh-token"}
 	calls := 0
 	created, err := store.addDomainMailboxesForOwner("", domain.ID, "", "", 1, func() (string, error) {
 		local := locals[calls]
@@ -69,7 +91,7 @@ func TestDomainMailboxGenerationSkipsHistoricalAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 2 || len(created) != 1 || created[0].Email != "mail-fresh@example.test" {
+	if calls != 2 || len(created) != 1 || created[0].Email != "fresh-token@example.test" {
 		t.Fatalf("calls=%d created=%#v", calls, created)
 	}
 	if history := store.Snapshot().DomainMailboxHistory; len(history) != 2 {

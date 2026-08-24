@@ -955,7 +955,7 @@ func (s *FileStore) DeleteDomain(id string) error {
 
 func (s *FileStore) AddDomainMailboxesForOwner(ownerID, domainID, label, note string, count int) ([]Mailbox, error) {
 	return s.addDomainMailboxesForOwner(ownerID, domainID, label, note, count, func() (string, error) {
-		return randomToken(9)
+		return randomDomainMailboxLocal()
 	})
 }
 
@@ -998,7 +998,7 @@ func (s *FileStore) addDomainMailboxesForOwnerLocked(ownerID, domainID, label, n
 
 func (s *FileStore) AddRandomDomainMailboxesForOwner(ownerID, label, note string, count int) ([]Mailbox, error) {
 	return s.addRandomDomainMailboxesForOwner(ownerID, label, note, count, func() (string, error) {
-		return randomToken(9)
+		return randomDomainMailboxLocal()
 	}, randomIndex)
 }
 
@@ -1071,7 +1071,7 @@ func (s *FileStore) addDomainMailboxesForDomainsLocked(ownerID string, domains [
 			return nil, errCode("domain_random_invalid", "随机域名选择结果无效", true)
 		}
 		domain := domains[domainIndex]
-		email := strings.ToLower("mail-" + strings.TrimSpace(local) + "@" + domain.Name)
+		email := strings.ToLower(strings.TrimSpace(local) + "@" + domain.Name)
 		if _, exists := reserved[email]; exists {
 			continue
 		}

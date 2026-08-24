@@ -17,6 +17,34 @@ func randomToken(bytesLen int) (string, error) {
 	return strings.TrimRight(base64.URLEncoding.EncodeToString(buf), "="), nil
 }
 
+func randomAlphaNumeric(length int) (string, error) {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	if length <= 0 {
+		return "", nil
+	}
+	buf := make([]byte, length)
+	for i := range buf {
+		index, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		if err != nil {
+			return "", err
+		}
+		buf[i] = alphabet[index.Int64()]
+	}
+	return string(buf), nil
+}
+
+func randomDomainMailboxLocal() (string, error) {
+	left, err := randomAlphaNumeric(6)
+	if err != nil {
+		return "", err
+	}
+	right, err := randomAlphaNumeric(8)
+	if err != nil {
+		return "", err
+	}
+	return left + "-" + right, nil
+}
+
 func randomUUID() (string, error) {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
