@@ -808,10 +808,18 @@ func (c *ICloudClient) deletePrivacyMailboxWithAppleAccount(ctx context.Context,
 	fallbackAPIKey = strings.TrimSpace(fallbackAPIKey)
 	refreshed := false
 	if appleAccountManageNeedsCreateRefresh(loginState, time.Now()) {
-		refreshed = true
-		loginState, session, err = c.refreshAppleAccountManageStateForCreate(ctx, session, loginState, fallbackAPIKey)
-		if err != nil {
-			return result, session, err
+		refreshedState, refreshedSession, refreshErr := c.refreshAppleAccountManageStateForCreate(ctx, session, loginState, fallbackAPIKey)
+		loginState, session = refreshedState, refreshedSession
+		if refreshErr != nil {
+			// A temporary token endpoint outage should not block deletion when
+			// the saved API key is still available. The mutation below remains
+			// authoritative and will trigger a full refresh on auth failure.
+			if strings.TrimSpace(firstNonEmpty(loginState.APIKey, fallbackAPIKey)) == "" {
+				return result, session, refreshErr
+			}
+			refreshed = false
+		} else {
+			refreshed = true
 		}
 	}
 
@@ -917,7 +925,7 @@ func appleAccountMailboxMutationRetryable(status int, err error) bool {
 	if status == http.StatusConflict || status == http.StatusTooEarly || status == http.StatusTooManyRequests || status >= 500 {
 		return true
 	}
-	return isCodedError(err, "apple_account_transient")
+	return isCodedError(err, "apple_account_transient") || isAppleTransientNetworkError(err)
 }
 
 func appleAccountRemoteMissingStatus(status int) bool {
@@ -1187,6 +1195,11 @@ func (c *ICloudClient) fetchAppleAccountManageTokenScntOnce(ctx context.Context,
 }
 
 func (c *ICloudClient) callAppleAccountRaw(ctx context.Context, loginState *LoginState, apiKey, method, path string, body any, result any) (appleAccountRawResponse, error) {
+	if path == "/account/manage/gs/ws/token" {
+		return retryAppleAccountMailboxMutation(ctx, func() (appleAccountRawResponse, error) {
+			return c.callAppleAccountRawOnce(ctx, loginState, apiKey, method, path, body, result)
+		})
+	}
 	var raw appleAccountRawResponse
 	err := retryAppleTransient(ctx, func() error {
 		next, err := c.callAppleAccountRawOnce(ctx, loginState, apiKey, method, path, body, result)

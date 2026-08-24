@@ -594,6 +594,28 @@ func TestMailboxOutboundBatchSearchAndColumnPickerTemplate(t *testing.T) {
 	}
 }
 
+func TestAppleLoginButtonsShowTransientErrorsTemplate(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`id="appleAccountLoginButton"`,
+		`id="protocolLoginButton"`,
+		`function setLoginFeedback(message)`,
+		`function loginErrorMessage(channel, err)`,
+		`err.status = res.status`,
+		`Apple 服务暂时不可用，请稍后重试。`,
+		`const data = await api('/api/apple-account/login/start'`,
+		`button.disabled = false;`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Apple login feedback source missing %q", want)
+		}
+	}
+}
+
 func TestMailboxTableUsesViewSpecificTime(t *testing.T) {
 	data, err := webFS.ReadFile("templates/index.html")
 	if err != nil {
@@ -3727,6 +3749,52 @@ func TestICloudClientDeletePrivacyMailboxTreatsRemote404AsAlreadyMissing(t *test
 	}
 	if !result.Found || !result.AlreadyMissing || result.Deleted {
 		t.Fatalf("404 delete result = %+v", result)
+	}
+}
+
+func TestICloudClientDeletePrivacyMailboxUsesSavedKeyWhenTokenRefreshIsUnavailable(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+
+	tokenCalls := 0
+	removeCalls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /account/manage/gs/ws/token":
+			tokenCalls++
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`<html><body>503 Service Temporarily Unavailable</body></html>`))
+		case "GET /account/manage/section/privacy":
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`<html><body>503 Service Temporarily Unavailable</body></html>`))
+		case "DELETE /account/manage/email/private/token-outage-id/stop":
+			w.WriteHeader(http.StatusNoContent)
+		case "DELETE /account/manage/email/private/token-outage-id/remove":
+			removeCalls++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+
+	now := time.Now()
+	result, _, err := (&ICloudClient{client: ts.Client()}).DeletePrivacyMailboxWithRemote(t.Context(), ICloudSession{
+		AccountID: "acc-token-outage",
+		LoginStates: []LoginState{{
+			Kind:          LoginStateAppleAccount,
+			Origin:        ts.URL,
+			Scnt:          "outage-scnt",
+			APIKey:        "saved-api-key",
+			LastCheckedAt: now.Add(-time.Hour),
+		}},
+	}, "", "token.outage@icloud.com", "token-outage-id", "APPLE_ACCOUNT", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tokenCalls < 3 || removeCalls != 1 || !result.Deactivated || !result.Deleted {
+		t.Fatalf("delete result=%+v token_calls=%d remove_calls=%d", result, tokenCalls, removeCalls)
 	}
 }
 

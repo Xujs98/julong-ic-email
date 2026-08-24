@@ -2368,9 +2368,9 @@
             </label>
           </div>
           <div class="toolbar">
-            <button class="primary" onclick="startAppleAccountLogin()">新接口登录</button>
+            <button id="appleAccountLoginButton" class="primary" onclick="startAppleAccountLogin()">新接口登录</button>
             <button id="appleAccount2FAButton" onclick="submitAppleAccount2FA()">提交新接口验证码</button>
-            <button onclick="startProtocolLogin()">旧接口登录</button>
+            <button id="protocolLoginButton" onclick="startProtocolLogin()">旧接口登录</button>
             <button id="protocol2FAButton" onclick="submitProtocol2FA()">提交旧接口验证码</button>
             <button type="button" onclick="saveCreateSettings()">保存配置</button>
             <button id="sessionCheckButton" onclick="checkICloudSession()">检测登录态</button>
@@ -3414,7 +3414,9 @@
       try {
         data = await res.json();
       } catch (err) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        const parseError = new Error(`HTTP ${res.status}: ${res.statusText}`);
+        parseError.status = res.status;
+        throw parseError;
       }
       if (res.status === 401) {
         location.href = '/';
@@ -3422,6 +3424,7 @@
       }
       if (!data.success) {
         const err = new Error(data.message || data.code || `HTTP ${res.status}`);
+        err.status = res.status;
         err.code = data.code || '';
         err.retryable = !!data.retryable;
         throw err;
@@ -6048,24 +6051,64 @@
       }
     }
 
+    function setLoginFeedback(message) {
+      const text = String(message || '').trim();
+      if ($('icloudSessionInfo')) $('icloudSessionInfo').textContent = text;
+      if ($('loginSettingsStatus')) $('loginSettingsStatus').textContent = text;
+    }
+
+    function loginErrorMessage(channel, err) {
+      const message = String((err && err.message) || '请求失败').trim();
+      const status = Number(err && err.status) || 0;
+      const retryable = !!(err && err.retryable);
+      if (retryable || status === 408 || status === 425 || status === 429 || status >= 500) {
+        return `${channel}失败：${message}${status ? `（HTTP ${status}）` : ''}\nApple 服务暂时不可用，请稍后重试。`;
+      }
+      return `${channel}失败：${message}`;
+    }
+
     async function startProtocolLogin() {
+      const button = $('protocolLoginButton');
       const appleId = $('protocolAppleId').value.trim();
-      const data = await api('/api/icloud/protocol-login/start', {method:'POST', body: JSON.stringify({
-        apple_id: appleId,
-        password: $('protocolPassword').value,
-        two_factor_method: twoFactorMethodPayloadValue('iCloudWeb2FAMethod')
-      })});
-      $('protocolPassword').value = '';
-      if (data.needs_2fa) {
-        protocolPendingID = data.pending_id || '';
-        log(`${data.message || '需要 2FA'}：${data.apple_id || appleId}，有效期 ${data.expires_at || '-'}`);
-        $('icloudSessionInfo').textContent = `${data.message || '需要 2FA'}\n账号：${data.apple_id || appleId}\n有效期：${data.expires_at || '-'}`;
+      const password = $('protocolPassword').value;
+      if (!appleId || !password) {
+        setLoginFeedback('旧接口登录失败：请输入 Apple ID 和密码。');
+        showToast('请输入 Apple ID 和密码');
         return;
       }
-      renderICloudSession(data.session);
-      if (data.sessions) renderICloudSessions(data.sessions);
-      log('旧接口登录态已保存：' + (data.session.apple_id || appleId));
-      await refresh();
+      button.disabled = true;
+      setLoginFeedback('正在连接 Apple 旧接口，请稍候…');
+      log('开始旧接口登录：正在连接 Apple');
+      try {
+        const data = await api('/api/icloud/protocol-login/start', {method:'POST', body: JSON.stringify({
+          apple_id: appleId,
+          password,
+          two_factor_method: twoFactorMethodPayloadValue('iCloudWeb2FAMethod')
+        })});
+        $('protocolPassword').value = '';
+        if (data.needs_2fa) {
+          protocolPendingID = data.pending_id || '';
+          const message = `${data.message || '需要 2FA'}\n账号：${data.apple_id || appleId}\n有效期：${data.expires_at || '-'}`;
+          setLoginFeedback(message);
+          log(message.replace('\n', '；'));
+          showToast('旧接口已进入 2FA 验证');
+          return;
+        }
+        renderICloudSession(data.session);
+        if (data.sessions) renderICloudSessions(data.sessions);
+        const message = '旧接口登录态已保存：' + (data.session.apple_id || appleId);
+        setLoginFeedback(message);
+        log(message);
+        showToast('旧接口登录成功');
+        await refresh();
+      } catch (err) {
+        const message = loginErrorMessage('旧接口登录', err);
+        setLoginFeedback(message);
+        log(message.replace('\n', '；'));
+        showToast('旧接口登录失败，请查看提示');
+      } finally {
+        button.disabled = false;
+      }
     }
 
     async function submitProtocol2FA() {
@@ -6105,23 +6148,47 @@
     }
 
     async function startAppleAccountLogin() {
+      const button = $('appleAccountLoginButton');
       const appleId = $('protocolAppleId').value.trim();
-      const data = await api('/api/apple-account/login/start', {method:'POST', body: JSON.stringify({
-        apple_id: appleId,
-        password: $('protocolPassword').value,
-        two_factor_method: twoFactorMethodPayloadValue('appleAccount2FAMethod')
-      })});
-      $('protocolPassword').value = '';
-      if (data.needs_2fa) {
-        appleAccountPendingID = data.pending_id || '';
-        log(`${data.message || '新接口需要 2FA'}：${data.apple_id || appleId}，有效期 ${data.expires_at || '-'}`);
-        $('icloudSessionInfo').textContent = `${data.message || '新接口需要 2FA'}\n账号：${data.apple_id || appleId}\n有效期：${data.expires_at || '-'}`;
+      const password = $('protocolPassword').value;
+      if (!appleId || !password) {
+        setLoginFeedback('新接口登录失败：请输入 Apple ID 和密码。');
+        showToast('请输入 Apple ID 和密码');
         return;
       }
-      renderICloudSession(data.session);
-      if (data.sessions) renderICloudSessions(data.sessions);
-      log('新接口登录态已保存：' + (data.session.apple_id || appleId));
-      await refresh();
+      button.disabled = true;
+      setLoginFeedback('正在连接 Apple 新接口，请稍候…');
+      log('开始新接口登录：正在连接 Apple');
+      try {
+        const data = await api('/api/apple-account/login/start', {method:'POST', body: JSON.stringify({
+          apple_id: appleId,
+          password,
+          two_factor_method: twoFactorMethodPayloadValue('appleAccount2FAMethod')
+        })});
+        $('protocolPassword').value = '';
+        if (data.needs_2fa) {
+          appleAccountPendingID = data.pending_id || '';
+          const message = `${data.message || '新接口需要 2FA'}\n账号：${data.apple_id || appleId}\n有效期：${data.expires_at || '-'}`;
+          setLoginFeedback(message);
+          log(message.replace('\n', '；'));
+          showToast('新接口已进入 2FA 验证');
+          return;
+        }
+        renderICloudSession(data.session);
+        if (data.sessions) renderICloudSessions(data.sessions);
+        const message = '新接口登录态已保存：' + (data.session.apple_id || appleId);
+        setLoginFeedback(message);
+        log(message);
+        showToast('新接口登录成功');
+        await refresh();
+      } catch (err) {
+        const message = loginErrorMessage('新接口登录', err);
+        setLoginFeedback(message);
+        log(message.replace('\n', '；'));
+        showToast('新接口登录失败，请查看提示');
+      } finally {
+        button.disabled = false;
+      }
     }
 
     async function submitAppleAccount2FA() {
