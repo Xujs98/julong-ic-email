@@ -6717,7 +6717,7 @@ func TestMailboxHTMLLinkAndSystemSettings(t *testing.T) {
 	activationStartedAt := time.Now()
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, parsed.Path, nil))
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "最近邮件") || !strings.Contains(rr.Body.String(), "buildEmailDocument") || !strings.Contains(rr.Body.String(), "setAttribute('sandbox','')") {
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "最近邮件") || !strings.Contains(rr.Body.String(), "buildEmailDocument") || !strings.Contains(rr.Body.String(), "sanitizeEmailLink") || !strings.Contains(rr.Body.String(), "allow-popups-to-escape-sandbox") || !strings.Contains(rr.Body.String(), "target','_blank'") {
 		t.Fatalf("public html page = %d body=%s", rr.Code, rr.Body.String())
 	}
 	activatedLink, ok := store.MailboxHTMLLinkForMailbox(mailbox.ID)
