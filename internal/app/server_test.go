@@ -6447,6 +6447,65 @@ func TestCleanupExpiredOutboundMailboxesEndpoint(t *testing.T) {
 	}
 }
 
+func TestCleanupExpiredHTMLDomainMailboxesAreRetained(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	cookie, user := registerTestUser(t, handler, "domain-retain-owner", "owner123")
+	domain, err := store.AddDomainForOwner(user.ID, "", "domain-retain.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mailboxes, err := store.AddDomainMailboxesForOwner(user.ID, domain.ID, "retained", "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mailbox := mailboxes[0]
+	if _, err := store.SetMailboxStatus(mailbox.ID, nil, nil, StatusOutbound, "test outbound"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	store.mu.Lock()
+	for i := range store.state.MailboxHTMLLinks {
+		if store.state.MailboxHTMLLinks[i].MailboxID == mailbox.ID {
+			store.state.MailboxHTMLLinks[i].ActivatedAt = now.Add(-2 * time.Hour)
+			store.state.MailboxHTMLLinks[i].ExpiresAt = now.Add(-time.Hour)
+		}
+	}
+	store.state.SystemSettings.HTMLExpiryDeleteMailbox = true
+	if err := store.saveLocked(); err != nil {
+		store.mu.Unlock()
+		t.Fatal(err)
+	}
+	store.mu.Unlock()
+
+	server.cleanupExpiredHTMLMailboxes(context.Background(), now)
+	if _, ok := store.FindMailboxByID(mailbox.ID); !ok {
+		t.Fatal("expired domain mailbox was removed by automatic cleanup")
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/mailboxes/html-expired/cleanup", strings.NewReader(`{}`))
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("manual cleanup expired domain mailbox = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Matched int `json:"matched"`
+		Deleted int `json:"deleted"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Matched != 0 || body.Deleted != 0 {
+		t.Fatalf("manual cleanup included domain mailbox: %+v body=%s", body, rr.Body.String())
+	}
+	if _, ok := store.FindMailboxByID(mailbox.ID); !ok {
+		t.Fatal("manual cleanup removed domain mailbox")
+	}
+}
+
 func TestDeleteMailboxPermanentlyDeletesRemoteBeforeLocalData(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())

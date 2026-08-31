@@ -515,6 +515,16 @@ func (s *Server) cleanupExpiredHTMLMailboxes(ctx context.Context, now time.Time)
 		if !ok {
 			continue
 		}
+		// Domain mailboxes are inbound routing endpoints. Their address must
+		// remain routable even when a public HTML link expires; removing the
+		// mailbox here causes Cloudflare/SMTP deliveries to return 404. Domain
+		// mailboxes can still be deleted explicitly from the mailbox actions.
+		if mailbox.ProviderKind() == MailboxProviderDomain {
+			if s.logger != nil {
+				s.logger.Info("expired HTML domain mailbox retained", "mailbox_id", mailbox.ID, "email", mailbox.Email)
+			}
+			continue
+		}
 		deleteCtx, cancel := context.WithTimeout(ctx, htmlExpiryMailboxDeleteTimeout)
 		_, deletion, err := s.deleteMailboxRemoteThenLocal(deleteCtx, mailbox.ID, mailboxDeleteConditions{
 			RequireExpired: true,
@@ -3539,7 +3549,7 @@ func (s *Server) handleCleanupExpiredHTMLMailboxes(w http.ResponseWriter, r *htt
 	state := s.scopedState(r)
 	outbound := make([]Mailbox, 0, len(state.Mailboxes))
 	for _, mailbox := range state.Mailboxes {
-		if mailbox.Status == StatusOutbound {
+		if mailbox.Status == StatusOutbound && mailbox.ProviderKind() != MailboxProviderDomain {
 			outbound = append(outbound, mailbox)
 		}
 	}
