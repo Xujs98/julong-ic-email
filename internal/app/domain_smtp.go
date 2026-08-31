@@ -339,7 +339,8 @@ func (s *DomainSMTPService) acceptRecipient(address string) (Mailbox, int, strin
 	if at <= 0 || at == len(address)-1 {
 		return Mailbox{}, 550, "invalid recipient"
 	}
-	if _, ok := s.store.FindEnabledDomainByName(address[at+1:]); !ok {
+	domain, ok := s.store.FindEnabledDomainByName(address[at+1:])
+	if !ok || !domainAcceptsProvider(domain, DomainProviderSMTP) {
 		return Mailbox{}, 550, "recipient domain is not configured"
 	}
 	mailbox, ok := s.store.FindMailboxByEmail(address)

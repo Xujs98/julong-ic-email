@@ -187,9 +187,14 @@ func (s *Server) handleForwardingInbound(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, errCode("forwarding_recipient_invalid", "收件地址非法", false))
 		return
 	}
-	domain := strings.ToLower(strings.TrimSpace(payload.To[strings.LastIndex(payload.To, "@")+1:]))
-	if _, ok := s.store.FindEnabledDomainByName(domain); !ok {
+	domainName := strings.ToLower(strings.TrimSpace(payload.To[strings.LastIndex(payload.To, "@")+1:]))
+	domain, ok := s.store.FindEnabledDomainByName(domainName)
+	if !ok {
 		writeError(w, http.StatusNotFound, errCode("forwarding_domain_not_found", "收件域名未接入矩龙邮箱", false))
+		return
+	}
+	if !domainAcceptsProvider(domain, DomainProviderCloudflare) {
+		writeError(w, http.StatusConflict, errCode("forwarding_provider_mismatch", "该域名当前未选择 Cloudflare 收件方式", false))
 		return
 	}
 	mailbox, ok := s.store.FindMailboxByEmail(payload.To)
@@ -277,7 +282,7 @@ func (s *Server) forwardingSettingsResponseWith(settings SystemSettings, r *http
 	state := s.store.Snapshot()
 	domains := make([]string, 0)
 	for _, domain := range state.Domains {
-		if domain.Enabled {
+		if domain.Enabled && normalizeDomainProvider(domain.Provider) == DomainProviderCloudflare {
 			domains = append(domains, domain.Name)
 		}
 	}

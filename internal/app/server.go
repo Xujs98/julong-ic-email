@@ -2430,7 +2430,7 @@ func (s *Server) publicDomain(domain Domain, state State) publicDomain {
 	}
 	return publicDomain{
 		ID: domain.ID, OwnerID: domain.OwnerID, Owner: s.ownerName(domain.OwnerID), Label: domain.Label,
-		Name: domain.Name, Enabled: domain.Enabled, Mailboxes: count,
+		Name: domain.Name, Provider: normalizeDomainProvider(domain.Provider), ProviderLabel: domainProviderLabel(domain.Provider), Enabled: domain.Enabled, Mailboxes: count,
 		CreatedAt: formatTime(domain.CreatedAt), UpdatedAt: formatTime(domain.UpdatedAt),
 	}
 }
@@ -2461,14 +2461,15 @@ func (s *Server) handleListDomains(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		Name  string `json:"name"`
-		Label string `json:"label"`
+		Name     string `json:"name"`
+		Label    string `json:"label"`
+		Provider string `json:"provider"`
 	}
 	if err := decodeJSON(r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	domain, err := s.store.AddDomainForOwner(requestOwnerID(r, s.store), payload.Label, payload.Name)
+	domain, err := s.store.AddDomainForOwnerWithProvider(requestOwnerID(r, s.store), payload.Label, payload.Name, payload.Provider)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -2503,14 +2504,32 @@ func (s *Server) handleDomainDNS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errCode("domain_not_found", "域名不存在", false))
 		return
 	}
-	mailHost := "mail." + domain.Name
-	inboxHost := "inbox." + domain.Name
+	provider := normalizeDomainProvider(domain.Provider)
+	response := map[string]any{"success": true, "domain": domain.Name, "provider": provider, "provider_label": domainProviderLabel(provider)}
 	smtp := s.domainSMTPStatus()
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "domain": domain.Name, "smtp_port": smtp["port"], "public_smtp_port": smtp["public_port"], "records": []map[string]any{
-		{"type": "A/AAAA", "name": "mail", "value": "服务器公网 IP", "note": mailHost + " 仅做 DNS 解析，不使用 HTTP 代理"},
-		{"type": "MX", "name": "@", "value": mailHost, "priority": 10, "note": "接收入站邮件"},
-		{"type": "A/AAAA", "name": "inbox", "value": "服务器公网 IP", "note": "网页入口：" + inboxHost},
-	}})
+	switch provider {
+	case DomainProviderSMTP:
+		mailHost := "mail." + domain.Name
+		inboxHost := "inbox." + domain.Name
+		response["smtp_port"] = smtp["port"]
+		response["public_smtp_port"] = smtp["public_port"]
+		response["records"] = []map[string]any{
+			{"type": "A/AAAA", "name": "mail", "value": "服务器公网 IP", "note": mailHost + " 仅做 DNS 解析，不使用 HTTP 代理"},
+			{"type": "MX", "name": "@", "value": mailHost, "priority": 10, "note": "接收入站邮件"},
+			{"type": "A/AAAA", "name": "inbox", "value": "服务器公网 IP", "note": "网页入口：" + inboxHost},
+		}
+	case DomainProviderRemail:
+		response["records"] = []map[string]any{
+			{"type": "MX", "name": "@", "value": "按 Remail 控制台提供的 MX 主机填写", "priority": 10, "note": "Remail 的域名验证与收件路由以其控制台显示值为准"},
+			{"type": "TXT", "name": "@", "value": "按 Remail 控制台提供的验证值填写", "note": "完成域名所有权验证后再启用收件"},
+		}
+	default:
+		response["records"] = []map[string]any{
+			{"type": "MX", "name": "@", "value": "Cloudflare Email Routing 自动生成的 MX", "priority": 10, "note": "在 Cloudflare Email Routing 中将地址或 Catch-all 指向 Worker"},
+			{"type": "TXT", "name": "@", "value": "按 Cloudflare 控制台提示填写", "note": "完成 Email Routing 的域名验证"},
+		}
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {

@@ -152,6 +152,8 @@ Copy-Item .\config.example.json .\config.json
 5. 服务器安全组和防火墙仍需放行 TCP 25；`JULONG_SMTP_PORT` 属于 Docker 宿主机端口映射，默认值为 25，只有更换公网端口时才需要调整部署配置。
 6. 访问生成邮箱的 API 或 HTML 接码地址时，仍使用该邮箱独立的 API key/token；域名邮箱没有 iCloud 远端同步或远端清理步骤。
 
+接入域名时可在后台选择收件方式：**Cloudflare 转发**、**自建 SMTP** 或 **Remail**。选择会随域名保存，并影响域名清单与 DNS 指引；Cloudflare 和自建 SMTP 由本项目已有收件链路处理，Remail 需按 Remail 控制台提供的域名验证、MX 与转发配置完成接入。
+
 ### Cloudflare 转发邮箱部署
 
 当服务器公网 TCP 25 被云服务商拦截，或希望由 Cloudflare 处理 MX 收件时，使用后台的“转发邮箱”页面和 `cloudflare/README.md`：

@@ -8,7 +8,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
@@ -253,6 +255,48 @@ func TestDomainMailboxLifecycleGuards(t *testing.T) {
 	}
 	if _, err := store.AddDomainMailboxesForOwner("", domain.ID, "", "", 1); err == nil || !isCodedError(err, "domain_disabled") {
 		t.Fatalf("disabled domain create error = %v, want domain_disabled", err)
+	}
+}
+
+func TestDomainProviderSelectionAndDNSInstructions(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	cookie, _ := registerTestUser(t, handler, "domain-provider-user", "domain-password")
+	call := func(method, path, payload string) *httptest.ResponseRecorder {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
+		handler.ServeHTTP(rr, req)
+		return rr
+	}
+
+	for _, item := range []struct {
+		name     string
+		provider string
+		wantDNS  string
+	}{
+		{name: "cf.test", provider: DomainProviderCloudflare, wantDNS: "Cloudflare Email Routing"},
+		{name: "smtp.test", provider: DomainProviderSMTP, wantDNS: "服务器公网 IP"},
+		{name: "remail.test", provider: DomainProviderRemail, wantDNS: "Remail 控制台"},
+	} {
+		rr := call(http.MethodPost, "/api/domains", fmt.Sprintf(`{"name":%q,"provider":%q}`, item.name, item.provider))
+		if rr.Code != http.StatusCreated || !strings.Contains(rr.Body.String(), fmt.Sprintf(`"provider":%q`, item.provider)) {
+			t.Fatalf("create %s provider = %d body=%s", item.provider, rr.Code, rr.Body.String())
+		}
+		var response struct {
+			Domain struct {
+				ID string `json:"id"`
+			} `json:"domain"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		dns := call(http.MethodGet, "/api/domains/"+response.Domain.ID+"/dns", "")
+		if dns.Code != http.StatusOK || !strings.Contains(dns.Body.String(), item.wantDNS) {
+			t.Fatalf("dns %s = %d body=%s", item.provider, dns.Code, dns.Body.String())
+		}
 	}
 }
 

@@ -23,6 +23,10 @@ const (
 
 	MailboxProviderICloud = "icloud"
 	MailboxProviderDomain = "domain"
+
+	DomainProviderCloudflare = "cloudflare"
+	DomainProviderSMTP       = "smtp"
+	DomainProviderRemail     = "remail"
 )
 
 type State struct {
@@ -124,9 +128,42 @@ type Domain struct {
 	OwnerID   string    `json:"owner_id,omitempty"`
 	Label     string    `json:"label"`
 	Name      string    `json:"name"`
+	Provider  string    `json:"provider,omitempty"`
 	Enabled   bool      `json:"enabled"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func normalizeDomainProvider(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case DomainProviderSMTP:
+		return DomainProviderSMTP
+	case DomainProviderRemail:
+		return DomainProviderRemail
+	default:
+		return DomainProviderCloudflare
+	}
+}
+
+func domainProviderLabel(value string) string {
+	switch normalizeDomainProvider(value) {
+	case DomainProviderSMTP:
+		return "自建 SMTP"
+	case DomainProviderRemail:
+		return "Remail"
+	default:
+		return "Cloudflare"
+	}
+}
+
+func domainAcceptsProvider(domain Domain, provider string) bool {
+	configured := strings.TrimSpace(domain.Provider)
+	if configured == "" {
+		// Domains created before per-domain provider selection remain compatible
+		// with both existing inbound paths.
+		return true
+	}
+	return normalizeDomainProvider(configured) == normalizeDomainProvider(provider)
 }
 
 type Mailbox struct {
@@ -376,15 +413,17 @@ type publicAccount struct {
 }
 
 type publicDomain struct {
-	ID        string `json:"id"`
-	OwnerID   string `json:"owner_id,omitempty"`
-	Owner     string `json:"owner,omitempty"`
-	Label     string `json:"label"`
-	Name      string `json:"name"`
-	Enabled   bool   `json:"enabled"`
-	Mailboxes int    `json:"mailboxes"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID            string `json:"id"`
+	OwnerID       string `json:"owner_id,omitempty"`
+	Owner         string `json:"owner,omitempty"`
+	Label         string `json:"label"`
+	Name          string `json:"name"`
+	Provider      string `json:"provider"`
+	ProviderLabel string `json:"provider_label"`
+	Enabled       bool   `json:"enabled"`
+	Mailboxes     int    `json:"mailboxes"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 type publicMailbox struct {

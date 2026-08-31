@@ -205,6 +205,9 @@ func (s *FileStore) load() error {
 	if s.migrateMailboxProvidersLocked() {
 		changed = true
 	}
+	if s.migrateDomainProvidersLocked() {
+		changed = true
+	}
 	if s.migrateDomainMailboxHistoryLocked(now) {
 		changed = true
 	}
@@ -862,6 +865,10 @@ func normalizeManagedDomainName(value string) string {
 }
 
 func (s *FileStore) AddDomainForOwner(ownerID, label, name string) (Domain, error) {
+	return s.AddDomainForOwnerWithProvider(ownerID, label, name, "")
+}
+
+func (s *FileStore) AddDomainForOwnerWithProvider(ownerID, label, name, provider string) (Domain, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -879,11 +886,21 @@ func (s *FileStore) AddDomainForOwner(ownerID, label, name string) (Domain, erro
 	if label == "" {
 		label = name
 	}
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider != "" {
+		switch provider {
+		case DomainProviderCloudflare, DomainProviderSMTP, DomainProviderRemail:
+		default:
+			return Domain{}, errCode("invalid_domain_provider", "收件方式不受支持", false)
+		}
+		provider = normalizeDomainProvider(provider)
+	}
 	domain := Domain{
 		ID:        s.nextIDLocked("dom"),
 		OwnerID:   strings.TrimSpace(ownerID),
 		Label:     label,
 		Name:      name,
+		Provider:  provider,
 		Enabled:   true,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -2051,6 +2068,21 @@ func (s *FileStore) migrateMailboxProvidersLocked() bool {
 		provider := normalizeMailboxProvider(s.state.Mailboxes[i].Provider)
 		if s.state.Mailboxes[i].Provider != provider {
 			s.state.Mailboxes[i].Provider = provider
+			changed = true
+		}
+	}
+	return changed
+}
+
+func (s *FileStore) migrateDomainProvidersLocked() bool {
+	changed := false
+	for i := range s.state.Domains {
+		if strings.TrimSpace(s.state.Domains[i].Provider) == "" {
+			continue
+		}
+		provider := normalizeDomainProvider(s.state.Domains[i].Provider)
+		if s.state.Domains[i].Provider != provider {
+			s.state.Domains[i].Provider = provider
 			changed = true
 		}
 	}

@@ -2103,6 +2103,7 @@
     .domain-card-body { display: grid; gap: 16px; padding: 20px; }
     .domain-form-stack { display: grid; gap: 13px; }
     .domain-form-stack label, .domain-generation-fields label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 900; }
+    .domain-form-stack .field-hint { color: var(--faint); font-size: 10px; font-weight: 700; line-height: 1.45; }
     .domain-form-stack input, .domain-generation-fields input { min-width: 0; min-height: 46px; }
     .domain-generation-fields { display: grid; grid-template-columns: minmax(150px, .55fr) minmax(180px, 1fr) minmax(180px, 1fr); gap: 12px; }
     .domain-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: auto; padding: 0 20px 20px; }
@@ -2470,6 +2471,7 @@
                   <div class="domain-form-stack">
                     <label>域名别名<input id="domainLabel" placeholder="例如：海外注册业务"></label>
                     <label>接收域名<input id="domainName" placeholder="mail.example.com 或 example.com"></label>
+                    <label>收件方式<select id="domainProvider"><option value="cloudflare">Cloudflare 转发</option><option value="smtp">自建 SMTP</option><option value="remail">Remail</option></select><small class="field-hint">按所选平台配置 DNS；选择会保存到该域名。</small></label>
                   </div>
                 </div>
                 <div class="domain-card-actions">
@@ -2513,8 +2515,8 @@
               <div id="domainDNSHint" class="domain-dns">选择“DNS 指引”可查看当前域名的 MX 与收件服务器记录。</div>
               <div class="table-wrap domain-table">
                 <table>
-                  <thead><tr><th>域名</th><th>状态</th><th>域名邮箱</th><th>创建时间</th><th>操作</th></tr></thead>
-                  <tbody id="domainRows"><tr><td colspan="5" class="muted empty">正在读取域名资产…</td></tr></tbody>
+                  <thead><tr><th>域名</th><th>收件方式</th><th>状态</th><th>域名邮箱</th><th>创建时间</th><th>操作</th></tr></thead>
+                  <tbody id="domainRows"><tr><td colspan="6" class="muted empty">正在读取域名资产…</td></tr></tbody>
                 </table>
               </div>
             </section>
@@ -4720,11 +4722,12 @@
         $('domainSMTPInfo').innerHTML = `<span class="domain-service-copy"><i class="domain-service-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.5 7.5h15v9h-15z"/><path d="m5.3 8.5 6.7 5 6.7-5"/></svg></i><span class="domain-service-text"><strong>SMTP 收件服务</strong><small>${description}</small></span></span><span class="domain-service-state ${enabled ? 'online' : ''}"><i></i>${enabled ? '收件在线' : '等待启用'}</span>`;
       }
       if (!domains.length) {
-        rows.innerHTML = '<tr><td colspan="5" class="muted empty">尚未接入域名。请先填写可管理的收件域名。</td></tr>';
+        rows.innerHTML = '<tr><td colspan="6" class="muted empty">尚未接入域名。请先填写可管理的收件域名。</td></tr>';
         return;
       }
       rows.innerHTML = domains.map(domain => `<tr>
         <td><span class="domain-name">${esc(domain.name)}</span><span class="domain-meta">${esc(domain.label || '未命名域名')} · ${esc(domain.owner || '')}</span></td>
+        <td><span class="pill domain-provider-pill">${esc(domain.provider_label || domain.provider || 'Cloudflare')}</span></td>
         <td><span class="pill ${domain.enabled ? 'status-active' : 'status-disabled'}">${domain.enabled ? '已启用' : '已停用'}</span></td>
         <td>${Number(domain.mailboxes || 0)} 个</td>
         <td>${esc(formatMailboxDate(domain.created_at))}</td>
@@ -4748,12 +4751,14 @@
     async function createDomain() {
       const name = ($('domainName').value || '').trim();
       const label = ($('domainLabel').value || '').trim();
+      const provider = (($('domainProvider') && $('domainProvider').value) || 'cloudflare').trim().toLowerCase();
       if (!name) { showToast('请输入接收域名'); return; }
       try {
-        const data = await api('/api/domains', {method: 'POST', body: JSON.stringify({name, label})});
+        const data = await api('/api/domains', {method: 'POST', body: JSON.stringify({name, label, provider})});
         $('domainName').value = '';
         $('domainLabel').value = '';
-        if ($('domainConnectStatus')) $('domainConnectStatus').textContent = `已接入 ${data.domain && data.domain.name ? data.domain.name : name}`;
+        if ($('domainProvider')) $('domainProvider').value = 'cloudflare';
+        if ($('domainConnectStatus')) $('domainConnectStatus').textContent = `已接入 ${data.domain && data.domain.name ? data.domain.name : name} · ${data.domain && data.domain.provider_label ? data.domain.provider_label : provider}`;
         await loadDomains({silent: true});
         await refresh();
         showToast('域名已接入');
@@ -4798,7 +4803,7 @@
       try {
         const data = await api(`/api/domains/${encodeURIComponent(id)}/dns`);
         const records = (data.records || []).map(record => `${record.type}  ${record.name}  ${record.value}${record.priority ? `  优先级 ${record.priority}` : ''}\n${record.note || ''}`).join('\n\n');
-        if ($('domainDNSHint')) $('domainDNSHint').textContent = `域名 ${data.domain || ''} 的 DNS 指引（SMTP 监听端口 ${data.smtp_port || 2525}）：\n\n${records}`;
+        if ($('domainDNSHint')) $('domainDNSHint').textContent = `域名 ${data.domain || ''} · ${data.provider_label || data.provider || ''} 收件指引${data.smtp_port ? `（SMTP 监听端口 ${data.smtp_port}）` : ''}：\n\n${records}`;
       } catch (err) { log('读取 DNS 指引失败：' + err.message); }
     }
 
