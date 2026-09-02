@@ -2883,7 +2883,7 @@
 
           <div class="settings-save-bar">
             <div class="settings-save-copy"><strong>保存前请确认策略变更</strong><span>入口路径变更会立即生效；根域名仍只展示静态欢迎页，不会公开后台地址。</span></div>
-            <button class="primary" onclick="saveSystemSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h12l2 2v14H5z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>保存系统设置</button>
+            <button id="systemSettingsSaveButton" class="primary" type="button" onclick="saveSystemSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h12l2 2v14H5z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg><span id="systemSettingsSaveButtonLabel">保存系统设置</span></button>
           </div>
         </section>
 
@@ -3446,6 +3446,7 @@
     }
 
     let systemSettingsHydrating = false;
+    let systemSettingsSaving = false;
 
     function setSystemSettingsStatus(message, state = '') {
       const status = $('systemSettingsStatus');
@@ -3527,29 +3528,54 @@
     }
 
     async function saveSystemSettings() {
-      const payload = {
-        registration_enabled: !!($('registrationEnabled') && $('registrationEnabled').checked),
-        theme: document.documentElement.dataset.theme || 'sky',
-        verification_only: !!($('verificationOnly') && $('verificationOnly').checked),
-        admin_path: ($('adminPath') ? $('adminPath').value : '/manage').trim(),
-        html_link_ttl_seconds: boundedInt('htmlLinkTTLSeconds', 604800, 1, 315360000),
-        html_page_message_limit: boundedInt('htmlPageMessageLimit', 50, 1, 500),
-        html_page_refresh_seconds: boundedInt('htmlPageRefreshSeconds', 20, 5, 3600),
-        html_link_lifecycle_enabled: !!($('htmlLinkLifecycleEnabled') && $('htmlLinkLifecycleEnabled').checked),
-        html_expiry_delete_mailbox: !!($('htmlExpiryDeleteMailbox') && $('htmlExpiryDeleteMailbox').checked),
-        domain_smtp_enabled: !!($('domainSMTPEnabled') && $('domainSMTPEnabled').checked),
-        domain_smtp_host: (($('domainSMTPHost') && $('domainSMTPHost').value) || '0.0.0.0').trim(),
-        domain_smtp_port: boundedInt('domainSMTPPort', 2525, 1024, 65535),
-        domain_smtp_max_message_bytes: boundedInt('domainSMTPMaxMessageBytes', 10485760, 65536, 104857600)
-      };
+      if (systemSettingsSaving) return false;
+      const button = $('systemSettingsSaveButton');
+      const buttonLabel = $('systemSettingsSaveButtonLabel');
+      systemSettingsSaving = true;
+      if (button) {
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+      }
+      if (buttonLabel) buttonLabel.textContent = '保存中…';
       setSystemSettingsStatus('正在保存策略…');
-      const data = await api('/api/system-settings', {method:'POST', body: JSON.stringify(payload)});
-      const settings = data.settings || payload;
-      applySystemSettings(settings);
-      setSystemSettingsStatus('策略已保存', 'saved');
-      log('系统设置已保存');
-      await loadDomains({silent: true}).catch(err => log('刷新 SMTP 状态失败：' + err.message));
-      showToast('系统设置已保存');
+      try {
+        const payload = {
+          registration_enabled: !!($('registrationEnabled') && $('registrationEnabled').checked),
+          theme: document.documentElement.dataset.theme || 'sky',
+          verification_only: !!($('verificationOnly') && $('verificationOnly').checked),
+          admin_path: ($('adminPath') ? $('adminPath').value : '/manage').trim(),
+          html_link_ttl_seconds: boundedInt('htmlLinkTTLSeconds', 604800, 1, 315360000),
+          html_page_message_limit: boundedInt('htmlPageMessageLimit', 50, 1, 500),
+          html_page_refresh_seconds: boundedInt('htmlPageRefreshSeconds', 20, 5, 3600),
+          html_link_lifecycle_enabled: !!($('htmlLinkLifecycleEnabled') && $('htmlLinkLifecycleEnabled').checked),
+          html_expiry_delete_mailbox: !!($('htmlExpiryDeleteMailbox') && $('htmlExpiryDeleteMailbox').checked),
+          domain_smtp_enabled: !!($('domainSMTPEnabled') && $('domainSMTPEnabled').checked),
+          domain_smtp_host: (($('domainSMTPHost') && $('domainSMTPHost').value) || '0.0.0.0').trim(),
+          domain_smtp_port: boundedInt('domainSMTPPort', 2525, 1024, 65535),
+          domain_smtp_max_message_bytes: boundedInt('domainSMTPMaxMessageBytes', 10485760, 65536, 104857600)
+        };
+        const data = await api('/api/system-settings', {method:'POST', body: JSON.stringify(payload)});
+        const settings = data.settings || payload;
+        applySystemSettings(settings);
+        setSystemSettingsStatus('策略已保存', 'saved');
+        log('系统设置已保存');
+        await loadDomains({silent: true}).catch(err => log('刷新 SMTP 状态失败：' + err.message));
+        showToast('系统设置已保存');
+        return true;
+      } catch (err) {
+        const message = err && err.message ? err.message : '未知错误';
+        setSystemSettingsStatus(`保存失败：${message}`, 'pending');
+        log(`系统设置保存失败：${message}`);
+        showToast(`保存失败：${message}`);
+        return false;
+      } finally {
+        systemSettingsSaving = false;
+        if (button) {
+          button.disabled = false;
+          button.removeAttribute('aria-busy');
+        }
+        if (buttonLabel) buttonLabel.textContent = '保存系统设置';
+      }
     }
 
     function setForwardingStatus(message, state = '') {
