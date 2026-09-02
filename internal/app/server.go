@@ -335,8 +335,8 @@ func (s *Server) applyDomainSMTPSettings(settings SystemSettings) error {
 		return nil
 	}
 
-	desiredAddr := net.JoinHostPort(host, strconv.Itoa(port))
-	if current != nil && current.Addr() != nil && current.Addr().String() == desiredAddr {
+	if current != nil && sameDomainSMTPBindAddress(s.cfg.DomainSMTPHost, s.cfg.DomainSMTPPort, host, port) {
+		current.SetMaxMessageBytes(maxBytes)
 		s.cfg = updatedCfg
 		return nil
 	}
@@ -350,6 +350,27 @@ func (s *Server) applyDomainSMTPSettings(settings SystemSettings) error {
 		_ = current.Close()
 	}
 	return nil
+}
+
+func sameDomainSMTPBindAddress(currentHost string, currentPort int, desiredHost string, desiredPort int) bool {
+	if currentPort != desiredPort {
+		return false
+	}
+	return normalizeDomainSMTPBindHost(currentHost) == normalizeDomainSMTPBindHost(desiredHost)
+}
+
+func normalizeDomainSMTPBindHost(host string) string {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		host = defaultDomainSMTPHost
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsUnspecified() {
+			return "*"
+		}
+		return ip.String()
+	}
+	return strings.ToLower(host)
 }
 
 // ApplyDomainSMTPSettings applies the administrator's persisted SMTP policy

@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -32,7 +33,7 @@ type DomainSMTPService struct {
 	listener  net.Listener
 	store     *FileStore
 	logger    *slog.Logger
-	maxBytes  int64
+	maxBytes  atomic.Int64
 	tlsConfig *tls.Config
 	done      chan struct{}
 	once      sync.Once
@@ -81,7 +82,8 @@ func StartDomainSMTP(cfg Config, store *FileStore, logger *slog.Logger) (*Domain
 		}
 		tlsConfig = &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
 	}
-	service := &DomainSMTPService{listener: listener, store: store, logger: logger, maxBytes: maxBytes, tlsConfig: tlsConfig, done: make(chan struct{})}
+	service := &DomainSMTPService{listener: listener, store: store, logger: logger, tlsConfig: tlsConfig, done: make(chan struct{})}
+	service.maxBytes.Store(maxBytes)
 	go service.serve()
 	if logger != nil {
 		logger.Info("domain SMTP started", "addr", listener.Addr().String(), "max_message_bytes", maxBytes, "starttls", tlsConfig != nil)
@@ -94,6 +96,20 @@ func (s *DomainSMTPService) Addr() net.Addr {
 		return nil
 	}
 	return s.listener.Addr()
+}
+
+func (s *DomainSMTPService) SetMaxMessageBytes(maxBytes int64) {
+	if s == nil || maxBytes <= 0 {
+		return
+	}
+	s.maxBytes.Store(maxBytes)
+}
+
+func (s *DomainSMTPService) MaxMessageBytes() int64 {
+	if s == nil {
+		return 0
+	}
+	return s.maxBytes.Load()
 }
 
 func (s *DomainSMTPService) Close() error {
@@ -150,7 +166,7 @@ func (s *DomainSMTPService) handleConn(conn net.Conn) {
 		command, argument := smtpCommand(line)
 		switch command {
 		case "EHLO", "HELO":
-			capabilities := []string{"julong-mail", "SIZE " + fmt.Sprintf("%d", s.maxBytes), "8BITMIME"}
+			capabilities := []string{"julong-mail", "SIZE " + fmt.Sprintf("%d", s.MaxMessageBytes()), "8BITMIME"}
 			if s.tlsConfig != nil && !tlsActive {
 				capabilities = append(capabilities, "STARTTLS")
 			}
@@ -232,7 +248,7 @@ func (s *DomainSMTPService) handleConn(conn net.Conn) {
 				continue
 			}
 			writeSMTPReply(writer, 354, "end data with <CR><LF>.<CR><LF>")
-			raw, tooLarge, err := readSMTPData(reader, s.maxBytes)
+			raw, tooLarge, err := readSMTPData(reader, s.MaxMessageBytes())
 			if err != nil {
 				return
 			}

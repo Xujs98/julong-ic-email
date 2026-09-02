@@ -6944,14 +6944,45 @@ func TestSystemSettingsCanConfigureDomainSMTPFromAdmin(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), `"enabled":true`) {
 		t.Fatalf("SMTP runtime status missing from save response: %s", rr.Body.String())
 	}
+	originalService := panel.domainSMTPService
+	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(fmt.Sprintf(`{"registration_enabled":true,"admin_path":"/manage","domain_smtp_enabled":true,"domain_smtp_host":"127.0.0.1","domain_smtp_port":%d,"domain_smtp_max_message_bytes":2097152}`, port)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(adminCookie)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("resave active SMTP settings = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if panel.domainSMTPService != originalService {
+		t.Fatal("resaving the same SMTP bind address restarted the listener")
+	}
+	if got := panel.domainSMTPService.MaxMessageBytes(); got != 2097152 {
+		t.Fatalf("active SMTP max message bytes = %d, want 2097152", got)
+	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(fmt.Sprintf(`{"registration_enabled":true,"admin_path":"/manage","domain_smtp_enabled":false,"domain_smtp_host":"127.0.0.1","domain_smtp_port":%d,"domain_smtp_max_message_bytes":1048576}`, port)))
+	req = httptest.NewRequest(http.MethodPost, "/api/system-settings", strings.NewReader(fmt.Sprintf(`{"registration_enabled":true,"admin_path":"/manage","domain_smtp_enabled":false,"domain_smtp_host":"127.0.0.1","domain_smtp_port":%d,"domain_smtp_max_message_bytes":2097152}`, port)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(adminCookie)
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK || strings.Contains(rr.Body.String(), `"enabled":true`) {
 		t.Fatalf("disable SMTP settings = %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestSameDomainSMTPBindAddressTreatsWildcardHostsAsEquivalent(t *testing.T) {
+	for _, currentHost := range []string{"", "0.0.0.0", "::", "[::]"} {
+		for _, desiredHost := range []string{"", "0.0.0.0", "::", "[::]"} {
+			if !sameDomainSMTPBindAddress(currentHost, 2525, desiredHost, 2525) {
+				t.Fatalf("wildcard bind hosts %q and %q should be equivalent", currentHost, desiredHost)
+			}
+		}
+	}
+	if sameDomainSMTPBindAddress("127.0.0.1", 2525, "0.0.0.0", 2525) {
+		t.Fatal("loopback and wildcard bind hosts should not be equivalent")
+	}
+	if sameDomainSMTPBindAddress("0.0.0.0", 2525, "0.0.0.0", 2526) {
+		t.Fatal("different SMTP ports should not be equivalent")
 	}
 }
 
