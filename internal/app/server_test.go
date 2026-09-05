@@ -898,6 +898,65 @@ func TestAppleTransientNetworkErrorDetection(t *testing.T) {
 	if isAppleTransientNetworkError(errCode("apple_protocol_http_error", "Apple 协议 HTTP 401", true)) {
 		t.Fatal("HTTP business error should not be transient")
 	}
+	if !isAppleTransientNetworkError(errCode("apple_protocol_http_error", "Apple 协议 HTTP 502: bad gateway", true)) {
+		t.Fatal("HTTP 502 gateway error should be transient")
+	}
+	if isAppleTransientNetworkError(errCode("apple_protocol_http_error", "Apple 协议 HTTP 404: not found", true)) {
+		t.Fatal("HTTP 404 business error should not be transient")
+	}
+}
+
+func TestAppleLoginErrorHTTPStatusSeparatesCredentialsFromGateway(t *testing.T) {
+	for _, tt := range []struct {
+		code string
+		want int
+	}{
+		{code: "apple_credentials_invalid", want: http.StatusBadRequest},
+		{code: "apple_credentials_missing", want: http.StatusBadRequest},
+		{code: "invalid_2fa_code", want: http.StatusBadRequest},
+		{code: "apple_login_pending_expired", want: http.StatusBadRequest},
+		{code: "apple_login_forbidden", want: http.StatusForbidden},
+		{code: "apple_protocol_http_error", want: http.StatusBadGateway},
+	} {
+		if got := appleLoginErrorHTTPStatus(errCode(tt.code, "test", false)); got != tt.want {
+			t.Fatalf("status for %s = %d, want %d", tt.code, got, tt.want)
+		}
+	}
+}
+
+func TestAppleAuthClientAuthStartRetriesTransientGateway(t *testing.T) {
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if r.Method != http.MethodGet || r.URL.Path != "/authorize/signin" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if attempts == 1 {
+			w.Header().Set("scnt", "rotated-scnt")
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"error":"upstream unavailable"}`))
+			return
+		}
+		if r.Header.Get("scnt") != "rotated-scnt" {
+			t.Fatalf("retry scnt = %q, want rotated-scnt", r.Header.Get("scnt"))
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html></html>`))
+	}))
+	defer ts.Close()
+
+	session := &appleAuthSession{
+		Endpoints: appleAuthEndpoints{Home: "https://account.apple.com", Auth: ts.URL},
+		ClientID:  appleAccountManageOAuthClientID,
+		FrameID:   "unit",
+		UserAgent: appleAccountManageUserAgent,
+	}
+	if err := (&AppleAuthClient{httpClient: ts.Client()}).authStart(t.Context(), session); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("authorize attempts = %d, want 2 after transient gateway error", attempts)
+	}
 }
 
 func TestRetryAppleTransientRetriesEOF(t *testing.T) {
@@ -6441,29 +6500,31 @@ func TestCleanupExpiredOutboundMailboxesEndpoint(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Matched != 1 || body.Deleted != 1 || body.Skipped != 0 || body.Failed != 0 || !reflect.DeepEqual(remoteDeletes, []string{expired.Email}) {
+	if body.Matched != 2 || body.Deleted != 2 || body.Skipped != 0 || body.Failed != 0 || !reflect.DeepEqual(remoteDeletes, []string{inventory.Email, expired.Email}) {
 		t.Fatalf("cleanup response=%+v remote=%v body=%s", body, remoteDeletes, rr.Body.String())
 	}
-	if _, ok := store.FindMailboxByID(expired.ID); ok || len(store.MessagesForMailbox(expired.ID)) != 0 {
-		t.Fatal("expired outbound mailbox or its messages remain after cleanup")
+	for _, id := range []string{expired.ID, inventory.ID} {
+		if _, ok := store.FindMailboxByID(id); ok || len(store.MessagesForMailbox(id)) != 0 {
+			t.Fatalf("expired mailbox %s or its messages remain after cleanup", id)
+		}
 	}
-	for _, id := range []string{active.ID, inventory.ID, foreign.ID} {
+	for _, id := range []string{active.ID, foreign.ID} {
 		if _, ok := store.FindMailboxByID(id); !ok {
 			t.Fatalf("non-target mailbox %s was deleted", id)
 		}
 	}
 }
 
-func TestCleanupExpiredHTMLDomainMailboxesAreRetained(t *testing.T) {
+func TestCleanupExpiredHTMLDomainMailboxesAreDeleted(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
 	server := handler.(*Server)
-	cookie, user := registerTestUser(t, handler, "domain-retain-owner", "owner123")
-	domain, err := store.AddDomainForOwner(user.ID, "", "domain-retain.example")
+	cookie, user := registerTestUser(t, handler, "domain-cleanup-owner", "owner123")
+	domain, err := store.AddDomainForOwner(user.ID, "", "domain-cleanup.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	mailboxes, err := store.AddDomainMailboxesForOwner(user.ID, domain.ID, "retained", "", 1)
+	mailboxes, err := store.AddDomainMailboxesForOwner(user.ID, domain.ID, "expired-domain", "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6487,10 +6548,29 @@ func TestCleanupExpiredHTMLDomainMailboxesAreRetained(t *testing.T) {
 	store.mu.Unlock()
 
 	server.cleanupExpiredHTMLMailboxes(context.Background(), now)
-	if _, ok := store.FindMailboxByID(mailbox.ID); !ok {
-		t.Fatal("expired domain mailbox was removed by automatic cleanup")
+	if _, ok := store.FindMailboxByID(mailbox.ID); ok {
+		t.Fatal("expired domain mailbox was not removed by automatic cleanup")
 	}
 
+	// Manual cleanup also accepts domain mailboxes. Create a second expired
+	// record after the automatic pass and verify the endpoint removes it.
+	mailboxes, err = store.AddDomainMailboxesForOwner(user.ID, domain.ID, "manual-domain", "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manual := mailboxes[0]
+	store.mu.Lock()
+	for i := range store.state.MailboxHTMLLinks {
+		if store.state.MailboxHTMLLinks[i].MailboxID == manual.ID {
+			store.state.MailboxHTMLLinks[i].ActivatedAt = now.Add(-2 * time.Hour)
+			store.state.MailboxHTMLLinks[i].ExpiresAt = now.Add(-time.Hour)
+		}
+	}
+	if err := store.saveLocked(); err != nil {
+		store.mu.Unlock()
+		t.Fatal(err)
+	}
+	store.mu.Unlock()
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/mailboxes/html-expired/cleanup", strings.NewReader(`{}`))
 	req.AddCookie(cookie)
@@ -6505,11 +6585,11 @@ func TestCleanupExpiredHTMLDomainMailboxesAreRetained(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Matched != 0 || body.Deleted != 0 {
-		t.Fatalf("manual cleanup included domain mailbox: %+v body=%s", body, rr.Body.String())
+	if body.Matched != 1 || body.Deleted != 1 {
+		t.Fatalf("manual cleanup did not include domain mailbox: %+v body=%s", body, rr.Body.String())
 	}
-	if _, ok := store.FindMailboxByID(mailbox.ID); !ok {
-		t.Fatal("manual cleanup removed domain mailbox")
+	if _, ok := store.FindMailboxByID(manual.ID); ok {
+		t.Fatal("manual cleanup left expired domain mailbox")
 	}
 }
 
@@ -7137,7 +7217,7 @@ func TestExpiredHTMLMailboxAutoDeleteWaitsForRemoteSuccess(t *testing.T) {
 		wantExists bool
 	}{
 		{name: "remote success", wantExists: false},
-		{name: "remote failure", remoteErr: errors.New("temporary remote failure"), wantExists: true},
+		{name: "remote failure", remoteErr: errors.New("temporary remote failure"), wantExists: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			store, mailbox, expiredLink := newExpiredHTMLAutoDeleteStore(t)
@@ -7175,12 +7255,6 @@ func TestExpiredHTMLMailboxAutoDeleteWaitsForRemoteSuccess(t *testing.T) {
 			_, exists := store.FindMailboxByID(mailbox.ID)
 			if exists != tt.wantExists {
 				t.Fatalf("mailbox exists = %v, want %v", exists, tt.wantExists)
-			}
-			if tt.wantExists {
-				if len(store.MessagesForMailbox(mailbox.ID)) != 1 || len(store.ExpiredMailboxHTMLLinks(time.Now())) != 1 {
-					t.Fatalf("local data was changed after remote failure: %+v", store.Snapshot())
-				}
-				return
 			}
 			if len(store.MessagesForMailbox(mailbox.ID)) != 0 {
 				t.Fatalf("messages remain after auto delete: %+v", store.MessagesForMailbox(mailbox.ID))

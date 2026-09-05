@@ -511,7 +511,7 @@ func (c *AppleAuthClient) authStart(ctx context.Context, session *appleAuthSessi
 		q.Set("authVersion", "latest")
 	}
 	u.RawQuery = q.Encode()
-	_, _, err = c.do(ctx, session, http.MethodGet, u.String(), headers, nil, nil, false)
+	_, _, err = c.doWithTransientRetry(ctx, session, http.MethodGet, u.String(), headers, nil, nil, false)
 	if err != nil {
 		return err
 	}
@@ -530,14 +530,14 @@ func (c *AppleAuthClient) authDeviceKeyChallenge(ctx context.Context, session *a
 	delete(headers, "scnt")
 	delete(headers, "X-Apple-ID-Session-Id")
 	delete(headers, "X-Apple-App-Id")
-	_, _, err := c.do(ctx, session, http.MethodPost, session.Endpoints.Auth+"/verify/device/key/challenge", headers, body, nil, false)
+	_, _, err := c.doWithTransientRetry(ctx, session, http.MethodPost, session.Endpoints.Auth+"/verify/device/key/challenge", headers, body, nil, false)
 	return err
 }
 
 func (c *AppleAuthClient) authFederate(ctx context.Context, session *appleAuthSession) error {
 	u := session.Endpoints.Auth + "/federate?isRememberMeEnabled=true"
 	body := map[string]any{"accountName": session.AppleID, "rememberMe": true}
-	_, _, err := c.do(ctx, session, http.MethodPost, u, session.srpHeaders(), body, nil, false)
+	_, _, err := c.doWithTransientRetry(ctx, session, http.MethodPost, u, session.srpHeaders(), body, nil, false)
 	return err
 }
 
@@ -552,7 +552,7 @@ func (c *AppleAuthClient) authSRP(ctx context.Context, session *appleAuthSession
 		"accountName": session.AppleID,
 		"protocols":   []string{"s2k", "s2k_fo"},
 	}
-	if _, _, err := c.do(ctx, session, http.MethodPost, session.Endpoints.Auth+"/signin/init", session.srpHeaders(), initBody, &initResp, false); err != nil {
+	if _, _, err := c.doWithTransientRetry(ctx, session, http.MethodPost, session.Endpoints.Auth+"/signin/init", session.srpHeaders(), initBody, &initResp, false); err != nil {
 		return false, err
 	}
 	serverB, err := base64.StdEncoding.DecodeString(initResp.B)
@@ -592,7 +592,7 @@ func (c *AppleAuthClient) authSRP(ctx context.Context, session *appleAuthSession
 		}
 		headers["X-Apple-HC"] = hc
 	}
-	status, _, err := c.do(ctx, session, http.MethodPost, session.Endpoints.Auth+"/signin/complete?isRememberMeEnabled=true", headers, completeBody, nil, true)
+	status, _, err := c.doWithTransientRetry(ctx, session, http.MethodPost, session.Endpoints.Auth+"/signin/complete?isRememberMeEnabled=true", headers, completeBody, nil, true)
 	if status == http.StatusUnauthorized {
 		return false, errCode("apple_credentials_invalid", "Apple ID 或密码错误，请检查后重新协议登录", false)
 	}
@@ -658,7 +658,7 @@ func (c *AppleAuthClient) refreshAuthState(ctx context.Context, session *appleAu
 	headers["Sec-Fetch-Site"] = "same-origin"
 	delete(headers, "Origin")
 	delete(headers, "X-Apple-App-Id")
-	_, data, err := c.do(ctx, session, http.MethodGet, session.Endpoints.Auth, headers, nil, nil, false)
+	_, data, err := c.doWithTransientRetry(ctx, session, http.MethodGet, session.Endpoints.Auth, headers, nil, nil, false)
 	if err == nil {
 		session.rememberTwoFactorPhoneNumber(data)
 	}
@@ -927,6 +927,42 @@ func (c *AppleAuthClient) authWithTokenAndValidate(ctx context.Context, session 
 	}, nil
 }
 
+// doWithTransientRetry retries only the protocol stages that can be safely
+// replayed.  Verification-code endpoints deliberately call do directly so a
+// temporary gateway response never causes a second code submission.
+func (c *AppleAuthClient) doWithTransientRetry(ctx context.Context, session *appleAuthSession, method, rawURL string, headers map[string]string, body any, out any, allow409 bool) (int, []byte, error) {
+	var status int
+	var data []byte
+	err := retryAppleTransient(ctx, func() error {
+		// A failed response can still rotate scnt/session headers. Rebuild those
+		// values before each replay so the next attempt follows Apple's session
+		// state instead of resending stale credentials.
+		refreshAppleAuthHeaders(headers, session)
+		var err error
+		status, data, err = c.do(ctx, session, method, rawURL, headers, body, out, allow409)
+		return err
+	})
+	return status, data, err
+}
+
+func refreshAppleAuthHeaders(headers map[string]string, session *appleAuthSession) {
+	if headers == nil || session == nil {
+		return
+	}
+	for key, value := range map[string]string{
+		"scnt":                    session.Scnt,
+		"X-Apple-ID-Session-Id":   session.SessionID,
+		"X-Apple-Session-Token":   session.SessionToken,
+		"X-Apple-Auth-Attributes": session.AuthAttributes,
+	} {
+		if strings.TrimSpace(value) == "" {
+			delete(headers, key)
+			continue
+		}
+		headers[key] = value
+	}
+}
+
 func (c *AppleAuthClient) do(ctx context.Context, session *appleAuthSession, method, rawURL string, headers map[string]string, body any, out any, allow409 bool) (int, []byte, error) {
 	var reader io.Reader
 	if body != nil {
@@ -1039,6 +1075,17 @@ func isAppleTransientNetworkError(err error) bool {
 	}
 	var coded codedError
 	if errors.As(err, &coded) {
+		// Apple auth uses a coded error for HTTP responses, so transient gateway
+		// failures need to be recognized before the generic coded-error guard.
+		// The caller only retries idempotent protocol stages; OTP submission keeps
+		// using do directly and is therefore never replayed here.
+		if coded.code == "apple_protocol_http_error" {
+			lower := strings.ToLower(coded.message)
+			return strings.Contains(lower, "http 408") ||
+				strings.Contains(lower, "http 425") ||
+				strings.Contains(lower, "http 429") ||
+				strings.Contains(lower, "http 5")
+		}
 		return false
 	}
 	if errors.Is(err, io.EOF) || errors.Is(err, context.DeadlineExceeded) {

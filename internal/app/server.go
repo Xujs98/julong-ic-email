@@ -536,16 +536,6 @@ func (s *Server) cleanupExpiredHTMLMailboxes(ctx context.Context, now time.Time)
 		if !ok {
 			continue
 		}
-		// Domain mailboxes are inbound routing endpoints. Their address must
-		// remain routable even when a public HTML link expires; removing the
-		// mailbox here causes Cloudflare/SMTP deliveries to return 404. Domain
-		// mailboxes can still be deleted explicitly from the mailbox actions.
-		if mailbox.ProviderKind() == MailboxProviderDomain {
-			if s.logger != nil {
-				s.logger.Info("expired HTML domain mailbox retained", "mailbox_id", mailbox.ID, "email", mailbox.Email)
-			}
-			continue
-		}
 		deleteCtx, cancel := context.WithTimeout(ctx, htmlExpiryMailboxDeleteTimeout)
 		_, deletion, err := s.deleteMailboxRemoteThenLocal(deleteCtx, mailbox.ID, mailboxDeleteConditions{
 			RequireExpired: true,
@@ -2089,7 +2079,7 @@ func (s *Server) handleStartICloudProtocolLogin(w http.ResponseWriter, r *http.R
 		payload.TwoFactorMethod,
 	)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		writeError(w, appleLoginErrorHTTPStatus(err), err)
 		return
 	}
 	if result.Needs2FA {
@@ -2117,6 +2107,22 @@ func (s *Server) handleStartICloudProtocolLogin(w http.ResponseWriter, r *http.R
 	})
 }
 
+// appleLoginErrorHTTPStatus keeps client/input failures distinct from Apple
+// gateway failures. The frontend uses the HTTP class to decide whether to show
+// a transient-service hint, so credentials errors must not be wrapped as 502.
+func appleLoginErrorHTTPStatus(err error) int {
+	var coded codedError
+	if errors.As(err, &coded) {
+		switch coded.code {
+		case "apple_credentials_missing", "apple_credentials_invalid", "invalid_2fa_code", "apple_login_pending_expired":
+			return http.StatusBadRequest
+		case "apple_login_forbidden":
+			return http.StatusForbidden
+		}
+	}
+	return http.StatusBadGateway
+}
+
 func (s *Server) handleSubmitICloudProtocol2FA(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		PendingID string `json:"pending_id"`
@@ -2133,7 +2139,7 @@ func (s *Server) handleSubmitICloudProtocol2FA(w http.ResponseWriter, r *http.Re
 	}
 	session, err := NewAppleAuthClient().Submit2FA(r.Context(), pending, payload.Code)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		writeError(w, appleLoginErrorHTTPStatus(err), err)
 		return
 	}
 	s.icloudProtocolLogins.delete(payload.PendingID)
@@ -2168,7 +2174,7 @@ func (s *Server) handleStartAppleAccountLogin(w http.ResponseWriter, r *http.Req
 		payload.TwoFactorMethod,
 	)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		writeError(w, appleLoginErrorHTTPStatus(err), err)
 		return
 	}
 	if result.Needs2FA {
@@ -2213,7 +2219,7 @@ func (s *Server) handleSubmitAppleAccount2FA(w http.ResponseWriter, r *http.Requ
 	}
 	session, err := NewAppleAuthClient().SubmitAppleAccountManage2FA(r.Context(), pending, payload.Code, payload.PhoneNumber)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		writeError(w, appleLoginErrorHTTPStatus(err), err)
 		return
 	}
 	s.appleAccountLogins.delete(payload.PendingID)
@@ -3490,6 +3496,15 @@ func (s *Server) deleteMailboxRemoteThenLocal(ctx context.Context, mailboxID str
 	}
 	session, ok := s.sessionForMailbox(mailbox.OwnerID, mailbox.AccountID)
 	if !ok {
+		if conditions.RequireExpired {
+			// Expiry cleanup must not be blocked forever by a missing login
+			// session. Remove the local record and surface the remote operation as
+			// pending so an operator can reconcile it after signing in again.
+			if localErr := s.store.DeleteMailbox(mailbox.ID); localErr != nil {
+				return mailbox, ICloudMailboxDeleteResult{}, localErr
+			}
+			return mailbox, ICloudMailboxDeleteResult{Email: mailbox.Email, RemotePending: true}, nil
+		}
 		return mailbox, ICloudMailboxDeleteResult{}, errCode("icloud_delete_session_missing", "未找到该邮箱对应的 Apple 账号登录态，已保留邮箱", true)
 	}
 	deleteRemote := conditions.DeleteRemote
@@ -3513,6 +3528,17 @@ func (s *Server) deleteMailboxRemoteThenLocal(ctx context.Context, mailboxID str
 		}
 	}
 	if err != nil {
+		if conditions.RequireExpired && !(errors.Is(err, context.Canceled) && ctx != nil && ctx.Err() != nil) {
+			// An expired mailbox is no longer useful to the delivery workflow.
+			// Keep cleanup idempotent even when Apple rejects or times out: local
+			// data is removed now and the response records the remote deletion as
+			// pending for later reconciliation.
+			deferred := ICloudMailboxDeleteResult{Email: mailbox.Email, RemotePending: true}
+			if localErr := s.store.DeleteMailbox(mailbox.ID); localErr != nil {
+				return mailbox, ICloudMailboxDeleteResult{}, localErr
+			}
+			return mailbox, deferred, nil
+		}
 		// When Apple is returning a transient gateway outage (503/502/500/429),
 		// keeping the local row forever makes manual delete unusable. Remove the
 		// local mailbox now and report that the remote mutation is pending; the
@@ -3568,13 +3594,11 @@ func isTransientRemoteDeleteError(err error) bool {
 func (s *Server) handleCleanupExpiredHTMLMailboxes(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	state := s.scopedState(r)
-	outbound := make([]Mailbox, 0, len(state.Mailboxes))
-	for _, mailbox := range state.Mailboxes {
-		if mailbox.Status == StatusOutbound && mailbox.ProviderKind() != MailboxProviderDomain {
-			outbound = append(outbound, mailbox)
-		}
-	}
-	candidates := filterMailboxesByHTMLState(outbound, s.store.Snapshot().MailboxHTMLLinks, "expired", now)
+	// Cleanup is intentionally provider-agnostic and status-agnostic: an
+	// expired HTML link means the mailbox has reached its configured lifecycle
+	// end, regardless of whether it is an iCloud or domain mailbox or whether it
+	// was moved to the outbound view.
+	candidates := filterMailboxesByHTMLState(state.Mailboxes, s.store.Snapshot().MailboxHTMLLinks, "expired", now)
 	sortMailboxesForList(candidates)
 
 	type cleanupFailure struct {
@@ -3591,10 +3615,9 @@ func (s *Server) handleCleanupExpiredHTMLMailboxes(w http.ResponseWriter, r *htt
 	for _, candidate := range candidates {
 		deleteCtx, cancel := context.WithTimeout(r.Context(), htmlExpiryMailboxDeleteTimeout)
 		mailbox, deletion, err := s.deleteMailboxRemoteThenLocal(deleteCtx, candidate.ID, mailboxDeleteConditions{
-			RequireExpired:  true,
-			RequireOutbound: true,
-			ExpiredAt:       now,
-			DeleteClient:    deleteClient,
+			RequireExpired: true,
+			ExpiredAt:      now,
+			DeleteClient:   deleteClient,
 		})
 		cancel()
 		if err == nil {

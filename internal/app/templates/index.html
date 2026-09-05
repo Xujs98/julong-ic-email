@@ -2637,7 +2637,7 @@
                 <span class="mailbox-control-label">业务操作</span>
                 <div class="mailbox-action-row">
                   <button id="mailboxBatchOverviewButton" type="button" class="mailbox-batches-trigger" onclick="openOutboundBatchOverview()" hidden>所有批次 <span id="mailboxBatchOverviewCount">0</span></button>
-                  <button id="mailboxCleanupExpiredButton" type="button" class="danger" onclick="cleanupExpiredHTMLMailboxes()" hidden>清理全部已过期</button>
+                  <button id="mailboxCleanupExpiredButton" type="button" class="danger" onclick="cleanupExpiredHTMLMailboxes()" hidden>清理全部已过期邮箱</button>
                   <button id="syncICloudMailboxesButton" onclick="syncICloudMailboxes()">同步已有邮箱</button>
                   <button id="mailboxExportAllButton" type="button" onclick="openMailboxExport('all')" hidden>全部导出</button>
                   <details id="mailboxColumnPicker" class="mailbox-column-picker">
@@ -5795,9 +5795,9 @@
     async function cleanupExpiredHTMLMailboxes() {
       if (!await askConfirm({
         title: '清理全部已过期邮箱',
-        message: '将永久清理当前数据范围内所有已出库且 HTML 地址已过期的邮箱。',
-        detail: '系统会逐个删除 iCloud 远端地址以及本地邮箱、邮件、API 和 HTML 地址；远端删除失败的邮箱会保留。',
-        confirmText: '清理全部已过期',
+        message: '将永久清理当前数据范围内所有 HTML 地址已过期的邮箱（包含 iCloud 邮箱和域名邮箱）。',
+        detail: '系统会逐个删除 iCloud 远端地址；域名邮箱直接清理本地数据。远端暂时不可用时先清理本地，并标记远端待处理。',
+        confirmText: '清理全部已过期邮箱',
         tone: 'danger'
       })) return;
       const button = $('mailboxCleanupExpiredButton');
