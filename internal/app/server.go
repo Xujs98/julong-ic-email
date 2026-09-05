@@ -2397,12 +2397,28 @@ func (s *Server) syncICloudMailboxesForSession(ctx context.Context, r *http.Requ
 		AppleID:   strings.TrimSpace(session.AppleID),
 		Source:    string(mailboxCreateChannelICloudWeb),
 	}
-	if !iCloudWebLoginSaved(session) {
-		err := errCode("icloud_session_missing", "该账号没有可用于同步已有邮箱的旧接口登录态，请先完成旧接口登录", true)
-		result.Error = err.Error()
-		return result, nil, err
+	client := NewICloudClient()
+	var remotes []ICloudRemoteMailbox
+	var err error
+	if appleAccountKeepAliveEligible(session) {
+		result.Source = string(mailboxCreateChannelAppleAccount)
+		var updated ICloudSession
+		remotes, updated, err = client.ListPrivacyMailboxesWithAppleAccount(ctx, session, s.cfg.AppleAccountAPIKey)
+		if err == nil {
+			session = updated
+			if saveErr := s.store.SaveICloudSessionForOwner(ownerID, session); saveErr != nil {
+				result.Error = saveErr.Error()
+				return result, nil, saveErr
+			}
+		}
 	}
-	remotes, err := NewICloudClient().ListPrivacyMailboxes(ctx, session)
+	if (err != nil || !appleAccountKeepAliveEligible(session)) && iCloudWebLoginSaved(session) {
+		result.Source = string(mailboxCreateChannelICloudWeb)
+		remotes, err = client.ListPrivacyMailboxes(ctx, session)
+	}
+	if err == nil && remotes == nil && !appleAccountKeepAliveEligible(session) && !iCloudWebLoginSaved(session) {
+		err = errCode("icloud_session_missing", "该账号没有可用于同步已有邮箱的登录态，请先完成新接口或旧接口登录", true)
+	}
 	if err != nil {
 		result.Error = err.Error()
 		return result, nil, err

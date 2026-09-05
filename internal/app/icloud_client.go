@@ -707,6 +707,41 @@ func (c *ICloudClient) ListPrivacyMailboxes(ctx context.Context, session ICloudS
 	return remotes, nil
 }
 
+// ListPrivacyMailboxesWithAppleAccount lists both active and inactive
+// addresses from the Apple Account management API. The legacy iCloud web
+// endpoint does not include addresses created exclusively through the new
+// management interface.
+func (c *ICloudClient) ListPrivacyMailboxesWithAppleAccount(ctx context.Context, session ICloudSession, fallbackAPIKey string) ([]ICloudRemoteMailbox, ICloudSession, error) {
+	loginState, ok := appleAccountLoginState(session)
+	if !ok {
+		return nil, session, errCode("apple_account_session_missing", "未保存 Apple Account 新接口登录态，请先完成新接口登录", true)
+	}
+	release, err := acquireAppleAccountOperationGate(ctx, appleAccountOperationKey(session, loginState))
+	if err != nil {
+		return nil, session, err
+	}
+	defer release()
+
+	fallbackAPIKey = strings.TrimSpace(fallbackAPIKey)
+	if appleAccountManageNeedsCreateRefresh(loginState, time.Now()) {
+		refreshedState, refreshedSession, refreshErr := c.refreshAppleAccountManageStateForCreate(ctx, session, loginState, fallbackAPIKey)
+		loginState, session = refreshedState, refreshedSession
+		if refreshErr != nil && strings.TrimSpace(firstNonEmpty(loginState.APIKey, fallbackAPIKey)) == "" {
+			return nil, session, refreshErr
+		}
+	}
+	apiKey := strings.TrimSpace(firstNonEmpty(loginState.APIKey, fallbackAPIKey))
+	if apiKey == "" {
+		return nil, session, errCode("apple_account_api_key_missing", "Apple Account 管理态缺少 api_key，请重新完成新接口登录", true)
+	}
+	remotes, err := c.listPrivacyMailboxesWithAppleAccountState(ctx, session, &loginState, apiKey)
+	session = withAppleAccountLoginState(session, loginState)
+	if err != nil {
+		return nil, session, err
+	}
+	return remotes, session, nil
+}
+
 func (c *ICloudClient) DeletePrivacyMailbox(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error) {
 	result, _, err := c.DeletePrivacyMailboxWithRemote(ctx, session, "", email, "", "", true)
 	return result, err
