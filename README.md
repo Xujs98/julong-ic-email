@@ -6,7 +6,9 @@
 
 > **二开说明**：本项目由 Xujs98 基于原项目 [q1953258942/iCloud-Privacy-Mail](https://github.com/q1953258942/iCloud-Privacy-Mail) 二次开发，当前维护仓库为 [Xujs98/julong-ic-email](https://github.com/Xujs98/julong-ic-email)。原项目版权与许可继续归原作者及其许可文件约定所有。
 
-独立 Go 服务，用来登录 iCloud、创建 Hide My Email 隐私邮箱，也可接入自有域名并由内置 SMTP 服务直接收件；两类邮箱共用邮件管理、HTML 接码页和取码 API。
+独立 Go 服务，用来登录 iCloud、创建 Hide My Email 隐私邮箱，也可创建 mail.com 别名或接入自有域名；三类邮箱共用邮件管理、HTML 接码页和取码 API。
+
+> **MAIL 别名能力说明**：MAIL 别名创建参考 [tanu360/maildotcom-sdk](https://github.com/tanu360/maildotcom-sdk) 的 Web Settings OAuth/CATS 流程，并以 Go 接入现有存储、HTML 接码和 API 取码链路；完整声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 > **域名邮箱能力说明**：域名收件、邮箱生命周期和 DNS 引导思路参考 [DreamsHive/CloakMail](https://github.com/DreamsHive/cloakmail)（MIT License），本项目以 Go 重新实现并保留矩龙邮箱现有 UI；完整声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
@@ -19,13 +21,14 @@
 - 旧接口登录态：后端发起 iCloud 登录，用户收到 2FA 后提交 6 位验证码保存登录态。
 - 多 Apple 登录态：同一平台账号可保存多个 Apple/iCloud 登录态，前端按账号 TAB 分开显示和操作。
 - 隐私邮箱创建：优先调用 Apple Account 新接口创建，账号只有旧登录态时回落 iCloud Hide My Email `generate + reserve`。
+- MAIL 别名生成：在左侧“MAIL别名生成”绑定 mail.com 账号，读取实时可用别名域名并创建真实别名；每个别名自动生成独立 HTML 接码地址和取码 API，邮件通过 mail.com IMAP 同步。
 - 域名资产管理：在矩龙邮箱原有商业化工作台接入、启停和删除收件域名；面板提供 MX/A DNS 指引、SMTP 服务状态与域名邮箱数量。
 - 域名邮箱生成与收件：按已启用域名批量生成 `随机6位-随机8位@收件域名` 地址；内置 receive-only SMTP 服务只接收已生成且启用的地址，保留纯文本/HTML 邮件并复用现有邮件弹窗、HTML 接码页和单邮箱取码 API。
 - Cloudflare 转发收件：左侧“转发邮箱”提供 Email Routing/Worker 配置、HMAC 密钥轮换、入站测试、收件统计和可收件地址列表；`cloudflare/forwarding-worker.ts` 将 Cloudflare 收到的原始 MIME 通过 HTTPS 投递到矩龙邮箱，支持多个已接入域名共用同一 Worker 和签名密钥，并支持可选外部副本转发。接入模型参考 [cloudflare_temp_email](https://github.com/dreamhunter2333/cloudflare_temp_email) 的 Email Worker/Email Routing 思路，本项目保留自己的 Go 存储与商业化 UI。
 - 批量/定时创建：可勾选多个 Apple 登录态；手动创建会让选中账号同时跑一轮，定时只设置间隔，失败账号只在本次定时创建中临时跳过，其他账号继续创建，直到本次账号全部失败后等待下一次。
 - 邮件同步：创建邮箱的 Apple 登录态只用于创建；收件使用 iCloud 邮箱账号 + App 专用密码，通过 IMAP 监听和同步邮件。默认只保存验证码邮件，管理员关闭过滤后会保存隐藏邮箱收到的全部邮件，取码 API 仍只提取验证码。
 - 取码 API：每个隐私邮箱自动生成独立 `mailbox_key` 和 API 地址。
-- 全部邮箱与取件码发货：统一按 ID、标签、状态、邮箱、邮箱类型/所属账号或域名、邮件数、时间、HTML 过期时间、取件码和操作列展示 iCloud 与域名邮箱；“全部邮箱”按创建时间倒序且创建时间只在入库时记录，“取件码与发货”按最近更新时间倒序并显示“更新时间”，新出库邮箱排在最前；两个页面的搜索条件相互独立，搜索时“全部”和分类标签显示当前命中数量。
+- 全部邮箱与取件码发货：统一按 ID、标签、状态、邮箱、邮箱类型/所属账号或域名、邮件数、时间、HTML 过期时间、取件码和操作列展示 iCloud、MAIL 别名与域名邮箱；“全部邮箱”按创建时间倒序且创建时间只在入库时记录，“取件码与发货”按最近更新时间倒序并显示“更新时间”，新出库邮箱排在最前；两个页面的搜索条件相互独立，搜索时“全部”和分类标签显示当前命中数量。
 - 单邮箱邮件查询：点击“全部邮箱”表格中的邮件数量，会打开当前邮箱专属邮件弹窗；可查看发件人、主题、收件时间、正文、验证码和隔离后的 HTML 邮件预览，并支持同步或刷新当前邮箱邮件。
 - 邮箱批量操作：支持跨分页选择邮箱，批量复制邮箱/API/HTML 地址、同步邮件、出库、修改状态、停用 API，以及从 iCloud 永久删除邮箱。
 - 出库与发货：勾选库存邮箱后点击“出库”，邮箱状态会改为“出库”并移入侧边栏“取件码与发货”；出库列表继续支持邮件查询、验证码和 HTML 地址，也可按全部、已激活、未激活、已过期筛选 HTML 状态，批量退回库存或一键清理全部已过期邮箱。
@@ -331,6 +334,27 @@ https://mail.example.com/mailbox/TOKEN
 ```http
 GET /api/v1/mailboxes/{email}/code?key=<mailbox_key>&after=<RFC3339>&keyword=OpenAI
 ```
+
+### MAIL 别名生成 API
+
+登录后台后可使用以下接口管理 MAIL 账号与别名：
+
+```http
+POST /api/mail/accounts
+Content-Type: application/json
+
+{"email":"name@mail.com","password":"<password>","label":"MAIL 主账号"}
+```
+
+```http
+GET /api/mail/alias-domains?account_id=<mail_account_id>
+POST /api/mail/aliases
+Content-Type: application/json
+
+{"account_id":"<mail_account_id>","local":"demo-alias","domain":"mail.com","label":"注册批次 A"}
+```
+
+创建响应中的 `mailbox.html_link_url` 是 HTML 接码地址，`mailbox.api_url` 是独立取码 API。也可调用 `POST /api/mail/mailboxes/sync` 并提交 `account_id` 主动同步该账号下全部 MAIL 别名。
 
 ### 按邮箱 ID 取码
 

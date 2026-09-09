@@ -97,6 +97,10 @@ type Server struct {
 	latestIMAPUID                  func(ctx context.Context, state LoginState) (string, error)
 	checkIMAPLogin                 func(ctx context.Context, email, appPassword string) error
 	deletePrivacyMailbox           func(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error)
+	mailAliasDomains               func(ctx context.Context, account MailAccount) ([]string, error)
+	createMailAlias                func(ctx context.Context, account MailAccount, address string) (string, error)
+	deleteMailAlias                func(ctx context.Context, account MailAccount, address string) error
+	syncMailAliases                func(ctx context.Context, account MailAccount, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (map[string][]ICloudSyncedMessage, string, error)
 	updateMu                       sync.Mutex
 	updateApplyMu                  sync.Mutex
 	updateCache                    updateCandidate
@@ -270,6 +274,18 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 	}
 	s.syncMailboxBatch = func(ctx context.Context, session ICloudSession, mailboxes []Mailbox, after time.Time, keyword string, maxThreads int) (map[string][]ICloudSyncedMessage, error) {
 		return NewICloudClient().SyncMailboxMessagesBatch(ctx, session, mailboxes, after, keyword, maxThreads)
+	}
+	s.mailAliasDomains = func(ctx context.Context, account MailAccount) ([]string, error) {
+		return NewMailClient().AvailableAliasDomains(ctx, account)
+	}
+	s.createMailAlias = func(ctx context.Context, account MailAccount, address string) (string, error) {
+		return NewMailClient().CreateAlias(ctx, account, address)
+	}
+	s.deleteMailAlias = func(ctx context.Context, account MailAccount, address string) error {
+		return NewMailClient().DeleteAlias(ctx, account, address)
+	}
+	s.syncMailAliases = func(ctx context.Context, account MailAccount, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (map[string][]ICloudSyncedMessage, string, error) {
+		return NewMailClient().SyncAliases(ctx, account, mailboxes, after, keyword, maxMessages)
 	}
 	s.checkIMAPLogin = CheckICloudIMAPLogin
 	s.routes()
@@ -628,6 +644,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/icloud/imap-login/check", s.handleCheckICloudIMAPLogin)
 	s.mux.HandleFunc("POST /api/icloud/mailboxes/create", s.handleCreateICloudMailbox)
 	s.mux.HandleFunc("POST /api/icloud/mailboxes/sync", s.handleSyncICloudMailboxes)
+	s.mux.HandleFunc("GET /api/mail/accounts", s.handleListMailAccounts)
+	s.mux.HandleFunc("POST /api/mail/accounts", s.handleCreateMailAccount)
+	s.mux.HandleFunc("GET /api/mail/alias-domains", s.handleMailAliasDomains)
+	s.mux.HandleFunc("POST /api/mail/aliases", s.handleCreateMailAlias)
+	s.mux.HandleFunc("POST /api/mail/mailboxes/sync", s.handleSyncMailAliases)
 	s.mux.HandleFunc("GET /api/icloud/scheduler/status", s.handleMailboxSchedulerStatus)
 	s.mux.HandleFunc("POST /api/icloud/scheduler/start", s.handleStartMailboxScheduler)
 	s.mux.HandleFunc("POST /api/icloud/scheduler/stop", s.handleStopMailboxScheduler)
@@ -967,6 +988,9 @@ func (s *Server) handleMailboxHTMLData(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errCode("mailbox_not_found", "邮箱不存在", false))
 		return
 	}
+	if mailbox.ProviderKind() == MailboxProviderMail {
+		_, _ = s.syncMailbox(r.Context(), mailbox, time.Now().Add(-24*time.Hour), allMailboxMessagesKeyword)
+	}
 	messages := s.store.MessagesForMailbox(mailbox.ID)
 	sort.SliceStable(messages, func(i, j int) bool {
 		return firstNonZeroTime(messages[i].ReceivedAt, messages[i].CreatedAt).After(firstNonZeroTime(messages[j].ReceivedAt, messages[j].CreatedAt))
@@ -1226,9 +1250,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		currentUser.IsAdmin = session.IsAdmin || user.IsAdmin
 	}
 	domainMailboxCount := 0
+	mailMailboxCount := 0
 	for _, mailbox := range state.Mailboxes {
 		if mailbox.ProviderKind() == MailboxProviderDomain {
 			domainMailboxCount++
+		} else if mailbox.ProviderKind() == MailboxProviderMail {
+			mailMailboxCount++
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -1246,6 +1273,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"messages":            len(state.Messages),
 		"domains":             len(state.Domains),
 		"domain_mailboxes":    domainMailboxCount,
+		"mail_accounts":       len(state.MailAccounts),
+		"mail_mailboxes":      mailMailboxCount,
 		"domain_smtp_enabled": s.domainSMTPStatus()["enabled"],
 		"domain_smtp_port":    s.domainSMTPStatus()["port"],
 		"icloud_session":      s.publicSessionForRequest(r),
@@ -1268,6 +1297,10 @@ func (s *Server) handleManageData(w http.ResponseWriter, r *http.Request) {
 	for _, account := range state.Accounts {
 		accounts = append(accounts, s.publicAccount(account))
 	}
+	mailAccounts := make([]publicMailAccount, 0, len(state.MailAccounts))
+	for _, account := range state.MailAccounts {
+		mailAccounts = append(mailAccounts, s.publicMailAccount(account))
+	}
 	domains := make([]publicDomain, 0, len(state.Domains))
 	for _, domain := range state.Domains {
 		domains = append(domains, s.publicDomain(domain, state))
@@ -1282,6 +1315,7 @@ func (s *Server) handleManageData(w http.ResponseWriter, r *http.Request) {
 		"users":           publicUsers,
 		"user_summaries":  s.publicUserSummaries(users, state),
 		"accounts":        accounts,
+		"mail_accounts":   mailAccounts,
 		"domains":         domains,
 		"mailboxes":       mailboxes,
 		"messages":        len(state.Messages),
@@ -1399,30 +1433,35 @@ func (s *Server) handleExportRuntimeData(w http.ResponseWriter, r *http.Request)
 	ownerID := scopedOwnerID(r, s.store)
 	state := s.scopedState(r)
 	payload := struct {
-		ExportedAt      string          `json:"exported_at"`
-		Scope           string          `json:"scope"`
-		Owner           string          `json:"owner,omitempty"`
-		DataPath        string          `json:"data_path,omitempty"`
-		NextID          int             `json:"next_id"`
-		Accounts        []Account       `json:"accounts"`
-		Domains         []Domain        `json:"domains"`
-		Mailboxes       []Mailbox       `json:"mailboxes"`
-		ICloudSession   *ICloudSession  `json:"icloud_session,omitempty"`
-		ICloudSessions  []ICloudSession `json:"icloud_sessions,omitempty"`
-		MessageCount    int             `json:"message_count"`
-		Messages        []Message       `json:"messages,omitempty"`
-		IncludeMessages bool            `json:"include_messages"`
+		ExportedAt      string              `json:"exported_at"`
+		Scope           string              `json:"scope"`
+		Owner           string              `json:"owner,omitempty"`
+		DataPath        string              `json:"data_path,omitempty"`
+		NextID          int                 `json:"next_id"`
+		Accounts        []Account           `json:"accounts"`
+		MailAccounts    []publicMailAccount `json:"mail_accounts"`
+		Domains         []Domain            `json:"domains"`
+		Mailboxes       []Mailbox           `json:"mailboxes"`
+		ICloudSession   *ICloudSession      `json:"icloud_session,omitempty"`
+		ICloudSessions  []ICloudSession     `json:"icloud_sessions,omitempty"`
+		MessageCount    int                 `json:"message_count"`
+		Messages        []Message           `json:"messages,omitempty"`
+		IncludeMessages bool                `json:"include_messages"`
 	}{
 		ExportedAt:      formatTime(time.Now()),
 		Scope:           "all",
 		NextID:          state.NextID,
 		Accounts:        state.Accounts,
+		MailAccounts:    make([]publicMailAccount, 0, len(state.MailAccounts)),
 		Domains:         state.Domains,
 		Mailboxes:       state.Mailboxes,
 		ICloudSession:   state.ICloudSession,
 		ICloudSessions:  state.ICloudSessions,
 		MessageCount:    len(state.Messages),
 		IncludeMessages: truthy(r.URL.Query().Get("include_messages")),
+	}
+	for _, account := range state.MailAccounts {
+		payload.MailAccounts = append(payload.MailAccounts, s.publicMailAccount(account))
 	}
 	if ownerID != "" {
 		payload.Scope = "user"
@@ -2643,6 +2682,9 @@ func (s *Server) handleCreateDomainMailboxes(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 	state := s.scopedState(r)
 	accountsByID := mailboxAccountMap(state.Accounts)
+	for _, account := range state.MailAccounts {
+		accountsByID[account.ID] = Account{ID: account.ID, Label: account.Label, AppleID: account.Email}
+	}
 	domainsByID := mailboxDomainMap(state.Domains)
 	base := filterMailboxesByOwner(state.Mailboxes, strings.TrimSpace(r.URL.Query().Get("owner_id")), scopedOwnerID(r, s.store), s.isAdminRequest(r))
 	scopedBase := filterMailboxesByStatusScope(base, r.URL.Query())
@@ -3103,6 +3145,12 @@ func mailboxListAccountKey(mailbox Mailbox, accountsByID map[string]Account, dom
 		}
 		return "domain:unbound"
 	}
+	if mailbox.ProviderKind() == MailboxProviderMail {
+		if strings.TrimSpace(mailbox.AccountID) != "" {
+			return "mail:" + strings.TrimSpace(mailbox.AccountID)
+		}
+		return "mail:unbound"
+	}
 	if strings.TrimSpace(mailbox.AccountID) != "" {
 		return strings.TrimSpace(mailbox.AccountID)
 	}
@@ -3113,6 +3161,10 @@ func mailboxListAccountTitle(mailbox Mailbox, accountsByID map[string]Account, d
 	if mailbox.ProviderKind() == MailboxProviderDomain {
 		domain := domainsByID[strings.TrimSpace(mailbox.DomainID)]
 		return firstNonEmpty(domain.Label, domain.Name, mailbox.DomainID, "未绑定域名")
+	}
+	if mailbox.ProviderKind() == MailboxProviderMail {
+		account := accountsByID[strings.TrimSpace(mailbox.AccountID)]
+		return firstNonEmpty(account.Label, account.AppleID, mailbox.AccountID, "未绑定 MAIL 账号")
 	}
 	account := accountsByID[strings.TrimSpace(mailbox.AccountID)]
 	return firstNonEmpty(account.Label, account.AppleID, mailbox.AccountID, "未绑定 Apple 账号")
@@ -3353,6 +3405,10 @@ func (s *Server) handleCleanRemoteMailbox(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, errCode("domain_mailbox_no_remote_cleanup", "域名邮箱由本机 SMTP 直接收件，没有 iCloud 远端邮件可清理", false))
 		return
 	}
+	if mailbox.ProviderKind() == MailboxProviderMail {
+		writeError(w, http.StatusBadRequest, errCode("mail_mailbox_no_remote_cleanup", "MAIL 别名邮箱由 mail.com 账号统一管理，不使用 iCloud 远端清理", false))
+		return
+	}
 	var payload struct {
 		MoveSynced bool `json:"move_synced"`
 		EmptyTrash bool `json:"empty_trash"`
@@ -3420,7 +3476,7 @@ func (s *Server) handleCleanRemoteMailboxes(w http.ResponseWriter, r *http.Reque
 	handledMailboxes := 0
 	failedMailboxes := 0
 	for _, mailbox := range state.Mailboxes {
-		if mailbox.ProviderKind() == MailboxProviderDomain {
+		if mailbox.ProviderKind() != MailboxProviderICloud {
 			result.Skipped++
 			continue
 		}
@@ -3505,6 +3561,21 @@ func (s *Server) deleteMailboxRemoteThenLocal(ctx context.Context, mailboxID str
 		}
 	}
 	if mailbox.ProviderKind() == MailboxProviderDomain {
+		if err := s.store.DeleteMailbox(mailbox.ID); err != nil {
+			return mailbox, ICloudMailboxDeleteResult{}, err
+		}
+		return mailbox, ICloudMailboxDeleteResult{Email: mailbox.Email, Deleted: true}, nil
+	}
+	if mailbox.ProviderKind() == MailboxProviderMail {
+		account, found := s.store.FindMailAccountByID(mailbox.AccountID)
+		if !found {
+			return mailbox, ICloudMailboxDeleteResult{}, errCode("mail_account_not_found", "mail.com 账号不存在，已保留别名邮箱", false)
+		}
+		if s.deleteMailAlias != nil {
+			if err := s.deleteMailAlias(ctx, account, mailbox.Email); err != nil {
+				return mailbox, ICloudMailboxDeleteResult{}, err
+			}
+		}
 		if err := s.store.DeleteMailbox(mailbox.ID); err != nil {
 			return mailbox, ICloudMailboxDeleteResult{}, err
 		}
@@ -3801,7 +3872,7 @@ func (s *Server) writeMailboxCode(w http.ResponseWriter, r *http.Request, mailbo
 		return
 	}
 	if !mailbox.ICloudActive {
-		writeError(w, http.StatusForbidden, errCode("icloud_inactive", "邮箱已停用或 iCloud 状态不可用", false))
+		writeError(w, http.StatusForbidden, errCode("mailbox_inactive", "邮箱已停用或收件状态不可用", false))
 		return
 	}
 	s.markMailWatcherActive(mailbox.ID)
@@ -3826,6 +3897,23 @@ func (s *Server) writeMailboxCode(w http.ResponseWriter, r *http.Request, mailbo
 	messages := s.store.MessagesForMailbox(mailbox.ID)
 	if mailbox.ProviderKind() == MailboxProviderDomain {
 		if msg, code, ok := latestMailboxCodeSkipping(messages, codeAfter, keyword, now, skipMessageID); ok {
+			s.writeMailboxCodeSuccess(w, mailbox, msg, code, "", !peekOnly)
+			return
+		}
+		writeError(w, http.StatusOK, errCode("no_code", "暂未收到验证码", true))
+		return
+	}
+	if mailbox.ProviderKind() == MailboxProviderMail {
+		if !cacheOnly {
+			if _, syncErr := s.syncMailbox(r.Context(), mailbox, codeAfter, keyword); syncErr != nil {
+				s.logger.Warn("mail.com sync failed", "mailbox_id", mailbox.ID, "err", syncErr)
+				if !allowStale {
+					writeError(w, http.StatusBadGateway, errCode("mail_sync_failed", "同步 mail.com 验证码邮件失败，请检查账号状态后重试", true))
+					return
+				}
+			}
+		}
+		if msg, code, ok := latestMailboxCodeSkipping(s.store.MessagesForMailbox(mailbox.ID), codeAfter, keyword, time.Now(), skipMessageID); ok {
 			s.writeMailboxCodeSuccess(w, mailbox, msg, code, "", !peekOnly)
 			return
 		}
@@ -4619,7 +4707,7 @@ func (s *Server) mailWatcherGroups() []mailboxWatcherOwnerGroup {
 	activeIDs := s.activeMailWatcherMailboxIDs(time.Now())
 	byOwner := make(map[string][]Mailbox)
 	for _, mailbox := range state.Mailboxes {
-		if mailbox.ProviderKind() == MailboxProviderDomain || !mailbox.APIActive || !mailbox.ICloudActive || mailbox.Status == StatusDisabled {
+		if mailbox.ProviderKind() != MailboxProviderICloud || !mailbox.APIActive || !mailbox.ICloudActive || mailbox.Status == StatusDisabled {
 			continue
 		}
 		ownerID := strings.TrimSpace(mailbox.OwnerID)
@@ -4658,7 +4746,7 @@ func (s *Server) mailWatcherIMAPGroups() []mailboxWatcherIMAPGroup {
 	}
 	buckets := make(map[string]*bucket)
 	for _, mailbox := range state.Mailboxes {
-		if mailbox.ProviderKind() == MailboxProviderDomain || !mailbox.APIActive || !mailbox.ICloudActive || mailbox.Status == StatusDisabled {
+		if mailbox.ProviderKind() != MailboxProviderICloud || !mailbox.APIActive || !mailbox.ICloudActive || mailbox.Status == StatusDisabled {
 			continue
 		}
 		ownerID := strings.TrimSpace(mailbox.OwnerID)
@@ -4713,6 +4801,13 @@ func (s *Server) syncMailbox(ctx context.Context, mailbox Mailbox, after time.Ti
 	if mailbox.ProviderKind() == MailboxProviderDomain {
 		return 0, nil
 	}
+	if mailbox.ProviderKind() == MailboxProviderMail {
+		account, ok := s.store.FindMailAccountByID(mailbox.AccountID)
+		if !ok {
+			return 0, errCode("mail_account_not_found", "mail.com 账号不存在", false)
+		}
+		return s.syncMailAccountMailboxes(ctx, account, []Mailbox{mailbox}, after, keyword, mailboxSyncThreadLimit(mailbox))
+	}
 	return s.syncMailboxCodeBatchForOwnerWithLimit(ctx, mailbox.OwnerID, []Mailbox{mailbox}, after, keyword, mailboxSyncThreadLimit(mailbox))
 }
 
@@ -4729,7 +4824,7 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 	refreshed := make([]Mailbox, 0, len(mailboxes))
 	for _, mailbox := range mailboxes {
 		latest, ok := s.store.FindMailboxByID(mailbox.ID)
-		if !ok || latest.ProviderKind() == MailboxProviderDomain || !latest.APIActive || latest.Status == StatusDisabled || !latest.ICloudActive {
+		if !ok || latest.ProviderKind() != MailboxProviderICloud || !latest.APIActive || latest.Status == StatusDisabled || !latest.ICloudActive {
 			continue
 		}
 		refreshed = append(refreshed, latest)
@@ -5702,6 +5797,9 @@ func (s *Server) allowsUserSession(r *http.Request) bool {
 			"/api/icloud/imap-login/check",
 			"/api/icloud/mailboxes/create",
 			"/api/icloud/mailboxes/sync",
+			"/api/mail/accounts",
+			"/api/mail/aliases",
+			"/api/mail/mailboxes/sync",
 			"/api/icloud/scheduler/start",
 			"/api/icloud/scheduler/stop",
 			"/api/icloud/scheduler/logs/clear":
@@ -5712,6 +5810,9 @@ func (s *Server) allowsUserSession(r *http.Request) bool {
 		return true
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/api/accounts" {
+		return true
+	}
+	if r.Method == http.MethodGet && (r.URL.Path == "/api/mail/accounts" || r.URL.Path == "/api/mail/alias-domains") {
 		return true
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/api/accounts" {
@@ -5937,6 +6038,9 @@ func (s *Server) publicUserSummaries(users []User, state State) []publicUserSumm
 	for _, account := range state.Accounts {
 		ensure(account.OwnerID, "").AccountCount++
 	}
+	for _, account := range state.MailAccounts {
+		ensure(account.OwnerID, "").MailAccountCount++
+	}
 	for _, mailbox := range state.Mailboxes {
 		row := ensure(mailbox.OwnerID, "")
 		row.MailboxCount++
@@ -5967,7 +6071,7 @@ func (s *Server) publicUserSummaries(users []User, state State) []publicUserSumm
 	out := make([]publicUserSummary, 0, len(order))
 	for _, ownerID := range order {
 		row := rows[ownerID]
-		if ownerID == "" && row.AccountCount == 0 && row.MailboxCount == 0 && row.MessageCount == 0 && !row.ICloudSessionSaved {
+		if ownerID == "" && row.AccountCount == 0 && row.MailAccountCount == 0 && row.MailboxCount == 0 && row.MessageCount == 0 && !row.ICloudSessionSaved {
 			continue
 		}
 		out = append(out, row.publicUserSummary)
@@ -6001,6 +6105,12 @@ func (s *Server) publicMailbox(r *http.Request, mailbox Mailbox) publicMailbox {
 		if domain, ok := s.store.FindDomainByID(mailbox.DomainID); ok {
 			domainName = domain.Name
 			accountLabel = domain.Label
+		}
+	} else if provider == MailboxProviderMail {
+		providerLabel = "MAIL 别名邮箱"
+		if account, ok := s.store.FindMailAccountByID(mailbox.AccountID); ok {
+			accountLabel = account.Label
+			accountAppleID = account.Email
 		}
 	} else if strings.TrimSpace(mailbox.AccountID) != "" {
 		if account, ok := s.store.FindAccountByID(mailbox.AccountID); ok {

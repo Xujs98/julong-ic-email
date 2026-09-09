@@ -1,0 +1,548 @@
+package app
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/tls"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"html"
+	"io"
+	"net"
+	"net/http"
+	"net/http/cookiejar"
+	"net/url"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+)
+
+const (
+	mailOAuthBaseURL        = "https://oauth2.mail.com"
+	mailSettingsBaseURL     = "https://settings-cats.mail.com"
+	mailBridgeURL           = "https://oauthbridge.navigator-lxa.mail.com/navigator/oauth2/token"
+	mailWebClientID         = "mailcom_mailcheck_chrome"
+	mailWebRedirectURI      = "https://lpebgcnlaohcgdfhbffjajlnpifdkllg.chromiumapp.org/"
+	mailAliasLimit          = 10
+	defaultMailIMAPHost     = "imap.mail.com"
+	defaultMailIMAPPort     = 993
+	mailWebUserAgent        = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+	mailWebOAuthBasicAuth   = "Basic bWFpbGNvbV9tYWlsY2hlY2tfY2hyb21lOnRJWkNZWjFZOFFhNUt0MjJMVXJXSDJTc29td1VhV1F5dGszWWdNem4="
+	mailSettingsBasicAuth   = "Basic bWFpbGNvbV9tYWlsc2V0X3Jvb3RfbGl2ZToqKioqKioq"
+	mailSettingsPartnerData = "eyJ1c2VjYXNlIjoiaW5ib3hfdW5yZWFkIiwiYXJncyI6W10sImlkIjoyLCJjYWxsZXJfYXBwIjoidG9vbGJhciIsImNhbGxlcl92ZXJzaW9uIjoiQ2hyb21lLzguMC41LjAifQ=="
+)
+
+var mailAliasLocalPattern = regexp.MustCompile(`^[a-z0-9._-]{3,62}$`)
+
+type MailClient struct{ client *http.Client }
+
+type mailAlias struct {
+	Address   string `json:"address"`
+	Deletable *bool  `json:"deletable,omitempty"`
+}
+
+type mailAliasList struct {
+	Addresses []mailAlias `json:"mailaddresslist"`
+}
+type mailDomainList struct {
+	Domains []struct{ Domain, State string } `json:"domains"`
+}
+
+func NewMailClient() *MailClient {
+	jar, _ := cookiejar.New(nil)
+	return &MailClient{client: &http.Client{Timeout: 45 * time.Second, Jar: jar, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}}
+}
+
+func (c *MailClient) AvailableAliasDomains(ctx context.Context, account MailAccount) ([]string, error) {
+	token, err := c.settingsToken(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	var response mailDomainList
+	if err := c.settingsJSON(ctx, token, http.MethodGet, "/domains?absoluteURI=false&q.state.eq=ACTIVE&q.legacySupport.eq=true", nil, &response); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(response.Domains))
+	for _, item := range response.Domains {
+		domain := strings.ToLower(strings.TrimSpace(item.Domain))
+		if domain != "" && (item.State == "" || strings.EqualFold(item.State, "ACTIVE")) {
+			out = append(out, domain)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (c *MailClient) CreateAlias(ctx context.Context, account MailAccount, requested string) (string, error) {
+	local, domain, address, err := normalizeMailAliasAddress(requested)
+	if err != nil {
+		return "", err
+	}
+	token, err := c.settingsToken(ctx, account)
+	if err != nil {
+		return "", err
+	}
+	aliases, err := c.aliases(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	if len(aliases) >= mailAliasLimit {
+		return "", errCode("mail_alias_limit", "mail.com 别名数量已达到上限 10 个", false)
+	}
+	for _, alias := range aliases {
+		if strings.EqualFold(alias.Address, address) {
+			return "", errCode("mail_alias_exists", "mail.com 别名已存在", false)
+		}
+	}
+	domains, err := c.availableAliasDomainsWithToken(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	if !containsStringFold(domains, domain) {
+		return "", errCode("mail_alias_domain_unavailable", "所选 mail.com 别名域名当前不可用", true)
+	}
+	validation := map[string]any{}
+	if err := c.settingsJSON(ctx, token, http.MethodPost, "/mailaccount/emailAddressValidations?absoluteURI=false", []string{address}, &validation); err != nil {
+		return "", err
+	}
+	if len(validation) > 0 {
+		return "", errCode("mail_alias_unavailable", "mail.com 别名已被占用", false)
+	}
+	payload := map[string]any{"address": local + "@" + domain, "deletable": true, "pgpEnabled": false, "defaultSenderAddress": false, "defaultReceiverAddress": false, "state": "ACTIVE"}
+	if err := c.settingsJSON(ctx, token, http.MethodPost, "/mailaccount/primary/emailAddresses?absoluteURI=false", payload, nil); err != nil {
+		return "", err
+	}
+	for attempt := 0; attempt < 4; attempt++ {
+		aliases, listErr := c.aliases(ctx, token)
+		if listErr == nil {
+			for _, alias := range aliases {
+				if strings.EqualFold(alias.Address, address) {
+					return address, nil
+				}
+			}
+		}
+		if attempt < 3 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Duration(attempt+1) * time.Second):
+			}
+		}
+	}
+	return "", errCode("mail_alias_create_unconfirmed", "mail.com 别名创建后未确认成功，请稍后同步", true)
+}
+
+func (c *MailClient) DeleteAlias(ctx context.Context, account MailAccount, address string) error {
+	_, _, normalized, err := normalizeMailAliasAddress(address)
+	if err != nil {
+		return err
+	}
+	token, err := c.settingsToken(ctx, account)
+	if err != nil {
+		return err
+	}
+	aliases, err := c.aliases(ctx, token)
+	if err != nil {
+		return err
+	}
+	deletable := false
+	for _, alias := range aliases {
+		if strings.EqualFold(alias.Address, normalized) {
+			deletable = alias.Deletable == nil || *alias.Deletable
+			break
+		}
+	}
+	if !deletable {
+		return errCode("mail_alias_not_deletable", "该 mail.com 地址不是可删除别名", false)
+	}
+	path := "/mailaccount/primary/emailAddressesRemovals/" + url.PathEscape(normalized) + "/removals?absoluteURI=false"
+	return c.settingsJSON(ctx, token, http.MethodPost, path, nil, nil)
+}
+
+func (c *MailClient) CheckIMAP(ctx context.Context, account MailAccount) error {
+	conn, reader, err := c.imapLogin(ctx, account)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, _ = imapCommand(conn, reader, "M002", "LOGOUT")
+	return nil
+}
+
+func (c *MailClient) SyncAliases(ctx context.Context, account MailAccount, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (map[string][]ICloudSyncedMessage, string, error) {
+	if maxMessages <= 0 {
+		maxMessages = 50
+	}
+	if maxMessages > 200 {
+		maxMessages = 200
+	}
+	conn, reader, err := c.imapLogin(ctx, account)
+	if err != nil {
+		return nil, "", err
+	}
+	defer conn.Close()
+	selectLines, err := imapCommand(conn, reader, "M002", "SELECT INBOX")
+	if err != nil || !imapTaggedOK(selectLines, "M002") {
+		return nil, "", errCode("mail_imap_select_failed", "打开 mail.com 收件箱失败："+imapResponseSummary(selectLines), true)
+	}
+	searchAfter := after
+	if searchAfter.IsZero() {
+		searchAfter = time.Now().Add(-24 * time.Hour)
+	}
+	searchLines, err := imapCommand(conn, reader, "M003", "UID SEARCH SINCE "+searchAfter.Format("2-Jan-2006"))
+	if err != nil || !imapTaggedOK(searchLines, "M003") {
+		return nil, "", errCode("mail_imap_search_failed", "搜索 mail.com 邮件失败："+imapResponseSummary(searchLines), true)
+	}
+	uids := imapSearchUIDs(searchLines)
+	if len(uids) == 0 {
+		_, _ = imapCommand(conn, reader, "M004", "LOGOUT")
+		return map[string][]ICloudSyncedMessage{}, "", nil
+	}
+	sortInts(uids)
+	uids = lastIntValues(uids, maxMessages)
+	lastUID := fmt.Sprint(uids[len(uids)-1])
+	fetched := make([]iCloudIMAPFetchedMessage, 0, len(uids))
+	tag := 4
+	for _, chunk := range chunkInts(uids, 20) {
+		tag++
+		name := fmt.Sprintf("M%03d", tag)
+		lines, literals, fetchErr := imapCommandWithLiterals(conn, reader, name, "UID FETCH "+imapUIDSet(chunk)+" (UID BODY.PEEK[]<0.200000>)")
+		if fetchErr != nil || !imapTaggedOK(lines, name) {
+			return nil, "", errCode("mail_imap_fetch_failed", "读取 mail.com 邮件失败："+imapResponseSummary(lines), true)
+		}
+		fetchUIDs := imapFetchUIDs(lines)
+		for i, raw := range literals {
+			uid := ""
+			if i < len(fetchUIDs) {
+				uid = fmt.Sprint(fetchUIDs[i])
+			}
+			fetched = append(fetched, iCloudIMAPFetchedMessage{UID: uid, Raw: raw})
+		}
+	}
+	_, _ = imapCommand(conn, reader, fmt.Sprintf("M%03d", tag+1), "LOGOUT")
+	return iCloudIMAPMessagesByMailbox(fetched, mailboxes, after, keyword, account.Email), lastUID, nil
+}
+
+func (c *MailClient) imapLogin(ctx context.Context, account MailAccount) (net.Conn, *bufio.Reader, error) {
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	dialer := tls.Dialer{Config: &tls.Config{ServerName: defaultMailIMAPHost, MinVersion: tls.VersionTLS12}}
+	raw, err := dialer.DialContext(ctx, "tcp", fmt.Sprintf("%s:%d", defaultMailIMAPHost, defaultMailIMAPPort))
+	if err != nil {
+		return nil, nil, errCode("mail_imap_connect_failed", "连接 mail.com IMAP 失败："+err.Error(), true)
+	}
+	conn := raw.(*tls.Conn)
+	_ = conn.SetDeadline(time.Now().Add(45 * time.Second))
+	reader := bufio.NewReader(conn)
+	greeting, err := reader.ReadString('\n')
+	if err != nil || !strings.Contains(strings.ToUpper(greeting), "OK") {
+		conn.Close()
+		return nil, nil, errCode("mail_imap_greeting_failed", "mail.com IMAP 未就绪", true)
+	}
+	lines, err := imapCommand(conn, reader, "M001", "LOGIN "+imapQuote(account.Email)+" "+imapQuote(account.Password))
+	if err != nil || !imapTaggedOK(lines, "M001") {
+		conn.Close()
+		return nil, nil, errCode("mail_imap_login_failed", "mail.com IMAP 登录失败，请检查账号密码与 IMAP 权限", false)
+	}
+	return conn, reader, nil
+}
+
+func normalizeMailAliasAddress(input string) (string, string, string, error) {
+	input = strings.ToLower(strings.TrimSpace(input))
+	parts := strings.Split(input, "@")
+	if len(parts) != 2 || !mailAliasLocalPattern.MatchString(parts[0]) || strings.TrimSpace(parts[1]) == "" {
+		return "", "", "", errCode("invalid_mail_alias", "别名需为 3-62 位字母、数字、点、横线或下划线，并选择有效域名", false)
+	}
+	return parts[0], parts[1], parts[0] + "@" + parts[1], nil
+}
+
+func (c *MailClient) aliases(ctx context.Context, token string) ([]mailAlias, error) {
+	var response mailAliasList
+	err := c.settingsJSON(ctx, token, http.MethodGet, "/mailaccount/primary/emailAddresses?absoluteURI=false&q.state.in=ACTIVE&q.type.in=MANAGED%2CDOMAIN_HOSTING", nil, &response)
+	return response.Addresses, err
+}
+
+func (c *MailClient) availableAliasDomainsWithToken(ctx context.Context, token string) ([]string, error) {
+	var response mailDomainList
+	if err := c.settingsJSON(ctx, token, http.MethodGet, "/domains?absoluteURI=false&q.state.eq=ACTIVE&q.legacySupport.eq=true", nil, &response); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(response.Domains))
+	for _, item := range response.Domains {
+		if strings.TrimSpace(item.Domain) != "" {
+			out = append(out, strings.ToLower(strings.TrimSpace(item.Domain)))
+		}
+	}
+	return out, nil
+}
+
+func (c *MailClient) settingsJSON(ctx context.Context, token, method, path string, payload, out any) error {
+	var body io.Reader
+	if payload != nil {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(data)
+	}
+	req, _ := http.NewRequestWithContext(ctx, method, mailSettingsBaseURL+path, body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Origin", "https://mailset-root.mail.com")
+	req.Header.Set("Referer", "https://mailset-root.mail.com/")
+	req.Header.Set("X-UI-App", "mailcom.mailset-compose/1.0.5-build.322")
+	req.Header.Set("X-Request-ID", randomHex(16))
+	req.Header.Set("User-Agent", mailWebUserAgent)
+	switch {
+	case strings.Contains(path, "emailAddressesRemovals"):
+		req.Header.Set("Accept", "text/plain;charset=UTF-8")
+		req.Header.Set("Content-Type", "text/plain;charset=UTF-8")
+	case strings.Contains(path, "emailAddressValidations"):
+		req.Header.Set("Accept", "application/vnd.ui.trinity.email-address-validation-response+json")
+		req.Header.Set("Content-Type", "application/vnd.ui.trinity.email-address-validation-request+json")
+	case strings.Contains(path, "emailAddresses") && method == http.MethodPost:
+		req.Header.Set("Accept", "application/vnd.ui.trinity.minimalmailaddress-v3+json")
+		req.Header.Set("Content-Type", "application/vnd.ui.trinity.minimalmailaddress-v3+json")
+	case strings.Contains(path, "emailAddresses"):
+		req.Header.Set("Accept", "application/vnd.ui.trinity.mailaddress.list-v5+json")
+		req.Header.Set("Content-Type", "application/vnd.ui.trinity.mailaddress.list-v5+json")
+	default:
+		req.Header.Set("Accept", "application/json")
+		if payload != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+	}
+	response, err := c.client.Do(req)
+	if err != nil {
+		return errCode("mail_request_failed", "mail.com 请求失败："+err.Error(), true)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(response.Body, 1000))
+		return errCode("mail_request_rejected", fmt.Sprintf("mail.com 请求返回 %d：%s", response.StatusCode, strings.TrimSpace(string(data))), response.StatusCode >= 500)
+	}
+	if out != nil && response.StatusCode != http.StatusNoContent {
+		return json.NewDecoder(response.Body).Decode(out)
+	}
+	return nil
+}
+
+func (c *MailClient) settingsToken(ctx context.Context, account MailAccount) (string, error) {
+	state := randomHex(12)
+	authorize, _ := url.Parse(mailOAuthBaseURL + "/authorize")
+	q := authorize.Query()
+	q.Set("client_id", mailWebClientID)
+	q.Set("redirect_uri", mailWebRedirectURI)
+	q.Set("scope", "mailbox_user_status_access mailbox_user_full_access login")
+	q.Set("response_type", "code")
+	q.Set("hl", "en-US")
+	q.Set("state", state)
+	q.Set("login_hint", account.Email)
+	authorize.RawQuery = q.Encode()
+	response, err := c.webRequest(ctx, authorize.String(), http.MethodGet, "", "", mailWebUserAgent)
+	if err != nil {
+		return "", err
+	}
+	location, err := redirectURL(response, authorize.String())
+	if err != nil {
+		return "", err
+	}
+	loginPage, err := c.webRequest(ctx, location, http.MethodGet, "", "", mailWebUserAgent)
+	if err != nil {
+		return "", err
+	}
+	loginHTML, _ := io.ReadAll(loginPage.Body)
+	loginPage.Body.Close()
+	params, err := mailLoginFormParams(string(loginHTML), location)
+	if err != nil {
+		return "", err
+	}
+	params.Set("username", account.Email)
+	params.Set("password", account.Password)
+	loginResponse, err := c.webRequest(ctx, "https://login.mail.com/login", http.MethodPost, params.Encode(), "https://mlogin.mail.com", mailWebUserAgent)
+	if err != nil {
+		return "", err
+	}
+	authURL, err := redirectURL(loginResponse, "https://login.mail.com/")
+	if err != nil {
+		return "", err
+	}
+	authResponse, err := c.webRequest(ctx, authURL, http.MethodGet, "", "", mailWebUserAgent)
+	if err != nil {
+		return "", err
+	}
+	callbackURL, err := redirectURL(authResponse, mailOAuthBaseURL)
+	if err != nil {
+		return "", err
+	}
+	callback, _ := url.Parse(callbackURL)
+	code := callback.Query().Get("code")
+	if code == "" || callback.Query().Get("state") != state {
+		return "", errCode("mail_oauth_failed", "mail.com OAuth 未返回有效授权码", true)
+	}
+	token, err := c.oauthToken(ctx, code, mailWebRedirectURI, mailWebClientID, "", mailWebOAuthBasicAuth)
+	if err != nil {
+		return "", err
+	}
+	form := url.Values{"service": {"mailint"}, "origin": {"toolbar"}, "access_token": {token}, "successURL": {"https://navigator-lxa.mail.com/login"}, "loginFailedURL": {"http://www.mail.com/?status=nologin"}, "loginErrorURL": {"http://www.mail.com/?status=nologin"}, "statistics": {}, "partnerdata": {mailSettingsPartnerData}}
+	navResponse, err := c.webRequest(ctx, "https://login.mail.com/oauth2login", http.MethodPost, form.Encode(), "", mailWebUserAgent)
+	if err != nil {
+		return "", err
+	}
+	navURL, err := redirectURL(navResponse, "https://login.mail.com/")
+	if err != nil {
+		return "", err
+	}
+	_, err = c.webRequest(ctx, navURL, http.MethodGet, "", "", mailWebUserAgent)
+	if err != nil {
+		return "", err
+	}
+	parsed, _ := url.Parse(navURL)
+	parsed.Path = "/halogin"
+	parsedQuery := parsed.Query()
+	parsedQuery.Set("tz", "5.5")
+	parsed.RawQuery = parsedQuery.Encode()
+	halogin, err := c.webRequest(ctx, parsed.String(), http.MethodGet, "", "", mailWebUserAgent)
+	if err != nil {
+		return "", err
+	}
+	rootURL, err := redirectURL(halogin, parsed.String())
+	if err != nil {
+		return "", err
+	}
+	root, _ := url.Parse(rootURL)
+	sid := root.Query().Get("sid")
+	if sid == "" {
+		return "", errCode("mail_navigator_failed", "mail.com 登录未返回 sid", true)
+	}
+	_, _ = c.webRequest(ctx, rootURL, http.MethodGet, "", "", mailWebUserAgent)
+	bridge, _ := url.Parse(mailBridgeURL)
+	query := bridge.Query()
+	query.Set("sid", sid)
+	bridge.RawQuery = query.Encode()
+	bridgeForm := url.Values{"grant_type": {"urn:mam:oauth:grant-type:spa"}, "scope": {"mail_mailbox_w webmailer_setting_r webmailer_setting_w mail_confix_w"}}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, bridge.String(), strings.NewReader(bridgeForm.Encode()))
+	req.Header.Set("Authorization", mailSettingsBasicAuth)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://mailset-root.mail.com")
+	req.Header.Set("Referer", "https://mailset-root.mail.com/")
+	response, err = c.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	var settings struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&settings); err != nil || settings.AccessToken == "" {
+		return "", errCode("mail_settings_oauth_failed", "mail.com 设置接口登录失败", true)
+	}
+	return settings.AccessToken, nil
+}
+
+func (c *MailClient) oauthToken(ctx context.Context, code, redirectURI, clientID, verifier, auth string) (string, error) {
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI}, "client_id": {clientID}}
+	if verifier != "" {
+		form.Set("code_verifier", verifier)
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, mailOAuthBaseURL+"/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Authorization", auth)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+	response, err := c.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	var token struct {
+		AccessToken string `json:"access_token"`
+		Error       string `json:"error_description"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&token); err != nil || token.AccessToken == "" {
+		return "", errCode("mail_oauth_failed", firstNonEmpty(token.Error, "mail.com OAuth 登录失败"), false)
+	}
+	return token.AccessToken, nil
+}
+
+func (c *MailClient) webRequest(ctx context.Context, endpoint, method, encoded, origin, userAgent string) (*http.Response, error) {
+	var body io.Reader
+	if encoded != "" {
+		body = strings.NewReader(encoded)
+	}
+	req, _ := http.NewRequestWithContext(ctx, method, endpoint, body)
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	if encoded != "" {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	response, err := c.client.Do(req)
+	if err != nil {
+		return nil, errCode("mail_login_failed", "mail.com 登录请求失败："+err.Error(), true)
+	}
+	return response, nil
+}
+
+func redirectURL(response *http.Response, base string) (string, error) {
+	defer response.Body.Close()
+	location := response.Header.Get("Location")
+	if response.StatusCode < 300 || response.StatusCode >= 400 || location == "" {
+		return "", errCode("mail_redirect_failed", fmt.Sprintf("mail.com 登录跳转异常：%d", response.StatusCode), true)
+	}
+	ref, _ := url.Parse(base)
+	next, err := ref.Parse(location)
+	if err != nil {
+		return "", err
+	}
+	return next.String(), nil
+}
+func mailLoginFormParams(source, pageURL string) (url.Values, error) {
+	values := url.Values{}
+	re := regexp.MustCompile(`(?is)<input\b[^>]*>`)
+	for _, tag := range re.FindAllString(source, -1) {
+		name := htmlAttribute(tag, "name")
+		if name != "" {
+			values.Set(name, html.UnescapeString(htmlAttribute(tag, "value")))
+		}
+	}
+	if values.Get("service") == "" {
+		values.Set("service", "oauth2")
+	}
+	if values.Get("successURL") == "" {
+		parsed, _ := url.Parse(pageURL)
+		ctx := parsed.Query().Get("authcode-context")
+		if ctx == "" {
+			return nil, errors.New("mail.com login page missing authcode-context")
+		}
+		values.Set("successURL", mailOAuthBaseURL+"/authcode?authcode-context="+url.QueryEscape(ctx))
+		values.Set("loginFailedURL", "https://mlogin.mail.com/oauth2/?status=login-failed&authcode-context="+url.QueryEscape(ctx))
+		values.Set("loginErrorURL", "https://mlogin.mail.com/loginapplication/error/loginerror")
+	}
+	return values, nil
+}
+func htmlAttribute(tag, name string) string {
+	re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(name) + `\s*=\s*["']([^"']*)["']`)
+	match := re.FindStringSubmatch(tag)
+	if len(match) == 2 {
+		return match[1]
+	}
+	return ""
+}
+func randomHex(size int) string {
+	data := make([]byte, size)
+	_, _ = rand.Read(data)
+	return hex.EncodeToString(data)
+}
+func containsStringFold(values []string, want string) bool {
+	for _, value := range values {
+		if strings.EqualFold(value, want) {
+			return true
+		}
+	}
+	return false
+}

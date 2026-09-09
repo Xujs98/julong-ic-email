@@ -23,6 +23,7 @@ const (
 
 	MailboxProviderICloud = "icloud"
 	MailboxProviderDomain = "domain"
+	MailboxProviderMail   = "mail"
 
 	DomainProviderCloudflare = "cloudflare"
 	DomainProviderSMTP       = "smtp"
@@ -34,6 +35,7 @@ type State struct {
 	Users                []User                      `json:"users,omitempty"`
 	WebSessions          []WebSession                `json:"web_sessions,omitempty"`
 	Accounts             []Account                   `json:"accounts"`
+	MailAccounts         []MailAccount               `json:"mail_accounts,omitempty"`
 	Domains              []Domain                    `json:"domains,omitempty"`
 	Mailboxes            []Mailbox                   `json:"mailboxes"`
 	DomainMailboxHistory []DomainMailboxHistoryEntry `json:"domain_mailbox_history,omitempty"`
@@ -123,6 +125,21 @@ type Account struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+// MailAccount stores a mail.com account used for alias creation and IMAP
+// synchronization. Passwords are kept locally alongside existing session
+// material so the service can refresh aliases without interactive login.
+type MailAccount struct {
+	ID         string    `json:"id"`
+	OwnerID    string    `json:"owner_id,omitempty"`
+	Label      string    `json:"label"`
+	Email      string    `json:"email"`
+	Password   string    `json:"password,omitempty"`
+	Status     string    `json:"status"`
+	LastSyncAt time.Time `json:"last_sync_at,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 type Domain struct {
 	ID        string    `json:"id"`
 	OwnerID   string    `json:"owner_id,omitempty"`
@@ -205,6 +222,8 @@ func normalizeMailboxProvider(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case MailboxProviderDomain:
 		return MailboxProviderDomain
+	case MailboxProviderMail, "mailcom", "mail.com":
+		return MailboxProviderMail
 	default:
 		return MailboxProviderICloud
 	}
@@ -412,6 +431,18 @@ type publicAccount struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+type publicMailAccount struct {
+	ID         string `json:"id"`
+	OwnerID    string `json:"owner_id,omitempty"`
+	Owner      string `json:"owner,omitempty"`
+	Label      string `json:"label"`
+	Email      string `json:"email"`
+	Status     string `json:"status"`
+	LastSyncAt string `json:"last_sync_at,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
 type publicDomain struct {
 	ID            string `json:"id"`
 	OwnerID       string `json:"owner_id,omitempty"`
@@ -511,6 +542,7 @@ type publicUserSummary struct {
 	Status                string `json:"status"`
 	IsAdmin               bool   `json:"is_admin,omitempty"`
 	AccountCount          int    `json:"account_count"`
+	MailAccountCount      int    `json:"mail_account_count"`
 	MailboxCount          int    `json:"mailbox_count"`
 	AvailableMailboxCount int    `json:"available_mailbox_count"`
 	UsedMailboxCount      int    `json:"used_mailbox_count"`

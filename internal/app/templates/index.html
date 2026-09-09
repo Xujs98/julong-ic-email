@@ -2234,6 +2234,7 @@
         <button class="nav-item active" data-view="overview" onclick="setActiveView('overview', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4.5h5.5v15H5zM13.5 4.5H19v15h-5.5z"/></svg></span><span>管理总览</span><span class="count-dot" id="navOverviewCount">0</span></button>
         <button class="nav-item" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4.5" y="4.5" width="15" height="15" rx="1.5"/><path d="M8.5 8.5h7v7h-7z"/></svg></span><span>全部邮箱</span><span class="count-dot" id="navMailboxCount">0</span></button>
         <button class="nav-item" data-view="domains" onclick="setActiveView('domains', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v9h-15z"/><path d="m5.3 8.5 6.7 5 6.7-5"/><path d="M7.5 4.5h9"/></svg></span><span>域名邮箱</span><span class="count-dot" id="navDomainCount">0</span></button>
+        <button class="nav-item" data-view="mail" onclick="setActiveView('mail', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v10h-15z"/><path d="m5.5 8.5 6.5 5 6.5-5"/><path d="M15.5 4.5h4M17.5 2.5v4"/></svg></span><span>MAIL别名生成</span><span class="count-dot" id="navMailCount">0</span></button>
         <button class="nav-item" data-view="create" onclick="setActiveView('create', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg></span><span>新建邮箱</span></button>
         <button class="nav-item" data-view="forwarding" onclick="setActiveView('forwarding', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h9.5a3.5 3.5 0 0 1 0 7H8"/><path d="m9 5-3 3 3 3"/></svg></span><span>转发邮箱</span><span class="count-dot" id="navForwardingCount">0</span></button>
         <button class="nav-item nav-alias" data-view="mailboxes" onclick="setActiveView('mailboxes', this)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v10h-15z"/><path d="m5.5 8.5 6.5 5 6.5-5"/></svg></span><span>统一收件箱</span></button>
@@ -2520,6 +2521,39 @@
                 </table>
               </div>
             </section>
+          </div>
+        </section>
+
+        <section class="view-section panel domain-workspace" data-view="mail">
+          <div class="panel-head"><h2>MAIL别名生成</h2><p>绑定 mail.com 账号后创建可收件别名，自动生成 HTML 接码地址与独立取码 API。</p></div>
+          <div class="commercial-hero">
+            <div class="commercial-hero-copy"><strong>MAIL 别名接码中心</strong><span>别名创建参考 maildotcom-sdk 的 Web Settings OAuth 流程，收件通过 mail.com IMAP 同步到统一邮箱。</span></div>
+            <div class="commercial-hero-metrics"><div class="commercial-metric"><strong id="mailAccountMetric">0</strong><span>MAIL 账号</span></div><div class="commercial-metric"><strong id="mailAliasMetric">0</strong><span>MAIL 别名</span></div><div class="commercial-metric"><strong>HTML + API</strong><span>双接码通道</span></div></div>
+          </div>
+          <div class="domain-workspace-body">
+            <div class="domain-operation-grid">
+              <section class="domain-operation-card">
+                <header class="domain-card-head"><span class="domain-card-index">01</span><div class="domain-card-title"><h3>绑定 mail.com 账号</h3><p>账号密码只保存在本机状态文件，用于创建别名和同步收件箱。</p></div></header>
+                <div class="domain-card-body"><div class="domain-generation-fields">
+                  <label>账号邮箱<input id="mailAccountEmail" type="email" autocomplete="username" placeholder="name@mail.com"></label>
+                  <label>账号密码<input id="mailAccountPassword" type="password" autocomplete="current-password" placeholder="mail.com 密码"></label>
+                  <label>账号标签<input id="mailAccountLabel" placeholder="例如：MAIL 主账号"></label>
+                </div></div>
+                <div class="domain-card-actions"><button type="button" class="primary" onclick="createMailAccount()">绑定账号</button><span id="mailAccountStatus" class="domain-card-status">绑定后读取 Web 别名域名；首次同步时检测 IMAP 收件能力。</span></div>
+              </section>
+              <section class="domain-operation-card">
+                <header class="domain-card-head"><span class="domain-card-index">02</span><div class="domain-card-title"><h3>生成 MAIL 别名</h3><p>创建成功后立即进入全部邮箱，并自动附带 HTML 地址和取码 API。</p></div></header>
+                <div class="domain-card-body"><div class="domain-generation-fields">
+                  <label>MAIL 账号<select id="mailAliasAccount" onchange="loadMailAliasDomains()"><option value="">请先绑定账号</option></select></label>
+                  <label>别名前缀<input id="mailAliasLocal" placeholder="3-62 位字母/数字/._-"></label>
+                  <label>别名域名<select id="mailAliasDomain"><option value="mail.com">mail.com</option></select></label>
+                  <label>邮箱标签<input id="mailAliasLabel" placeholder="例如：注册批次 A"></label>
+                  <label>备注<input id="mailAliasNote" placeholder="选填"></label>
+                </div></div>
+                <div class="domain-card-actions"><button type="button" class="primary" onclick="createMailAlias()">生成别名与接码地址</button><button type="button" onclick="syncMailAliases()">同步 MAIL 收件</button><span id="mailAliasStatus" class="domain-card-status">请选择账号后读取当前可用别名域名。</span></div>
+              </section>
+            </div>
+            <section class="domain-assets-card"><header class="domain-assets-head"><div class="domain-assets-title"><h3>MAIL 账号清单</h3><p>统一查看账号状态和最近同步时间</p></div><button type="button" onclick="loadMailAccounts()">刷新</button></header><div class="table-wrap domain-table"><table><thead><tr><th>标签</th><th>账号</th><th>状态</th><th>最近同步</th><th>创建时间</th></tr></thead><tbody id="mailAccountRows"><tr><td colspan="5" class="muted empty">正在读取 MAIL 账号…</td></tr></tbody></table></div></section>
           </div>
         </section>
 
@@ -2829,7 +2863,7 @@
                 <label class="settings-toggle settings-toggle-danger">
                   <input id="htmlExpiryDeleteMailbox" type="checkbox" onchange="markSystemSettingsDirty()">
                   <span class="settings-toggle-track" aria-hidden="true"><span></span></span>
-                  <span class="settings-toggle-copy"><strong>地址过期后自动删除邮箱</strong><small>开启后会先清理 iCloud 远端地址，再删除本地数据；远端失败将保留并重试。</small></span>
+                  <span class="settings-toggle-copy"><strong>地址过期后自动删除邮箱</strong><small>开启后会清理 iCloud 或 MAIL 远端地址，再删除本地数据；远端失败将保留并重试。</small></span>
                 </label>
               </div>
             </section>
@@ -3004,6 +3038,8 @@
     let mailboxVisibleColumns = new Set(defaultMailboxColumns);
     let lastMailboxes = [];
     let lastDomains = [];
+    let lastMailAccounts = [];
+    let lastMailAliasDomains = [];
     let lastDomainSMTP = {};
     let lastMailboxGroups = [];
     let lastOutboundBatches = [];
@@ -3062,6 +3098,7 @@
       create: ['新建邮箱', '按已保存账号创建新的 iCloud 隐私邮箱。'],
       mailboxes: ['全部邮箱', '统一查看 iCloud 隐私邮箱与域名邮箱。'],
       domains: ['域名邮箱', '接入收件域名、查看 DNS 指引并批量生成域名邮箱。'],
+      mail: ['MAIL别名生成', '绑定 mail.com 账号并生成 HTML/API 双接码别名。'],
       forwarding: ['转发邮箱', '通过 Cloudflare Email Routing 把公网邮件投递到矩龙邮箱。'],
       outbound: ['取件码与发货', '查看已出库邮箱、邮件和取件码。'],
       logs: ['运行日志', '集中查看运行、创建和定时任务记录。'],
@@ -3207,6 +3244,7 @@
       }
       if (normalized === 'settings' && currentUser && currentUser.is_admin) loadSystemSettings().catch(err => log('读取系统设置失败：' + err.message));
       if (normalized === 'domains') loadDomains().catch(err => log('读取域名资产失败：' + err.message));
+      if (normalized === 'mail') loadMailAccounts().catch(err => log('读取 MAIL 账号失败：' + err.message));
       if (normalized === 'forwarding' && currentUser && currentUser.is_admin) loadForwardingSettings().catch(err => log('读取转发配置失败：' + err.message));
       renderGlobalLogs();
     }
@@ -3399,6 +3437,7 @@
       set('navSessionCount', visibleSessionTotal);
       set('navMailboxCount', inventoryTotal);
       set('navDomainCount', Number(summary.domains || 0));
+      set('navMailCount', Number(summary.mail_mailboxes || 0));
       set('navOutboundCount', outboundTotal);
       if ($('navForwardingCount') && forwardingSettings && Array.isArray(forwardingSettings.mailboxes)) {
         $('navForwardingCount').textContent = String(forwardingSettings.mailboxes.length);
@@ -4817,6 +4856,80 @@
       }
     }
 
+
+    function renderMailAccounts() {
+      const select = $('mailAliasAccount');
+      const rows = $('mailAccountRows');
+      if (!select || !rows) return;
+      const previous = select.value;
+      select.innerHTML = lastMailAccounts.length ? lastMailAccounts.map(account => `<option value="${esc(account.id)}">${esc(account.label || account.email)} · ${esc(account.email)}</option>`).join('') : '<option value="">请先绑定账号</option>';
+      if (previous && lastMailAccounts.some(account => account.id === previous)) select.value = previous;
+      if ($('mailAccountMetric')) $('mailAccountMetric').textContent = String(lastMailAccounts.length);
+      rows.innerHTML = lastMailAccounts.length ? lastMailAccounts.map(account => `<tr><td>${esc(account.label || '-')}</td><td>${esc(account.email)}</td><td><span class="pill status-active">${esc(account.status || 'active')}</span></td><td>${esc(formatMailboxDate(account.last_sync_at) || '尚未同步')}</td><td>${esc(formatMailboxDate(account.created_at))}</td></tr>`).join('') : '<tr><td colspan="5" class="muted empty">尚未绑定 mail.com 账号。</td></tr>';
+    }
+
+    async function loadMailAccounts(options = {}) {
+      const data = await api('/api/mail/accounts');
+      lastMailAccounts = data.accounts || [];
+      renderMailAccounts();
+      if (lastMailAccounts.length) await loadMailAliasDomains({silent: true});
+      if (!options.silent) log(`MAIL 账号已刷新：${lastMailAccounts.length} 个`);
+      return data;
+    }
+
+    async function createMailAccount() {
+      const email = ($('mailAccountEmail').value || '').trim();
+      const password = ($('mailAccountPassword').value || '').trim();
+      const label = ($('mailAccountLabel').value || '').trim();
+      if (!email || !password) { showToast('请输入 mail.com 账号和密码'); return; }
+      try {
+        $('mailAccountStatus').textContent = '正在检测 Web 别名接口与 IMAP…';
+        const data = await api('/api/mail/accounts', {method: 'POST', body: JSON.stringify({email, password, label})});
+        $('mailAccountPassword').value = '';
+        lastMailAliasDomains = data.alias_domains || [];
+        $('mailAccountStatus').textContent = `绑定成功：${data.account.email}`;
+        await loadMailAccounts({silent: true}); await refresh(); showToast('MAIL 账号绑定成功');
+      } catch (err) { $('mailAccountStatus').textContent = `绑定失败：${err.message}`; log('绑定 MAIL 账号失败：' + err.message); }
+    }
+
+    async function loadMailAliasDomains(options = {}) {
+      const accountID = ($('mailAliasAccount') && $('mailAliasAccount').value) || '';
+      if (!accountID) return;
+      try {
+        const data = await api(`/api/mail/alias-domains?account_id=${encodeURIComponent(accountID)}`);
+        lastMailAliasDomains = data.domains || [];
+        $('mailAliasDomain').innerHTML = lastMailAliasDomains.map(domain => `<option value="${esc(domain)}">${esc(domain)}</option>`).join('') || '<option value="mail.com">mail.com</option>';
+        $('mailAliasStatus').textContent = `已读取 ${lastMailAliasDomains.length} 个可用别名域名`;
+        if (!options.silent) log(`MAIL 可用别名域名：${lastMailAliasDomains.length} 个`);
+      } catch (err) { $('mailAliasStatus').textContent = `读取域名失败：${err.message}`; if (!options.silent) log('读取 MAIL 别名域名失败：' + err.message); }
+    }
+
+    async function createMailAlias() {
+      const accountID = $('mailAliasAccount').value;
+      const local = ($('mailAliasLocal').value || '').trim().toLowerCase();
+      const domain = $('mailAliasDomain').value;
+      if (!accountID || !local || !domain) { showToast('请选择账号并填写别名前缀'); return; }
+      try {
+        $('mailAliasStatus').textContent = '正在创建 MAIL 别名…';
+        const data = await api('/api/mail/aliases', {method: 'POST', body: JSON.stringify({account_id: accountID, local, domain, label: ($('mailAliasLabel').value || '').trim(), note: ($('mailAliasNote').value || '').trim()})});
+        $('mailAliasLocal').value = '';
+        $('mailAliasStatus').textContent = `创建成功：${data.mailbox.email}；HTML 与 API 已生成`;
+        if ($('mailAliasMetric')) $('mailAliasMetric').textContent = String(Number(lastStatusSummary.mail_mailboxes || 0) + 1);
+        await refresh(); showToast('MAIL 别名与接码地址已生成');
+      } catch (err) { $('mailAliasStatus').textContent = `创建失败：${err.message}`; log('创建 MAIL 别名失败：' + err.message); }
+    }
+
+    async function syncMailAliases() {
+      const accountID = $('mailAliasAccount').value;
+      if (!accountID) { showToast('请选择 MAIL 账号'); return; }
+      try {
+        $('mailAliasStatus').textContent = '正在同步 MAIL 收件箱…';
+        const data = await api('/api/mail/mailboxes/sync', {method: 'POST', body: JSON.stringify({account_id: accountID})});
+        $('mailAliasStatus').textContent = `同步完成：新增 ${data.synced || 0} 封邮件`;
+        await loadMailAccounts({silent: true}); await refresh(); showToast(`MAIL 同步完成：${data.synced || 0} 封`);
+      } catch (err) { $('mailAliasStatus').textContent = `同步失败：${err.message}`; log('同步 MAIL 收件失败：' + err.message); }
+    }
+
     async function setManagedDomainEnabled(id, enabled) {
       try {
         await api(`/api/domains/${encodeURIComponent(id)}/status`, {method: 'POST', body: JSON.stringify({enabled})});
@@ -4938,6 +5051,7 @@
       updateNavCounts(status);
       await loadMailboxPage({silent: true});
       if (activeView === 'domains') await loadDomains({silent: true});
+      if (activeView === 'mail') await loadMailAccounts({silent: true});
     }
 
     function ensureSchedulerPolling() {
@@ -5273,7 +5387,7 @@
             <td class="mailbox-check-column"><input class="mailbox-check" type="checkbox" ${selected ? 'checked' : ''} onchange="toggleMailboxSelection('${row.id}', this.checked)" aria-label="选择 ${esc(row.email)}"></td>
             <td data-mailbox-column="id"><span class="mailbox-id" title="${esc(row.id)}">${esc(mailboxDisplayID(row.id))}</span></td>
             <td data-mailbox-column="label" class="mailbox-label-cell"><span class="mailbox-label-chip ${row.label ? '' : 'empty'}" title="${esc(row.label || '未设置标签')}">${esc(row.label || '未设置')}</span></td>
-            <td data-mailbox-column="status"><span class="mailbox-status-badge ${status.kind}" title="API ${row.api_active ? '正常' : '停用'} / iCloud ${row.icloud_active ? '正常' : '停用'}">${esc(status.text)}</span></td>
+            <td data-mailbox-column="status"><span class="mailbox-status-badge ${status.kind}" title="API ${row.api_active ? '正常' : '停用'} / 收件 ${row.icloud_active ? '正常' : '停用'}">${esc(status.text)}</span></td>
             <td data-mailbox-column="email"><button type="button" class="copy-email-button" onclick="copyMailboxEmail('${row.id}')" title="点击复制邮箱地址">${esc(row.email)}</button></td>
             <td data-mailbox-column="account" class="mailbox-account-cell" title="${esc((row.provider_label || '') + ' · ' + mailboxAccountTitle(row))}"><span class="mailbox-label-chip ${row.provider === 'domain' ? '' : 'empty'}">${esc(row.provider_label || 'iCloud 隐私邮箱')}</span><span class="domain-meta">${esc(mailboxAccountTitle(row))}</span></td>
             <td data-mailbox-column="batch" class="mailbox-batch-cell">${renderMailboxBatch(row)}</td>
@@ -5290,7 +5404,7 @@
                 <div class="mailbox-more-menu">
                   <button type="button" onclick="copyMailboxValue('${row.id}', 'api')">复制 API 地址</button>
                   <button type="button" onclick="copyMailboxValue('${row.id}', 'both')">复制邮箱 + API</button>
-                  ${row.provider === 'domain' ? '' : `<button type="button" onclick="cleanRemoteMailbox('${row.id}')">清理远端邮件</button>`}
+                  ${row.provider === 'icloud' ? `<button type="button" onclick="cleanRemoteMailbox('${row.id}')">清理远端邮件</button>` : ''}
                   <button type="button" onclick="setMailboxStatus('${row.id}', 'available')">设为可用</button>
                   <button type="button" onclick="setMailboxStatus('${row.id}', 'used')">设为已使用</button>
                   <button type="button" onclick="setMailboxStatus('${row.id}', 'failed')">设为失败</button>
@@ -5298,7 +5412,7 @@
                   ${renderMailboxAPIToggleAction(row)}
                 </div>
               </details>
-              <button class="action-delete" onclick="deleteMailbox('${row.id}')" title="${row.provider === 'domain' ? '永久删除域名邮箱' : '从 iCloud 永久删除邮箱'}" aria-label="永久删除邮箱">${mailboxActionIcon('trash')}</button>
+              <button class="action-delete" onclick="deleteMailbox('${row.id}')" title="${row.provider === 'icloud' ? '从 iCloud 永久删除邮箱' : (row.provider === 'mail' ? '从 mail.com 删除别名邮箱' : '永久删除域名邮箱')}" aria-label="永久删除邮箱">${mailboxActionIcon('trash')}</button>
             </div>
             </td>
           </tr>`;
@@ -5530,7 +5644,7 @@
     function mailboxTableStatus(row) {
       if (row.status === 'outbound') return {text: '出库', kind: 'warn'};
       if (!row.api_active) return {text: 'API 停用', kind: 'off'};
-      if (!row.icloud_active) return {text: row.provider === 'domain' ? '收件停用' : 'iCloud 停用', kind: 'bad'};
+      if (!row.icloud_active) return {text: row.provider === 'icloud' ? 'iCloud 停用' : '收件停用', kind: 'bad'};
       return ({
         available: {text: '可用', kind: 'ok'},
         used: {text: '已使用', kind: 'warn'},
@@ -6477,7 +6591,7 @@
       if (!await askConfirm({
         title: '永久删除邮箱',
         message: email,
-        detail: '系统会先停用活跃地址，再删除 iCloud 远端地址以及本地邮箱、邮件、API 和 HTML 地址。此操作不可恢复。',
+        detail: row && row.provider === 'mail' ? '系统会从 mail.com 删除该别名，再清理本地邮件、API 和 HTML 地址。此操作不可恢复。' : (row && row.provider === 'domain' ? '系统会永久清理本地域名邮箱、邮件、API 和 HTML 地址。此操作不可恢复。' : '系统会先停用活跃地址，再删除 iCloud 远端地址以及本地邮箱、邮件、API 和 HTML 地址。此操作不可恢复。'),
         confirmText: '永久删除',
         tone: 'danger'
       })) return;
@@ -6486,7 +6600,7 @@
         selectedMailboxIDs.delete(id);
         selectedMailboxRows.delete(id);
         const remote = data.remote || {};
-        const detail = data.provider === 'domain' ? '本地域名邮箱与收件数据已删除' : (remote.remote_pending ? '本地记录已清理，iCloud 远端删除待服务恢复后重试' : (remote.already_missing ? '远端已不存在，本地记录已清理' : 'iCloud 远端与本地记录均已删除'));
+        const detail = data.provider === 'domain' ? '本地域名邮箱与收件数据已删除' : (data.provider === 'mail' ? 'mail.com 远端别名与本地接码数据均已删除' : (remote.remote_pending ? '本地记录已清理，iCloud 远端删除待服务恢复后重试' : (remote.already_missing ? '远端已不存在，本地记录已清理' : 'iCloud 远端与本地记录均已删除')));
         log(`邮箱已永久删除：${email}（${detail}）`);
         showToast(remote.remote_pending ? `已清理本地邮箱：${email}；远端待重试` : `已永久删除邮箱：${email}`);
         await refresh();

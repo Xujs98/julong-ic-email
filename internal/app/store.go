@@ -141,6 +141,7 @@ type DeleteUserResult struct {
 	UserID         string `json:"user_id"`
 	Username       string `json:"username"`
 	Accounts       int    `json:"accounts"`
+	MailAccounts   int    `json:"mail_accounts,omitempty"`
 	Domains        int    `json:"domains"`
 	Mailboxes      int    `json:"mailboxes"`
 	Messages       int    `json:"messages"`
@@ -652,6 +653,15 @@ func (s *FileStore) DeleteUser(id string) (DeleteUserResult, error) {
 		accounts = append(accounts, account)
 	}
 	s.state.Accounts = accounts
+	mailAccounts := s.state.MailAccounts[:0]
+	for _, account := range s.state.MailAccounts {
+		if constantTimeEqual(id, account.OwnerID) {
+			result.MailAccounts++
+			continue
+		}
+		mailAccounts = append(mailAccounts, account)
+	}
+	s.state.MailAccounts = mailAccounts
 
 	domains := s.state.Domains[:0]
 	for _, domain := range s.state.Domains {
@@ -854,6 +864,71 @@ func (s *FileStore) AddAccountForOwner(ownerID, label, appleID, note string) (Ac
 	}
 	s.state.Accounts = append(s.state.Accounts, account)
 	return account, s.saveLocked()
+}
+
+func (s *FileStore) AddMailAccountForOwner(ownerID, label, email, password string) (MailAccount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ownerID = strings.TrimSpace(ownerID)
+	email = strings.ToLower(strings.TrimSpace(email))
+	password = strings.TrimSpace(password)
+	if !strings.Contains(email, "@") {
+		return MailAccount{}, errCode("invalid_mail_account", "mail.com 账号格式不正确", false)
+	}
+	if password == "" {
+		return MailAccount{}, errCode("mail_password_missing", "请输入 mail.com 账号密码", false)
+	}
+	for _, account := range s.state.MailAccounts {
+		if constantTimeEqual(ownerID, account.OwnerID) && strings.EqualFold(account.Email, email) {
+			return MailAccount{}, errCode("mail_account_exists", "mail.com 账号已存在", false)
+		}
+	}
+	now := time.Now()
+	account := MailAccount{ID: s.nextIDLocked("macc"), OwnerID: ownerID, Label: strings.TrimSpace(label), Email: email, Password: password, Status: StatusActive, CreatedAt: now, UpdatedAt: now}
+	if account.Label == "" {
+		account.Label = email
+	}
+	s.state.MailAccounts = append(s.state.MailAccounts, account)
+	return account, s.saveLocked()
+}
+
+func (s *FileStore) MailAccountsForOwner(ownerID string) []MailAccount {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ownerID = strings.TrimSpace(ownerID)
+	out := make([]MailAccount, 0)
+	for _, account := range s.state.MailAccounts {
+		if ownerID == "" || constantTimeEqual(ownerID, account.OwnerID) {
+			out = append(out, account)
+		}
+	}
+	return out
+}
+
+func (s *FileStore) FindMailAccountByID(id string) (MailAccount, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id = strings.TrimSpace(id)
+	for _, account := range s.state.MailAccounts {
+		if constantTimeEqual(id, account.ID) {
+			return account, true
+		}
+	}
+	return MailAccount{}, false
+}
+
+func (s *FileStore) SetMailAccountSyncAt(id string, syncedAt time.Time) (MailAccount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.state.MailAccounts {
+		if !constantTimeEqual(id, s.state.MailAccounts[i].ID) {
+			continue
+		}
+		s.state.MailAccounts[i].LastSyncAt = syncedAt
+		s.state.MailAccounts[i].UpdatedAt = time.Now()
+		return s.state.MailAccounts[i], s.saveLocked()
+	}
+	return MailAccount{}, errCode("mail_account_not_found", "mail.com 账号不存在", false)
 }
 
 func normalizeManagedDomainName(value string) string {
@@ -1220,6 +1295,10 @@ func (s *FileStore) AddMailbox(accountID, label, email string) (Mailbox, error) 
 }
 
 func (s *FileStore) AddMailboxForOwner(ownerID, accountID, label, email string) (Mailbox, error) {
+	return s.AddMailboxForOwnerProvider(ownerID, accountID, MailboxProviderICloud, label, email, "")
+}
+
+func (s *FileStore) AddMailboxForOwnerProvider(ownerID, accountID, provider, label, email, note string) (Mailbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1245,12 +1324,14 @@ func (s *FileStore) AddMailboxForOwner(ownerID, accountID, label, email string) 
 		ID:           s.nextIDLocked("mbx"),
 		OwnerID:      strings.TrimSpace(ownerID),
 		AccountID:    strings.TrimSpace(accountID),
+		Provider:     normalizeMailboxProvider(provider),
 		Label:        strings.TrimSpace(label),
 		Email:        email,
 		APIToken:     token,
 		APIActive:    true,
 		ICloudActive: true,
 		Status:       StatusAvailable,
+		Note:         strings.TrimSpace(note),
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -2099,7 +2180,7 @@ func (s *FileStore) migrateLegacyMailboxAccountIDsLocked() bool {
 	changed := false
 	now := time.Now()
 	for i := range s.state.Mailboxes {
-		if s.state.Mailboxes[i].ProviderKind() == MailboxProviderDomain {
+		if s.state.Mailboxes[i].ProviderKind() != MailboxProviderICloud {
 			continue
 		}
 		if strings.TrimSpace(s.state.Mailboxes[i].AccountID) != "" {
@@ -2124,6 +2205,7 @@ func cloneState(in State) State {
 	out.Users = append([]User(nil), in.Users...)
 	out.WebSessions = append([]WebSession(nil), in.WebSessions...)
 	out.Accounts = append([]Account(nil), in.Accounts...)
+	out.MailAccounts = append([]MailAccount(nil), in.MailAccounts...)
 	out.Domains = append([]Domain(nil), in.Domains...)
 	out.Mailboxes = append([]Mailbox(nil), in.Mailboxes...)
 	out.DomainMailboxHistory = append([]DomainMailboxHistoryEntry(nil), in.DomainMailboxHistory...)
@@ -2242,6 +2324,11 @@ func filterStateByOwnerLocked(in State, ownerID string) State {
 	for _, account := range in.Accounts {
 		if constantTimeEqual(ownerID, account.OwnerID) {
 			out.Accounts = append(out.Accounts, account)
+		}
+	}
+	for _, account := range in.MailAccounts {
+		if constantTimeEqual(ownerID, account.OwnerID) {
+			out.MailAccounts = append(out.MailAccounts, account)
 		}
 	}
 	for _, domain := range in.Domains {
