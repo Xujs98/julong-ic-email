@@ -2,6 +2,9 @@ FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG APP_VERSION=dev
+ARG APP_COMMIT=unknown
+ARG APP_BUILT_AT=
 
 WORKDIR /src
 COPY go.mod ./
@@ -11,7 +14,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
-    -trimpath -ldflags="-s -w" \
+    -trimpath -ldflags="-s -w -X github.com/Xujs98/julong-ic-email/internal/app.AppVersion=${APP_VERSION} -X github.com/Xujs98/julong-ic-email/internal/app.AppCommit=${APP_COMMIT} -X github.com/Xujs98/julong-ic-email/internal/app.AppBuiltAt=${APP_BUILT_AT}" \
     -o /out/julong-ic-email ./cmd/panel
 
 FROM alpine:3.21

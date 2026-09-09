@@ -64,6 +64,7 @@ README.md                  使用与部署说明
 更新日志.md                 公开版功能更新记录
 AGENTS.md                  开发、验证、提交和 GitHub 推送约定
 scripts/push-with-retry.sh 推送失败后的三次自动重试脚本
+docker-publish.sh          本地构建并推送 Docker 镜像脚本
 ```
 
 以下目录是运行或排障产物，默认被 `.gitignore` 排除，不应提交或打包给别人：
@@ -503,15 +504,20 @@ GET /api/runtime/export-mailbox-emails?format=txt&account_id=<account_id>
 
 项目采用“本地构建并推送 Docker Hub，服务器只拉取镜像”的方式。默认镜像地址为 `docker.io/qq1371446705/julong-ic-email:latest`。
 
-本地登录 Docker Hub，并构建 amd64/arm64 双架构镜像：
+本地登录 Docker Hub，并使用仓库根目录的 `docker-publish.sh` 构建 amd64/arm64 双架构镜像：
 
 ```bash
 docker login -u qq1371446705
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t qq1371446705/julong-ic-email:2026.08.16.13 \
-  -t qq1371446705/julong-ic-email:latest \
-  --push .
+./docker-publish.sh
 ```
+
+脚本默认从 `internal/app/version.go` 读取版本号，推送版本标签和 `latest` 标签，并写入 Git commit、构建时间及 OCI 镜像元数据。只构建当前 Docker 主机架构而不推送时执行：
+
+```bash
+./docker-publish.sh --local
+```
+
+常用参数：`--image registry.example.com/team/julong-ic-email` 指定仓库、`--tag TAG` 指定版本、`--platforms linux/amd64,linux/arm64` 指定平台、`--no-latest` 不更新滚动标签、`--dry-run` 预览命令。私有仓库需先执行对应仓库的 `docker login`。
 
 Docker Hub 仓库设置为 Public 后，服务器拉取镜像无需登录；Private 仓库需先执行 `docker login -u qq1371446705`。
 
