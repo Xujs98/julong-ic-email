@@ -21,7 +21,7 @@
 - 旧接口登录态：后端发起 iCloud 登录，用户收到 2FA 后提交 6 位验证码保存登录态。
 - 多 Apple/IC 账号：同一平台账号可保存多个 Apple/iCloud 创建登录态和多个 IMAP 取码登录；前端按账号分开显示，可切换保存或检测当前取码账号，也可检测全部账号。
 - 隐私邮箱创建：优先调用 Apple Account 新接口创建，账号只有旧登录态时回落 iCloud Hide My Email `generate + reserve`。
-- MAIL 别名生成：在左侧“MAIL别名生成”绑定 mail.com 账号，读取实时可用别名域名并创建真实别名；每个别名自动生成独立 HTML 接码地址和取码 API，邮件通过 mail.com 移动端 API 同步，普通账号无需开通 Premium IMAP。
+- MAIL 别名生成：在左侧“MAIL别名生成”绑定 mail.com 账号，读取实时可用别名域名并创建真实别名；Web 设置令牌按账号复用并在 401 时自动刷新一次，避免域名读取、创建和删除连续触发完整登录。每个别名自动生成独立 HTML 接码地址和取码 API，邮件通过 mail.com 移动端 API 同步，普通账号无需开通 Premium IMAP。
 - 域名资产管理：在矩龙邮箱原有商业化工作台接入、启停和删除收件域名；面板提供 MX/A DNS 指引、SMTP 服务状态与域名邮箱数量。
 - 域名邮箱生成与收件：按已启用域名批量生成 `随机6位-随机8位@收件域名` 地址；内置 receive-only SMTP 服务只接收已生成且启用的地址，保留纯文本/HTML 邮件并复用现有邮件弹窗、HTML 接码页和单邮箱取码 API。
 - Cloudflare 转发收件：左侧“转发邮箱”提供 Email Routing/Worker 配置、HMAC 密钥轮换、入站测试、收件统计和可收件地址列表；`cloudflare/forwarding-worker.ts` 将 Cloudflare 收到的原始 MIME 通过 HTTPS 投递到矩龙邮箱，支持多个已接入域名共用同一 Worker 和签名密钥，并支持可选外部副本转发。接入模型参考 [cloudflare_temp_email](https://github.com/dreamhunter2333/cloudflare_temp_email) 的 Email Worker/Email Routing 思路，本项目保留自己的 Go 存储与商业化 UI。
