@@ -2,10 +2,23 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 )
+
+const mailAliasBatchMax = 10
+
+type mailAliasCreateFailure struct {
+	Index     int    `json:"index"`
+	AccountID string `json:"account_id,omitempty"`
+	Account   string `json:"account,omitempty"`
+	Address   string `json:"address,omitempty"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	Retryable bool   `json:"retryable,omitempty"`
+}
 
 func (s *Server) publicMailAccount(account MailAccount) publicMailAccount {
 	return publicMailAccount{
@@ -47,18 +60,53 @@ func (s *Server) handleCreateMailAccount(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, errCode("mail_credentials_missing", "请输入 mail.com 账号与密码", false))
 		return
 	}
+	existingAccounts := s.store.MailAccountsForOwner(candidate.OwnerID)
+	for _, existing := range existingAccounts {
+		if strings.EqualFold(existing.Email, candidate.Email) {
+			writeError(w, http.StatusConflict, errCode("mail_account_exists", "mail.com 账号已存在", false))
+			return
+		}
+	}
+	domains, err := s.mailAliasDomains(r.Context(), candidate)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	if len(domains) == 0 {
+		writeError(w, http.StatusBadGateway, errCode("mail_alias_domains_empty", "Web 登录成功，但 mail.com 未返回可用别名域名", true))
+		return
+	}
+	if err := s.checkMailIMAP(r.Context(), candidate); err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
 	account, err := s.store.AddMailAccountForOwner(candidate.OwnerID, candidate.Label, candidate.Email, candidate.Password)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	domains := []string{"mail.com", "email.com", "usa.com", "post.com", "myself.com", "workmail.com"}
-	if s.mailAliasDomains != nil {
-		if detected, detectErr := s.mailAliasDomains(r.Context(), account); detectErr == nil && len(detected) > 0 {
-			domains = detected
-		}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"success": true, "account": s.publicMailAccount(account), "alias_domains": domains,
+		"verification": map[string]any{"web_alias": true, "imap": true, "alias_domain_count": len(domains)},
+	})
+}
+
+func (s *Server) handleDeleteMailAccount(w http.ResponseWriter, r *http.Request) {
+	account, ok := s.store.FindMailAccountByID(r.PathValue("id"))
+	if !ok || !s.canAccessMailAccount(r, account) {
+		writeError(w, http.StatusNotFound, errCode("mail_account_not_found", "mail.com 账号不存在", false))
+		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"success": true, "account": s.publicMailAccount(account), "alias_domains": domains})
+	if err := s.store.DeleteMailAccountForOwner(account.OwnerID, account.ID); err != nil {
+		var coded codedError
+		if errors.As(err, &coded) && coded.code == "mail_account_has_mailboxes" {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "deleted": true, "account_id": account.ID})
 }
 
 func (s *Server) handleMailAliasDomains(w http.ResponseWriter, r *http.Request) {
@@ -77,58 +125,171 @@ func (s *Server) handleMailAliasDomains(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleCreateMailAlias(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		AccountID string `json:"account_id"`
-		Address   string `json:"address"`
-		Local     string `json:"local"`
-		Domain    string `json:"domain"`
-		Label     string `json:"label"`
-		Note      string `json:"note"`
+		AccountID     string `json:"account_id"`
+		RandomAccount bool   `json:"random_account"`
+		Address       string `json:"address"`
+		Local         string `json:"local"`
+		Domain        string `json:"domain"`
+		Label         string `json:"label"`
+		Note          string `json:"note"`
+		Count         int    `json:"count"`
 	}
 	if err := decodeJSON(r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	account, ok := s.store.FindMailAccountByID(payload.AccountID)
-	if !ok || !s.canAccessMailAccount(r, account) {
-		writeError(w, http.StatusNotFound, errCode("mail_account_not_found", "mail.com 账号不存在", false))
+	if payload.Count == 0 {
+		payload.Count = 1
+	}
+	if payload.Count < 1 || payload.Count > mailAliasBatchMax {
+		writeError(w, http.StatusBadRequest, errCode("mail_alias_count_invalid", "生成数量需为 1-10", false))
 		return
 	}
-	address := strings.ToLower(strings.TrimSpace(payload.Address))
-	if address == "" {
-		address = strings.ToLower(strings.TrimSpace(payload.Local)) + "@" + strings.ToLower(strings.TrimSpace(payload.Domain))
+	accounts := make([]MailAccount, 0)
+	if payload.RandomAccount {
+		ownerID := requestOwnerID(r, s.store)
+		if ownerID != "" {
+			accounts = append(accounts, s.store.MailAccountsForOwner(ownerID)...)
+		} else {
+			accounts = append(accounts, s.scopedState(r).MailAccounts...)
+		}
+	} else {
+		account, ok := s.store.FindMailAccountByID(payload.AccountID)
+		if !ok || !s.canAccessMailAccount(r, account) {
+			writeError(w, http.StatusNotFound, errCode("mail_account_not_found", "mail.com 账号不存在", false))
+			return
+		}
+		accounts = append(accounts, account)
 	}
-	if _, ok := s.store.FindMailboxByEmail(address); ok {
-		writeError(w, http.StatusBadRequest, errCode("mailbox_exists", "邮箱已存在", false))
+	if len(accounts) == 0 {
+		writeError(w, http.StatusNotFound, errCode("mail_account_not_found", "没有可用于随机生成的 MAIL 账号", false))
 		return
 	}
-	createdAddress, err := s.createMailAlias(r.Context(), account, address)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+	localTemplate, domain := mailAliasTemplateParts(payload.Address, payload.Local, payload.Domain)
+	if localTemplate == "" || domain == "" {
+		writeError(w, http.StatusBadRequest, errCode("invalid_mail_alias", "请填写别名前缀并选择有效域名", false))
 		return
 	}
-	label := strings.TrimSpace(payload.Label)
-	if label == "" {
-		label = "MAIL-" + time.Now().Format("0102-150405")
+	if payload.Count > 1 && !strings.Contains(localTemplate, "[随机]") {
+		writeError(w, http.StatusBadRequest, errCode("mail_alias_template_required", "批量生成时别名前缀必须包含 [随机]", false))
+		return
 	}
-	mailbox, err := s.store.AddMailboxForOwnerProvider(account.OwnerID, account.ID, MailboxProviderMail, label, createdAddress, payload.Note)
-	if err != nil {
-		// The remote alias was already created. Best-effort cleanup keeps the
-		// local/remote records consistent when persisting the mailbox fails.
-		if mailbox.ID != "" {
-			if deleteErr := s.store.DeleteMailbox(mailbox.ID); deleteErr != nil {
-				s.logger.Warn("local mail.com mailbox rollback failed", "mailbox_id", mailbox.ID, "err", deleteErr)
+	if _, _, _, err := normalizeMailAliasAddress(strings.ReplaceAll(localTemplate, "[随机]", "abcdefgh") + "@" + domain); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	mailboxes := make([]publicMailbox, 0, payload.Count)
+	failures := make([]mailAliasCreateFailure, 0)
+	for index := 0; index < payload.Count; index++ {
+		account := accounts[0]
+		if payload.RandomAccount {
+			accountIndex, err := randomIndex(len(accounts))
+			if err != nil {
+				failures = append(failures, newMailAliasCreateFailure(index+1, MailAccount{}, "", err))
+				continue
+			}
+			account = accounts[accountIndex]
+		}
+		local := localTemplate
+		if strings.Contains(local, "[随机]") {
+			randomPart, err := randomAlphaNumeric(8)
+			if err != nil {
+				failures = append(failures, newMailAliasCreateFailure(index+1, account, "", err))
+				continue
+			}
+			local = strings.ReplaceAll(local, "[随机]", randomPart)
+		}
+		_, _, address, err := normalizeMailAliasAddress(local + "@" + domain)
+		if err != nil {
+			failures = append(failures, newMailAliasCreateFailure(index+1, account, address, err))
+			continue
+		}
+		if _, exists := s.store.FindMailboxByEmail(address); exists {
+			failures = append(failures, newMailAliasCreateFailure(index+1, account, address, errCode("mailbox_exists", "邮箱已存在", false)))
+			continue
+		}
+		createdAddress, err := s.createMailAlias(r.Context(), account, address)
+		if err != nil {
+			failures = append(failures, newMailAliasCreateFailure(index+1, account, address, err))
+			continue
+		}
+		label := strings.TrimSpace(payload.Label)
+		if label == "" {
+			label = "MAIL-" + time.Now().Format("0102-150405")
+		}
+		mailbox, err := s.store.AddMailboxForOwnerProvider(account.OwnerID, account.ID, MailboxProviderMail, label, createdAddress, payload.Note)
+		if err != nil {
+			s.rollbackMailAlias(r.Context(), account, mailbox, createdAddress)
+			failures = append(failures, newMailAliasCreateFailure(index+1, account, createdAddress, err))
+			continue
+		}
+		updated, updateErr := s.store.SetMailboxRemoteIdentity(mailbox.ID, createdAddress, "MAIL")
+		if updateErr != nil {
+			s.rollbackMailAlias(r.Context(), account, mailbox, createdAddress)
+			failures = append(failures, newMailAliasCreateFailure(index+1, account, createdAddress, updateErr))
+			continue
+		}
+		mailbox = updated
+		mailboxes = append(mailboxes, s.publicMailbox(r, mailbox))
+	}
+
+	if len(mailboxes) == 0 {
+		message := "MAIL 别名生成失败"
+		retryable := false
+		status := http.StatusBadGateway
+		if len(failures) > 0 {
+			message = failures[0].Message
+			retryable = failures[0].Retryable
+			if failures[0].Code == "internal_error" {
+				status = http.StatusInternalServerError
 			}
 		}
-		if s.deleteMailAlias != nil {
-			if deleteErr := s.deleteMailAlias(r.Context(), account, createdAddress); deleteErr != nil {
-				s.logger.Warn("mail.com alias rollback failed", "account_id", account.ID, "address", createdAddress, "err", deleteErr)
-			}
-		}
-		writeError(w, http.StatusInternalServerError, err)
+		writeJSON(w, status, map[string]any{"success": false, "code": "mail_alias_batch_failed", "message": message, "retryable": retryable, "created": 0, "failed": len(failures), "failures": failures})
 		return
 	}
-	mailbox, _ = s.store.SetMailboxRemoteIdentity(mailbox.ID, createdAddress, "MAIL")
-	writeJSON(w, http.StatusCreated, map[string]any{"success": true, "mailbox": s.publicMailbox(r, mailbox), "html_url": s.publicMailbox(r, mailbox).HTMLLinkURL, "api_url": s.mailboxAPIURL(r, mailbox)})
+	status := http.StatusCreated
+	if len(failures) > 0 {
+		status = http.StatusMultiStatus
+	}
+	response := map[string]any{"success": true, "mailboxes": mailboxes, "created": len(mailboxes), "failed": len(failures), "failures": failures, "mailbox": mailboxes[0], "html_url": mailboxes[0].HTMLLinkURL, "api_url": mailboxes[0].APIURL}
+	writeJSON(w, status, response)
+}
+
+func mailAliasTemplateParts(address, local, domain string) (string, string) {
+	address = strings.ToLower(strings.TrimSpace(address))
+	local = strings.ToLower(strings.TrimSpace(local))
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if address != "" {
+		if at := strings.LastIndex(address, "@"); at > 0 {
+			return address[:at], address[at+1:]
+		}
+	}
+	return local, domain
+}
+
+func newMailAliasCreateFailure(index int, account MailAccount, address string, err error) mailAliasCreateFailure {
+	failure := mailAliasCreateFailure{Index: index, AccountID: account.ID, Account: account.Email, Address: address, Code: "internal_error", Message: err.Error()}
+	var coded codedError
+	if errors.As(err, &coded) {
+		failure.Code = coded.code
+		failure.Message = coded.message
+		failure.Retryable = coded.retryable
+	}
+	return failure
+}
+
+func (s *Server) rollbackMailAlias(ctx context.Context, account MailAccount, mailbox Mailbox, address string) {
+	if mailbox.ID != "" {
+		if err := s.store.DeleteMailbox(mailbox.ID); err != nil {
+			s.logger.Warn("local mail.com mailbox rollback failed", "mailbox_id", mailbox.ID, "err", err)
+		}
+	}
+	if s.deleteMailAlias != nil {
+		if err := s.deleteMailAlias(ctx, account, address); err != nil {
+			s.logger.Warn("mail.com alias rollback failed", "account_id", account.ID, "address", address, "err", err)
+		}
+	}
 }
 
 func (s *Server) handleSyncMailAliases(w http.ResponseWriter, r *http.Request) {

@@ -338,7 +338,7 @@ GET /api/v1/mailboxes/{email}/code?key=<mailbox_key>&after=<RFC3339>&keyword=Ope
 
 ### MAIL 别名生成 API
 
-登录后台后可使用以下接口管理 MAIL 账号与别名：
+登录后台后可使用以下接口管理 MAIL 账号与别名。绑定接口会先校验 Web Settings OAuth/可用别名域名和 IMAP 登录，只有两项均成功才保存账号；因此返回成功代表账号密码已通过两条链路验证。
 
 ```http
 POST /api/mail/accounts
@@ -348,12 +348,20 @@ Content-Type: application/json
 ```
 
 ```http
+DELETE /api/mail/accounts/<mail_account_id>
+```
+
+删除仅适用于没有关联 MAIL 别名邮箱的账号；有关联邮箱时返回 `409 mail_account_has_mailboxes`。
+
+```http
 GET /api/mail/alias-domains?account_id=<mail_account_id>
 POST /api/mail/aliases
 Content-Type: application/json
 
-{"account_id":"<mail_account_id>","local":"demo-alias","domain":"mail.com","label":"注册批次 A"}
+{"account_id":"<mail_account_id>","local":"[随机]-mail","domain":"mail.com","label":"注册批次 A","count":3,"random_account":false}
 ```
+
+`count` 范围为 1-10；批量生成时前缀需包含 `[随机]`，每条地址使用新的 8 位小写字母数字片段。`random_account:true` 时会从当前用户已验证的 MAIL 账号中随机选择，并仅允许选择这些账号共同支持的域名。响应包含 `mailboxes`、`created`、`failed` 和逐条 `failures`，只有远端确认成功的地址才会产生本地 HTML/API 接码记录。
 
 创建响应中的 `mailbox.html_link_url` 是 HTML 接码地址，`mailbox.api_url` 是独立取码 API。也可调用 `POST /api/mail/mailboxes/sync` 并提交 `account_id` 主动同步该账号下全部 MAIL 别名。
 

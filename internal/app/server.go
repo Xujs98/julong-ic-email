@@ -98,6 +98,7 @@ type Server struct {
 	checkIMAPLogin                 func(ctx context.Context, email, appPassword string) error
 	deletePrivacyMailbox           func(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error)
 	mailAliasDomains               func(ctx context.Context, account MailAccount) ([]string, error)
+	checkMailIMAP                  func(ctx context.Context, account MailAccount) error
 	createMailAlias                func(ctx context.Context, account MailAccount, address string) (string, error)
 	deleteMailAlias                func(ctx context.Context, account MailAccount, address string) error
 	syncMailAliases                func(ctx context.Context, account MailAccount, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (map[string][]ICloudSyncedMessage, string, error)
@@ -277,6 +278,9 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 	}
 	s.mailAliasDomains = func(ctx context.Context, account MailAccount) ([]string, error) {
 		return NewMailClient().AvailableAliasDomains(ctx, account)
+	}
+	s.checkMailIMAP = func(ctx context.Context, account MailAccount) error {
+		return NewMailClient().CheckIMAP(ctx, account)
 	}
 	s.createMailAlias = func(ctx context.Context, account MailAccount, address string) (string, error) {
 		return NewMailClient().CreateAlias(ctx, account, address)
@@ -646,6 +650,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/icloud/mailboxes/sync", s.handleSyncICloudMailboxes)
 	s.mux.HandleFunc("GET /api/mail/accounts", s.handleListMailAccounts)
 	s.mux.HandleFunc("POST /api/mail/accounts", s.handleCreateMailAccount)
+	s.mux.HandleFunc("DELETE /api/mail/accounts/{id}", s.handleDeleteMailAccount)
 	s.mux.HandleFunc("GET /api/mail/alias-domains", s.handleMailAliasDomains)
 	s.mux.HandleFunc("POST /api/mail/aliases", s.handleCreateMailAlias)
 	s.mux.HandleFunc("POST /api/mail/mailboxes/sync", s.handleSyncMailAliases)
@@ -5813,6 +5818,9 @@ func (s *Server) allowsUserSession(r *http.Request) bool {
 		return true
 	}
 	if r.Method == http.MethodGet && (r.URL.Path == "/api/mail/accounts" || r.URL.Path == "/api/mail/alias-domains") {
+		return true
+	}
+	if r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/mail/accounts/") {
 		return true
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/api/accounts" {

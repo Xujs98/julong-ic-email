@@ -16,6 +16,7 @@ func TestMailAliasCreatesHTMLAndAPIInbox(t *testing.T) {
 	server.mailAliasDomains = func(_ context.Context, _ MailAccount) ([]string, error) {
 		return []string{"email.com", "mail.com"}, nil
 	}
+	server.checkMailIMAP = func(_ context.Context, _ MailAccount) error { return nil }
 	server.createMailAlias = func(_ context.Context, _ MailAccount, address string) (string, error) {
 		return strings.ToLower(address), nil
 	}
@@ -47,6 +48,9 @@ func TestMailAliasCreatesHTMLAndAPIInbox(t *testing.T) {
 	if accountResponse.Account.ID == "" || accountResponse.Account.Email != "owner@mail.com" || strings.Contains(rr.Body.String(), "secret") {
 		t.Fatalf("unsafe or incomplete mail account response: %s", rr.Body.String())
 	}
+	if !strings.Contains(rr.Body.String(), `"web_alias":true`) || !strings.Contains(rr.Body.String(), `"imap":true`) {
+		t.Fatalf("mail account verification missing: %s", rr.Body.String())
+	}
 
 	rr = call(http.MethodPost, "/api/mail/aliases", `{"account_id":"`+accountResponse.Account.ID+`","local":"codebox","domain":"mail.com","label":"MAIL test"}`)
 	if rr.Code != http.StatusCreated {
@@ -77,6 +81,103 @@ func TestMailAliasCreatesHTMLAndAPIInbox(t *testing.T) {
 	server.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, htmlPath, nil))
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"email":"codebox@mail.com"`) || !strings.Contains(rr.Body.String(), `"code":"246810"`) {
 		t.Fatalf("mail alias HTML data status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestMailAccountBindingRequiresWebAndIMAPValidation(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		webError  error
+		imapError error
+		wantCode  string
+	}{
+		{name: "web", webError: errCode("mail_invalid_credentials", "bad web login", false), wantCode: "mail_invalid_credentials"},
+		{name: "imap", imapError: errCode("mail_imap_login_failed", "bad imap login", false), wantCode: "mail_imap_login_failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := newTestStore(t)
+			server := NewServer(Config{}, store, discardLogger()).(*Server)
+			server.mailAliasDomains = func(_ context.Context, _ MailAccount) ([]string, error) {
+				return []string{"mail.com"}, test.webError
+			}
+			server.checkMailIMAP = func(_ context.Context, _ MailAccount) error { return test.imapError }
+			cookie, _ := registerTestUser(t, server, "binding-"+test.name, "password-123")
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/mail/accounts", strings.NewReader(`{"email":"owner@mail.com","password":"secret"}`))
+			req.AddCookie(cookie)
+			server.ServeHTTP(rr, req)
+			if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"code":"`+test.wantCode+`"`) {
+				t.Fatalf("binding status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if len(store.Snapshot().MailAccounts) != 0 {
+				t.Fatal("invalid MAIL account was persisted")
+			}
+		})
+	}
+}
+
+func TestMailAliasBatchRandomTemplateAndOwnerIsolation(t *testing.T) {
+	store := newTestStore(t)
+	server := NewServer(Config{}, store, discardLogger()).(*Server)
+	cookie, owner := registerTestUser(t, server, "batch-owner", "password-owner")
+	_, other := registerTestUser(t, server, "batch-other", "password-other")
+	ownerAccount, _ := store.AddMailAccountForOwner(owner.ID, "owner", "owner@mail.com", "secret")
+	_, _ = store.AddMailAccountForOwner(other.ID, "other", "other@mail.com", "secret")
+	seen := map[string]bool{}
+	server.createMailAlias = func(_ context.Context, account MailAccount, address string) (string, error) {
+		if account.OwnerID != owner.ID || account.ID != ownerAccount.ID {
+			t.Fatalf("random account crossed owner boundary: %+v", account)
+		}
+		if seen[address] {
+			t.Fatalf("duplicate generated address: %s", address)
+		}
+		seen[address] = true
+		return address, nil
+	}
+	server.deleteMailAlias = func(_ context.Context, _ MailAccount, _ string) error { return nil }
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/mail/aliases", strings.NewReader(`{"random_account":true,"local":"[随机]-mail","domain":"mail.com","count":3}`))
+	req.AddCookie(cookie)
+	server.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated || len(seen) != 3 || !strings.Contains(rr.Body.String(), `"created":3`) {
+		t.Fatalf("batch status=%d seen=%d body=%s", rr.Code, len(seen), rr.Body.String())
+	}
+	for address := range seen {
+		if !strings.HasSuffix(address, "-mail@mail.com") || len(strings.Split(address, "-")[0]) != 8 {
+			t.Fatalf("unexpected random template address: %s", address)
+		}
+	}
+}
+
+func TestDeleteMailAccountRequiresNoLinkedAliasesAndOwnerAccess(t *testing.T) {
+	store := newTestStore(t)
+	server := NewServer(Config{}, store, discardLogger()).(*Server)
+	_, _ = registerTestUser(t, server, "delete-admin", "password-admin")
+	cookie, owner := registerTestUser(t, server, "delete-owner", "password-owner")
+	otherCookie, other := registerTestUser(t, server, "delete-other", "password-other")
+	account, _ := store.AddMailAccountForOwner(owner.ID, "owner", "owner@mail.com", "secret")
+	linked, _ := store.AddMailAccountForOwner(owner.ID, "linked", "linked@mail.com", "secret")
+	_, _ = store.AddMailboxForOwnerProvider(owner.ID, linked.ID, MailboxProviderMail, "linked", "alias@mail.com", "")
+
+	call := func(id string, auth *http.Cookie) *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodDelete, "/api/mail/accounts/"+id, nil)
+		req.AddCookie(auth)
+		server.ServeHTTP(rr, req)
+		return rr
+	}
+	if rr := call(account.ID, otherCookie); rr.Code != http.StatusNotFound {
+		t.Fatalf("cross-owner delete status=%d body=%s other=%s", rr.Code, rr.Body.String(), other.ID)
+	}
+	if rr := call(linked.ID, cookie); rr.Code != http.StatusConflict {
+		t.Fatalf("linked delete status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if rr := call(account.ID, cookie); rr.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if _, ok := store.FindMailAccountByID(account.ID); ok {
+		t.Fatal("MAIL account remained after delete")
 	}
 }
 

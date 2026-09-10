@@ -363,7 +363,7 @@ func (c *MailClient) settingsToken(ctx context.Context, account MailAccount) (st
 	}
 	params.Set("username", account.Email)
 	params.Set("password", account.Password)
-	loginResponse, err := c.webRequest(ctx, "https://login.mail.com/login", http.MethodPost, params.Encode(), "https://mlogin.mail.com", mailWebUserAgent)
+	loginResponse, err := c.webRequestWithReferer(ctx, "https://login.mail.com/login", http.MethodPost, params.Encode(), "https://mlogin.mail.com", location, mailWebUserAgent)
 	if err != nil {
 		return "", err
 	}
@@ -414,10 +414,9 @@ func (c *MailClient) settingsToken(ctx context.Context, account MailAccount) (st
 	if err != nil {
 		return "", err
 	}
-	root, _ := url.Parse(rootURL)
-	sid := root.Query().Get("sid")
+	sid := mailNavigatorSID(rootURL, c.client.Jar)
 	if sid == "" {
-		return "", errCode("mail_navigator_failed", "mail.com 登录未返回 sid", true)
+		return "", errCode("mail_navigator_failed", "mail.com Web 登录已完成，但未取得 navigator 会话 SID；请稍后重试或检查账号是否触发安全验证", true)
 	}
 	_, _ = c.webRequest(ctx, rootURL, http.MethodGet, "", "", mailWebUserAgent)
 	bridge, _ := url.Parse(mailBridgeURL)
@@ -435,6 +434,9 @@ func (c *MailClient) settingsToken(ctx context.Context, account MailAccount) (st
 		return "", err
 	}
 	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return "", errCode("mail_settings_oauth_failed", fmt.Sprintf("mail.com 设置接口授权失败：HTTP %d", response.StatusCode), response.StatusCode >= 500)
+	}
 	var settings struct {
 		AccessToken string `json:"access_token"`
 	}
@@ -468,18 +470,26 @@ func (c *MailClient) oauthToken(ctx context.Context, code, redirectURI, clientID
 }
 
 func (c *MailClient) webRequest(ctx context.Context, endpoint, method, encoded, origin, userAgent string) (*http.Response, error) {
+	return c.webRequestWithReferer(ctx, endpoint, method, encoded, origin, "", userAgent)
+}
+
+func (c *MailClient) webRequestWithReferer(ctx context.Context, endpoint, method, encoded, origin, referer, userAgent string) (*http.Response, error) {
 	var body io.Reader
 	if encoded != "" {
 		body = strings.NewReader(encoded)
 	}
 	req, _ := http.NewRequestWithContext(ctx, method, endpoint, body)
 	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	if encoded != "" {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	if origin != "" {
 		req.Header.Set("Origin", origin)
+	}
+	if referer != "" {
+		req.Header.Set("Referer", referer)
 	}
 	response, err := c.client.Do(req)
 	if err != nil {
@@ -491,15 +501,108 @@ func (c *MailClient) webRequest(ctx context.Context, endpoint, method, encoded, 
 func redirectURL(response *http.Response, base string) (string, error) {
 	defer response.Body.Close()
 	location := response.Header.Get("Location")
-	if response.StatusCode < 300 || response.StatusCode >= 400 || location == "" {
-		return "", errCode("mail_redirect_failed", fmt.Sprintf("mail.com 登录跳转异常：%d", response.StatusCode), true)
+	if response.StatusCode >= 300 && response.StatusCode < 400 && location != "" {
+		return resolveMailURL(base, location)
 	}
-	ref, _ := url.Parse(base)
-	next, err := ref.Parse(location)
+	data, _ := io.ReadAll(io.LimitReader(response.Body, 512<<10))
+	source := string(data)
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		if next := mailHTMLRedirectURL(source, base); next != "" {
+			return next, nil
+		}
+		if loginErr := mailLoginPageError(source); loginErr != nil {
+			return "", loginErr
+		}
+	}
+	return "", errCode("mail_redirect_failed", fmt.Sprintf("mail.com Web 登录流程未返回预期跳转（HTTP %d）", response.StatusCode), response.StatusCode >= 500)
+}
+
+func resolveMailURL(base, location string) (string, error) {
+	ref, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	next, err := ref.Parse(html.UnescapeString(strings.TrimSpace(location)))
 	if err != nil {
 		return "", err
 	}
 	return next.String(), nil
+}
+
+func mailHTMLRedirectURL(source, base string) string {
+	for _, tag := range regexp.MustCompile(`(?is)<meta\b[^>]*>`).FindAllString(source, -1) {
+		if !strings.EqualFold(strings.TrimSpace(htmlAttribute(tag, "http-equiv")), "refresh") {
+			continue
+		}
+		match := regexp.MustCompile(`(?is)\burl\s*=\s*["']?([^"';\s>]+)`).FindStringSubmatch(htmlAttribute(tag, "content"))
+		if len(match) == 2 {
+			if next, err := resolveMailURL(base, match[1]); err == nil {
+				return next
+			}
+		}
+	}
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?is)(?:window\.)?location(?:\.href)?\s*=\s*["']([^"']+)["']`),
+		regexp.MustCompile(`(?is)(?:window\.)?location\.replace\(\s*["']([^"']+)["']\s*\)`),
+	}
+	for _, pattern := range patterns {
+		if match := pattern.FindStringSubmatch(source); len(match) == 2 {
+			if next, err := resolveMailURL(base, match[1]); err == nil {
+				return next
+			}
+		}
+	}
+	return ""
+}
+
+func mailLoginPageError(source string) error {
+	lower := strings.ToLower(source)
+	challengeMarkers := []string{"captcha", "security check", "verify your identity", "two-factor", "two factor", "challenge"}
+	for _, marker := range challengeMarkers {
+		if strings.Contains(lower, marker) {
+			return errCode("mail_login_challenge", "mail.com 要求额外安全验证，请先在官网登录并完成验证后重试", false)
+		}
+	}
+	credentialMarkers := []string{"invalid password", "incorrect password", "wrong password", "login failed", "status=login-failed", "authentication failed"}
+	for _, marker := range credentialMarkers {
+		if strings.Contains(lower, marker) {
+			return errCode("mail_invalid_credentials", "mail.com Web 登录失败，请检查账号和密码", false)
+		}
+	}
+	if regexp.MustCompile(`(?is)<input\b[^>]*type\s*=\s*["']password["']`).MatchString(source) {
+		return errCode("mail_invalid_credentials", "mail.com 返回了登录页，账号密码未通过 Web 登录验证", false)
+	}
+	return nil
+}
+
+func mailNavigatorSID(rawURL string, jar http.CookieJar) string {
+	parsed, _ := url.Parse(rawURL)
+	if parsed != nil {
+		if sid := strings.TrimSpace(parsed.Query().Get("sid")); sid != "" {
+			return sid
+		}
+		if fragment, err := url.ParseQuery(parsed.Fragment); err == nil {
+			if sid := strings.TrimSpace(fragment.Get("sid")); sid != "" {
+				return sid
+			}
+		}
+	}
+	if decoded, err := url.QueryUnescape(rawURL); err == nil {
+		if match := regexp.MustCompile(`(?i)(?:[?&#]|\b)sid=([^&#\s]+)`).FindStringSubmatch(decoded); len(match) == 2 {
+			return strings.TrimSpace(match[1])
+		}
+	}
+	if jar != nil {
+		for _, endpoint := range []string{"https://navigator-lxa.mail.com/", "https://mail.com/"} {
+			cookieURL, _ := url.Parse(endpoint)
+			for _, cookie := range jar.Cookies(cookieURL) {
+				if strings.EqualFold(cookie.Name, "sid") && strings.TrimSpace(cookie.Value) != "" {
+					return strings.TrimSpace(cookie.Value)
+				}
+			}
+		}
+	}
+	return ""
 }
 func mailLoginFormParams(source, pageURL string) (url.Values, error) {
 	values := url.Values{}

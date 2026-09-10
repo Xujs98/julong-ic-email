@@ -2253,6 +2253,17 @@
     .mail-account-fields { grid-template-columns: 1fr; gap: 12px; }
     .mail-alias-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .mail-field-wide { grid-column: 1 / -1; }
+	.mail-account-mode { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 13px; background: color-mix(in srgb, var(--panel-2) 72%, transparent); }
+	.mail-account-mode-copy { display: grid; gap: 2px; min-width: 0; }
+	.mail-account-mode-copy strong { color: var(--text); font-size: 11px; font-weight: 950; }
+	.mail-account-mode-copy small { color: var(--faint); font-size: 9px; font-weight: 700; line-height: 1.4; }
+	.mail-alias-fields .field-hint { color: var(--faint); font-size: 9px; font-weight: 700; line-height: 1.4; }
+	.mail-random-toggle { position: relative; display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; cursor: pointer; user-select: none; }
+	.mail-random-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+	.mail-random-toggle .domain-random-track { display: block; }
+	.mail-random-toggle b { color: var(--muted); font-size: 10px; font-weight: 900; }
+	.mail-random-toggle input:checked + .domain-random-track { border-color: transparent; background: linear-gradient(135deg, var(--green), var(--green-2)); }
+	.mail-random-toggle input:checked + .domain-random-track::after { transform: translateX(16px); }
     .mail-operation-card .domain-card-body { gap: 14px; padding: 18px 20px 20px; }
     .mail-operation-card .domain-generation-fields label { gap: 6px; }
     .mail-operation-card .domain-generation-fields input { min-height: 48px; padding-left: 13px; padding-right: 13px; }
@@ -2265,6 +2276,7 @@
     .mail-select-trigger { width: 100%; min-height: 48px; display: grid; grid-template-columns: 32px minmax(0, 1fr) 16px; align-items: center; gap: 9px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 13px; color: var(--text); background: var(--input-bg); text-align: left; box-shadow: inset 0 1px 0 rgb(var(--surface-rgb) / .36); }
     .mail-select-trigger:hover { transform: none; border-color: color-mix(in srgb, var(--green) 55%, var(--line)); background: color-mix(in srgb, var(--dragon-accent-soft) 42%, var(--panel)); }
     .mail-select-trigger:focus-visible { outline: 0; border-color: var(--green); box-shadow: 0 0 0 4px var(--focus-ring); }
+	.mail-select-picker.random-mode .mail-select-trigger { cursor: default; border-style: dashed; opacity: .82; }
     .mail-select-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; color: var(--green-2); background: var(--dragon-accent-soft); }
     .mail-select-icon svg { width: 17px; height: 17px; }
     .mail-select-domain-icon { font-size: 14px; font-weight: 950; }
@@ -2281,6 +2293,10 @@
     .mail-select-menu-head strong { color: var(--text); font-size: 12px; font-weight: 950; }
     .mail-select-menu-head small { color: var(--faint); font-size: 9px; font-weight: 750; }
     .mail-select-menu-head b { min-width: 24px; padding: 4px 7px; border-radius: 999px; color: var(--green-2); background: var(--dragon-accent-soft); text-align: center; font-size: 10px; font-weight: 950; }
+	.mail-select-search { min-height: 38px; display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--input-bg); }
+	.mail-select-search:focus-within { border-color: var(--green); box-shadow: 0 0 0 3px var(--focus-ring); }
+	.mail-select-search svg { width: 15px; height: 15px; color: var(--faint); }
+	.mail-select-search input { width: 100%; min-height: 36px !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; color: var(--text); font-size: 11px; }
     .mail-select-options { display: grid; gap: 6px; max-height: 230px; overflow: auto; }
     .mail-select-option { width: 100%; min-height: 48px; display: grid; grid-template-columns: 30px minmax(0, 1fr) 16px; align-items: center; gap: 9px; padding: 7px 9px; border: 1px solid transparent; border-radius: 12px; color: var(--muted); background: color-mix(in srgb, var(--panel-2) 68%, transparent); text-align: left; }
     .mail-select-option:hover { transform: none; border-color: color-mix(in srgb, var(--green) 48%, var(--line)); color: var(--text); background: var(--dragon-accent-soft); }
@@ -2306,9 +2322,11 @@
     .mail-assets-card .mail-card-kicker { margin-bottom: 1px; }
     .mail-assets-card .domain-assets-title h3 { font-size: 16px; }
     .mail-assets-card .domain-assets-head button { display: inline-flex; align-items: center; gap: 7px; }
+	.mail-account-delete { width: 34px; min-width: 34px; height: 34px; padding: 0; display: inline-grid; place-items: center; border-color: color-mix(in srgb, var(--danger) 28%, var(--line)); color: var(--danger); background: var(--danger-soft); }
+	.mail-account-delete svg { width: 15px; height: 15px; }
     .mail-assets-card .domain-table { margin-top: 0; }
     @media (max-width: 1080px) { .mail-operation-grid { grid-template-columns: 1fr; } .mail-account-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-    @media (max-width: 720px) { .mail-panel-head { flex-direction: column; } .mail-panel-status { align-self: flex-start; } .mail-hero { align-items: stretch; } .mail-hero .commercial-hero-metrics { justify-content: flex-start; } .mail-operation-grid, .mail-assets-card { margin-left: 20px; margin-right: 20px; } .mail-account-fields, .mail-alias-fields { grid-template-columns: 1fr; } .mail-field-wide { grid-column: auto; } .mail-select-menu { position: fixed; top: 108px; left: 16px; right: 16px; } }
+    @media (max-width: 720px) { .mail-panel-head { flex-direction: column; } .mail-panel-status { align-self: flex-start; } .mail-hero { align-items: stretch; } .mail-hero .commercial-hero-metrics { justify-content: flex-start; } .mail-operation-grid, .mail-assets-card { margin-left: 20px; margin-right: 20px; } .mail-account-fields, .mail-alias-fields { grid-template-columns: 1fr; } .mail-field-wide { grid-column: auto; } .mail-account-mode { align-items: flex-start; } .mail-select-menu { position: fixed; top: 108px; left: 16px; right: 16px; } }
   </style>
 </head>
 <body>
@@ -2631,34 +2649,36 @@
                   <label>账号邮箱<input id="mailAccountEmail" type="email" autocomplete="username" placeholder="name@mail.com"></label>
                   <label>账号密码<input id="mailAccountPassword" type="password" autocomplete="current-password" placeholder="mail.com 密码"></label>
                   <label>账号标签<input id="mailAccountLabel" placeholder="例如：MAIL 主账号"></label>
-                </div><div class="mail-security-note"><span class="mail-security-icon">✓</span><span><strong>本机保存 · 不回传前端</strong><small>仅用于别名管理和 IMAP 同步，密码不会展示在账号清单中。</small></span></div></div>
-                <div class="domain-card-actions"><button type="button" class="primary" onclick="createMailAccount()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>绑定账号</button><span id="mailAccountStatus" class="domain-card-status">绑定后自动读取 Web 别名域名。</span></div>
+                </div><div class="mail-security-note"><span class="mail-security-icon">✓</span><span><strong>双通道验证 · 本机保存</strong><small>只有 Web 别名接口与 IMAP 均登录成功才会绑定；密码不会返回前端。</small></span></div></div>
+                <div class="domain-card-actions"><button type="button" class="primary" onclick="createMailAccount()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>验证并绑定</button><span id="mailAccountStatus" class="domain-card-status">绑定成功即代表账号密码已通过 Web 与 IMAP 验证。</span></div>
               </section>
               <section class="domain-operation-card mail-operation-card mail-alias-card">
                 <header class="domain-card-head"><span class="domain-card-index">02</span><div class="domain-card-title"><span class="mail-card-kicker">ALIAS DELIVERY</span><h3>生成 MAIL 别名</h3><p>用可用前缀创建真实地址，接码链接会随邮箱一起生成。</p></div><span class="mail-step-badge">LIVE</span></header>
                 <div class="domain-card-body"><div class="domain-generation-fields mail-alias-fields">
+				  <div class="mail-account-mode"><span class="mail-account-mode-copy"><strong>账号分配方式</strong><small id="mailRandomAccountHint">每个别名从当前用户已验证账号中随机选择</small></span><label class="mail-random-toggle"><input id="mailRandomAccount" type="checkbox" checked onchange="setMailRandomAccount(this.checked)"><span class="domain-random-track"></span><b>随机账号</b></label></div>
                   <label class="mail-field-wide">MAIL 账号
                     <div id="mailAliasAccountPicker" class="mail-select-picker">
                       <button id="mailAliasAccountTrigger" type="button" class="mail-select-trigger" aria-haspopup="listbox" aria-expanded="false" onclick="toggleMailAliasPicker('account', event)"><span class="mail-select-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg></span><span class="mail-select-copy"><small>创建账号</small><strong id="mailAliasAccountLabel">请先绑定账号</strong><em id="mailAliasAccountMeta">绑定后选择用于创建别名的账号</em></span><span class="mail-select-chevron" aria-hidden="true"></span></button>
-                      <div class="mail-select-menu" role="listbox" aria-label="选择 MAIL 账号"><div class="mail-select-menu-head"><span><strong>选择 MAIL 账号</strong><small>已绑定账号</small></span><b id="mailAliasAccountCount">0</b></div><div id="mailAliasAccountOptions" class="mail-select-options"><span class="mail-select-empty">尚未绑定账号</span></div></div>
+					  <div class="mail-select-menu" role="listbox" aria-label="选择 MAIL 账号"><div class="mail-select-menu-head"><span><strong>选择 MAIL 账号</strong><small>已绑定账号</small></span><b id="mailAliasAccountCount">0</b></div><div class="mail-select-search" onclick="event.stopPropagation()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="mailAliasAccountSearch" type="search" autocomplete="off" placeholder="搜索标签或账号" oninput="renderMailAliasPickers()"></div><div id="mailAliasAccountOptions" class="mail-select-options"><span class="mail-select-empty">尚未绑定账号</span></div></div>
                       <select id="mailAliasAccount" class="mail-native-select" aria-hidden="true" tabindex="-1"><option value="">请先绑定账号</option></select>
                     </div>
                   </label>
-                  <label>别名前缀<input id="mailAliasLocal" oninput="updateMailAddressPreview()" placeholder="例如：signup-2026"></label>
+				  <label>别名前缀<input id="mailAliasLocal" oninput="updateMailAddressPreview()" value="[随机]-mail" placeholder="例如：[随机]-mail"><span class="field-hint">[随机] 每次替换为 8 位小写字母数字</span></label>
                   <label>别名域名
                     <div id="mailAliasDomainPicker" class="mail-select-picker">
                       <button id="mailAliasDomainTrigger" type="button" class="mail-select-trigger" aria-haspopup="listbox" aria-expanded="false" onclick="toggleMailAliasPicker('domain', event)"><span class="mail-select-icon mail-select-domain-icon">@</span><span class="mail-select-copy"><small>可用域名</small><strong id="mailAliasDomainLabel">mail.com</strong><em id="mailAliasDomainMeta">从账号实时读取</em></span><span class="mail-select-chevron" aria-hidden="true"></span></button>
-                      <div class="mail-select-menu" role="listbox" aria-label="选择别名域名"><div class="mail-select-menu-head"><span><strong>选择别名域名</strong><small>当前账号可用域名</small></span><b id="mailAliasDomainCount">0</b></div><div id="mailAliasDomainOptions" class="mail-select-options"><span class="mail-select-empty">请先选择 MAIL 账号</span></div></div>
+					  <div class="mail-select-menu" role="listbox" aria-label="选择别名域名"><div class="mail-select-menu-head"><span><strong>选择别名域名</strong><small>当前分配模式可用域名</small></span><b id="mailAliasDomainCount">0</b></div><div class="mail-select-search" onclick="event.stopPropagation()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="mailAliasDomainSearch" type="search" autocomplete="off" placeholder="搜索别名域名" oninput="renderMailAliasPickers()"></div><div id="mailAliasDomainOptions" class="mail-select-options"><span class="mail-select-empty">请先选择 MAIL 账号</span></div></div>
                       <select id="mailAliasDomain" class="mail-native-select" aria-hidden="true"><option value="mail.com">mail.com</option></select>
                     </div>
                   </label>
+				  <label>生成数量<input id="mailAliasCount" type="number" min="1" max="10" value="1" oninput="updateMailAddressPreview()"><span class="field-hint">单次最多生成 10 个真实别名</span></label>
                   <label>邮箱标签<input id="mailAliasLabel" placeholder="例如：注册批次 A"></label>
                   <label>备注<input id="mailAliasNote" placeholder="选填"></label>
                 </div><div class="mail-address-preview"><span class="mail-preview-label">地址预览</span><strong id="mailAddressPreview">填写前缀后生成完整别名</strong><span>可在全部邮箱中继续复制 HTML 接码页与 API。</span></div></div>
                 <div class="domain-card-actions"><button type="button" class="primary" onclick="createMailAlias()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v10h-15z"/><path d="m5.5 8.5 6.5 5 6.5-5M17 4v4M15 6h4"/></svg>生成别名与接码地址</button><button type="button" class="mail-secondary-action" onclick="syncMailAliases()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v6h-6"/></svg>同步收件</button><span id="mailAliasStatus" class="domain-card-status">请选择账号后读取当前可用别名域名。</span></div>
               </section>
             </div>
-            <section class="domain-assets-card mail-assets-card"><header class="domain-assets-head"><div class="domain-assets-title"><span class="mail-card-kicker">CONNECTED ACCOUNTS</span><h3>MAIL 账号清单</h3><p>统一查看绑定状态和最近一次 IMAP 同步时间</p></div><button type="button" onclick="loadMailAccounts()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v6h-6"/></svg>刷新清单</button></header><div class="table-wrap domain-table"><table><thead><tr><th>标签</th><th>账号</th><th>状态</th><th>最近同步</th><th>创建时间</th></tr></thead><tbody id="mailAccountRows"><tr><td colspan="5" class="muted empty">正在读取 MAIL 账号…</td></tr></tbody></table></div></section>
+			<section class="domain-assets-card mail-assets-card"><header class="domain-assets-head"><div class="domain-assets-title"><span class="mail-card-kicker">CONNECTED ACCOUNTS</span><h3>MAIL 账号清单</h3><p>统一查看绑定状态和最近一次 IMAP 同步时间</p></div><button type="button" onclick="loadMailAccounts()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v6h-6"/></svg>刷新清单</button></header><div class="table-wrap domain-table"><table><thead><tr><th>标签</th><th>账号</th><th>状态</th><th>最近同步</th><th>创建时间</th><th>操作</th></tr></thead><tbody id="mailAccountRows"><tr><td colspan="6" class="muted empty">正在读取 MAIL 账号…</td></tr></tbody></table></div></section>
           </div>
         </section>
 
@@ -3145,6 +3165,7 @@
     let lastDomains = [];
     let lastMailAccounts = [];
     let lastMailAliasDomains = [];
+	let lastMailAliasDomainsByAccount = {};
     let lastDomainSMTP = {};
     let lastMailboxGroups = [];
     let lastOutboundBatches = [];
@@ -4978,6 +4999,10 @@
       const open = !picker.classList.contains('open');
       picker.classList.toggle('open', open);
       trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+	  if (open) {
+		const search = $(kind === 'account' ? 'mailAliasAccountSearch' : 'mailAliasDomainSearch');
+		if (search) setTimeout(() => search.focus(), 0);
+	  }
     }
 
     function selectMailAliasOption(kind, value) {
@@ -4989,42 +5014,69 @@
       const trigger = $(kind === 'account' ? 'mailAliasAccountTrigger' : 'mailAliasDomainTrigger');
       if (picker) picker.classList.remove('open');
       if (trigger) trigger.setAttribute('aria-expanded', 'false');
-      if (kind === 'account') loadMailAliasDomains();
+	  if (kind === 'account' && !mailRandomAccountEnabled()) loadMailAliasDomains();
     }
+
+	function mailRandomAccountEnabled() {
+	  return !!($('mailRandomAccount') && $('mailRandomAccount').checked);
+	}
+
+	function randomMailAccounts() {
+	  if (!currentUser || !currentUser.id) return lastMailAccounts;
+	  return lastMailAccounts.filter(account => !account.owner_id || account.owner_id === currentUser.id);
+	}
+
+	function setMailRandomAccount(enabled) {
+	  const picker = $('mailAliasAccountPicker');
+	  const trigger = $('mailAliasAccountTrigger');
+	  if (picker) picker.classList.toggle('random-mode', enabled);
+	  if (trigger) trigger.disabled = enabled;
+	  if ($('mailRandomAccountHint')) $('mailRandomAccountHint').textContent = enabled
+		? '每个别名从当前用户已验证账号中随机选择'
+		: '关闭随机后，可搜索并指定一个 MAIL 账号';
+	  renderMailAliasPickers();
+	  loadMailAliasDomains({silent: true}).catch(() => {});
+	}
 
     function renderMailAliasPickers() {
       const accountSelect = $('mailAliasAccount');
       const domainSelect = $('mailAliasDomain');
       if (accountSelect) {
         const account = lastMailAccounts.find(item => item.id === accountSelect.value);
+		const randomMode = mailRandomAccountEnabled();
+		const availableAccounts = randomMode ? randomMailAccounts() : lastMailAccounts;
+		const accountSearch = (($('mailAliasAccountSearch') && $('mailAliasAccountSearch').value) || '').trim().toLowerCase();
+		const filteredAccounts = availableAccounts.filter(item => `${item.label || ''} ${item.email || ''}`.toLowerCase().includes(accountSearch));
         const label = $('mailAliasAccountLabel');
         const meta = $('mailAliasAccountMeta');
         const options = $('mailAliasAccountOptions');
-        if (label) label.textContent = account ? (account.label || account.email) : '请先绑定账号';
-        if (meta) meta.textContent = account ? account.email : '绑定后选择用于创建别名的账号';
-        if ($('mailAliasAccountCount')) $('mailAliasAccountCount').textContent = String(lastMailAccounts.length);
+		if (label) label.textContent = randomMode ? '随机选择账号' : (account ? (account.label || account.email) : '请先绑定账号');
+		if (meta) meta.textContent = randomMode ? `${availableAccounts.length} 个当前账号参与随机` : (account ? account.email : '绑定后选择用于创建别名的账号');
+		if ($('mailAliasAccountCount')) $('mailAliasAccountCount').textContent = accountSearch ? `${filteredAccounts.length}/${availableAccounts.length}` : String(availableAccounts.length);
         if (options) {
-          options.innerHTML = lastMailAccounts.length ? lastMailAccounts.map(accountItem => {
+		  options.innerHTML = filteredAccounts.length ? filteredAccounts.map(accountItem => {
             const active = accountItem.id === accountSelect.value;
             const title = accountItem.label || accountItem.email;
             const initial = String(title || '@').trim().charAt(0).toUpperCase() || '@';
             return `<button type="button" class="mail-select-option${active ? ' active' : ''}" role="option" aria-selected="${active ? 'true' : 'false'}" onclick="selectMailAliasOption('account','${esc(accountItem.id)}')"><span class="mail-select-option-icon">${esc(initial)}</span><span class="mail-select-option-copy"><strong>${esc(title)}</strong><small>${esc(accountItem.email || '')}</small></span><span class="mail-select-option-check">✓</span></button>`;
-          }).join('') : '<span class="mail-select-empty">尚未绑定账号，请先完成账号绑定。</span>';
+		  }).join('') : `<span class="mail-select-empty">${accountSearch ? '没有匹配的 MAIL 账号。' : '尚未绑定账号，请先完成账号绑定。'}</span>`;
         }
       }
       if (domainSelect) {
         const domain = lastMailAliasDomains.find(item => item === domainSelect.value) || domainSelect.value || '';
+		const domainSearch = (($('mailAliasDomainSearch') && $('mailAliasDomainSearch').value) || '').trim().toLowerCase();
+		const filteredDomains = lastMailAliasDomains.filter(item => item.toLowerCase().includes(domainSearch));
         const label = $('mailAliasDomainLabel');
         const meta = $('mailAliasDomainMeta');
         const options = $('mailAliasDomainOptions');
         if (label) label.textContent = domain || '请选择域名';
         if (meta) meta.textContent = lastMailAliasDomains.length ? `${lastMailAliasDomains.length} 个域名可用` : '从账号实时读取';
-        if ($('mailAliasDomainCount')) $('mailAliasDomainCount').textContent = String(lastMailAliasDomains.length);
+		if ($('mailAliasDomainCount')) $('mailAliasDomainCount').textContent = domainSearch ? `${filteredDomains.length}/${lastMailAliasDomains.length}` : String(lastMailAliasDomains.length);
         if (options) {
-          options.innerHTML = lastMailAliasDomains.length ? lastMailAliasDomains.map(domainName => {
+		  options.innerHTML = filteredDomains.length ? filteredDomains.map(domainName => {
             const active = domainName === domainSelect.value;
             return `<button type="button" class="mail-select-option${active ? ' active' : ''}" role="option" aria-selected="${active ? 'true' : 'false'}" onclick="selectMailAliasOption('domain','${esc(domainName)}')"><span class="mail-select-option-icon">@</span><span class="mail-select-option-copy"><strong>${esc(domainName)}</strong><small>可用于创建 MAIL 别名</small></span><span class="mail-select-option-check">✓</span></button>`;
-          }).join('') : '<span class="mail-select-empty">请先选择 MAIL 账号，读取可用别名域名。</span>';
+		  }).join('') : `<span class="mail-select-empty">${domainSearch ? '没有匹配的别名域名。' : '请先选择 MAIL 账号，读取可用别名域名。'}</span>`;
         }
       }
       updateMailAddressPreview();
@@ -5035,7 +5087,9 @@
       if (!preview) return;
       const local = ($('mailAliasLocal') && $('mailAliasLocal').value || '').trim().toLowerCase();
       const domain = ($('mailAliasDomain') && $('mailAliasDomain').value) || 'mail.com';
-      preview.textContent = local ? `${local}@${domain}` : '填写前缀后生成完整别名';
+	  const count = Math.max(1, Math.min(10, Number(($('mailAliasCount') && $('mailAliasCount').value) || 1)));
+	  const sample = local.replaceAll('[随机]', 'a8f2k9q3');
+	  preview.textContent = local ? `${sample}@${domain}${count > 1 ? ` · 共 ${count} 个` : ''}` : '填写前缀后生成完整别名';
     }
 
     function renderMailAccounts() {
@@ -5047,7 +5101,15 @@
       if (previous && lastMailAccounts.some(account => account.id === previous)) select.value = previous;
       if (!select.value && lastMailAccounts.length) select.value = lastMailAccounts[0].id;
       if ($('mailAccountMetric')) $('mailAccountMetric').textContent = String(lastMailAccounts.length);
-      rows.innerHTML = lastMailAccounts.length ? lastMailAccounts.map(account => `<tr><td>${esc(account.label || '-')}</td><td>${esc(account.email)}</td><td><span class="pill status-active">${esc(account.status || 'active')}</span></td><td>${esc(formatMailboxDate(account.last_sync_at) || '尚未同步')}</td><td>${esc(formatMailboxDate(account.created_at))}</td></tr>`).join('') : '<tr><td colspan="5" class="muted empty">尚未绑定 mail.com 账号。</td></tr>';
+	  rows.innerHTML = lastMailAccounts.length ? lastMailAccounts.map(account => `<tr><td>${esc(account.label || '-')}</td><td>${esc(account.email)}</td><td><span class="pill status-active">${esc(account.status || 'active')}</span></td><td>${esc(formatMailboxDate(account.last_sync_at) || '尚未同步')}</td><td>${esc(formatMailboxDate(account.created_at))}</td><td><button type="button" class="mail-account-delete" title="删除账号" aria-label="删除 ${esc(account.email)}" onclick="deleteMailAccount('${esc(account.id)}','${esc(account.email)}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></button></td></tr>`).join('') : '<tr><td colspan="6" class="muted empty">尚未绑定 mail.com 账号。</td></tr>';
+      const randomMode = mailRandomAccountEnabled();
+      const accountPicker = $('mailAliasAccountPicker');
+      const accountTrigger = $('mailAliasAccountTrigger');
+      if (accountPicker) accountPicker.classList.toggle('random-mode', randomMode);
+      if (accountTrigger) accountTrigger.disabled = randomMode;
+      if ($('mailRandomAccountHint')) $('mailRandomAccountHint').textContent = randomMode
+        ? '每个别名从当前用户已验证账号中随机选择'
+        : '关闭随机后，可搜索并指定一个 MAIL 账号';
       renderMailAliasPickers();
     }
 
@@ -5055,7 +5117,7 @@
       const data = await api('/api/mail/accounts');
       lastMailAccounts = data.accounts || [];
       renderMailAccounts();
-      if (lastMailAccounts.length) await loadMailAliasDomains({silent: true});
+	  if (lastMailAccounts.length) await loadMailAliasDomains({silent: true});
       if (!options.silent) log(`MAIL 账号已刷新：${lastMailAccounts.length} 个`);
       return data;
     }
@@ -5070,38 +5132,67 @@
         const data = await api('/api/mail/accounts', {method: 'POST', body: JSON.stringify({email, password, label})});
         $('mailAccountPassword').value = '';
         lastMailAliasDomains = data.alias_domains || [];
-        $('mailAccountStatus').textContent = `绑定成功：${data.account.email}`;
+		lastMailAliasDomainsByAccount[data.account.id] = lastMailAliasDomains;
+		$('mailAccountStatus').textContent = `绑定成功：${data.account.email} · Web 与 IMAP 均已验证`;
         await loadMailAccounts({silent: true}); await refresh(); showToast('MAIL 账号绑定成功');
       } catch (err) { $('mailAccountStatus').textContent = `绑定失败：${err.message}`; log('绑定 MAIL 账号失败：' + err.message); }
     }
 
     async function loadMailAliasDomains(options = {}) {
       const accountID = ($('mailAliasAccount') && $('mailAliasAccount').value) || '';
-      if (!accountID) return;
+	  const randomMode = mailRandomAccountEnabled();
+	  const accounts = randomMode ? randomMailAccounts() : lastMailAccounts.filter(account => account.id === accountID);
+	  if (!accounts.length) {
+		lastMailAliasDomains = [];
+		renderMailAliasPickers();
+		return;
+	  }
       try {
-        const data = await api(`/api/mail/alias-domains?account_id=${encodeURIComponent(accountID)}`);
-        lastMailAliasDomains = data.domains || [];
+		const results = await Promise.all(accounts.map(async account => {
+		  const data = await api(`/api/mail/alias-domains?account_id=${encodeURIComponent(account.id)}`);
+		  lastMailAliasDomainsByAccount[account.id] = data.domains || [];
+		  return lastMailAliasDomainsByAccount[account.id];
+		}));
+		lastMailAliasDomains = results.length === 1 ? results[0] : results.slice(1).reduce((common, domains) => common.filter(domain => domains.includes(domain)), results[0]);
         $('mailAliasDomain').innerHTML = lastMailAliasDomains.map(domain => `<option value="${esc(domain)}">${esc(domain)}</option>`).join('') || '<option value="mail.com">mail.com</option>';
         renderMailAliasPickers();
-        $('mailAliasStatus').textContent = `已读取 ${lastMailAliasDomains.length} 个可用别名域名`;
+		$('mailAliasStatus').textContent = randomMode ? `已读取 ${accounts.length} 个账号共同支持的 ${lastMailAliasDomains.length} 个域名` : `已读取 ${lastMailAliasDomains.length} 个可用别名域名`;
         if (!options.silent) log(`MAIL 可用别名域名：${lastMailAliasDomains.length} 个`);
       } catch (err) { $('mailAliasStatus').textContent = `读取域名失败：${err.message}`; if (!options.silent) log('读取 MAIL 别名域名失败：' + err.message); }
     }
 
     async function createMailAlias() {
       const accountID = $('mailAliasAccount').value;
+	  const randomAccount = mailRandomAccountEnabled();
       const local = ($('mailAliasLocal').value || '').trim().toLowerCase();
       const domain = $('mailAliasDomain').value;
-      if (!accountID || !local || !domain) { showToast('请选择账号并填写别名前缀'); return; }
+	  const count = Math.max(1, Math.min(10, Number($('mailAliasCount').value || 1)));
+	  if ((!randomAccount && !accountID) || !local || !domain) { showToast('请选择账号并填写别名前缀'); return; }
+	  if (count > 1 && !local.includes('[随机]')) { showToast('批量生成时前缀需要包含 [随机]'); return; }
       try {
-        $('mailAliasStatus').textContent = '正在创建 MAIL 别名…';
-        const data = await api('/api/mail/aliases', {method: 'POST', body: JSON.stringify({account_id: accountID, local, domain, label: ($('mailAliasLabel').value || '').trim(), note: ($('mailAliasNote').value || '').trim()})});
-        $('mailAliasLocal').value = '';
-        $('mailAliasStatus').textContent = `创建成功：${data.mailbox.email}；HTML 与 API 已生成`;
-        if ($('mailAliasMetric')) $('mailAliasMetric').textContent = String(Number(lastStatusSummary.mail_mailboxes || 0) + 1);
-        await refresh(); showToast('MAIL 别名与接码地址已生成');
+		$('mailAliasStatus').textContent = `正在创建 ${count} 个真实 MAIL 别名…`;
+		const data = await api('/api/mail/aliases', {method: 'POST', body: JSON.stringify({account_id: accountID, random_account: randomAccount, local, domain, count, label: ($('mailAliasLabel').value || '').trim(), note: ($('mailAliasNote').value || '').trim()})});
+		const resultText = data.failed ? `成功 ${data.created} 个，失败 ${data.failed} 个` : `成功生成 ${data.created} 个`;
+		$('mailAliasStatus').textContent = `${resultText}；HTML 与 API 已生成`;
+		if ($('mailAliasMetric')) $('mailAliasMetric').textContent = String(Number(lastStatusSummary.mail_mailboxes || 0) + Number(data.created || 0));
+		if (data.failures && data.failures.length) log(`MAIL 别名部分失败：${data.failures.map(item => item.message).join('；')}`);
+		await refresh(); showToast(resultText);
       } catch (err) { $('mailAliasStatus').textContent = `创建失败：${err.message}`; log('创建 MAIL 别名失败：' + err.message); }
     }
+
+	async function deleteMailAccount(id, email) {
+	  if (!await askConfirm({title: '删除 MAIL 账号', message: email, detail: '仅允许删除未关联别名邮箱的账号。账号密码将从本地状态中移除。', confirmText: '删除账号', tone: 'danger'})) return;
+	  try {
+		await api(`/api/mail/accounts/${encodeURIComponent(id)}`, {method: 'DELETE'});
+		delete lastMailAliasDomainsByAccount[id];
+		await loadMailAccounts({silent: true});
+		await refresh();
+		showToast('MAIL 账号已删除');
+	  } catch (err) {
+		showToast(`删除失败：${err.message}`);
+		log('删除 MAIL 账号失败：' + err.message);
+	  }
+	}
 
     async function syncMailAliases() {
       const accountID = $('mailAliasAccount').value;

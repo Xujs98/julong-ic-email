@@ -883,13 +883,18 @@ func (s *FileStore) AddMailAccountForOwner(ownerID, label, email, password strin
 			return MailAccount{}, errCode("mail_account_exists", "mail.com 账号已存在", false)
 		}
 	}
+	previous := cloneState(s.state)
 	now := time.Now()
 	account := MailAccount{ID: s.nextIDLocked("macc"), OwnerID: ownerID, Label: strings.TrimSpace(label), Email: email, Password: password, Status: StatusActive, CreatedAt: now, UpdatedAt: now}
 	if account.Label == "" {
 		account.Label = email
 	}
 	s.state.MailAccounts = append(s.state.MailAccounts, account)
-	return account, s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		s.state = previous
+		return MailAccount{}, err
+	}
+	return account, nil
 }
 
 func (s *FileStore) MailAccountsForOwner(ownerID string) []MailAccount {
@@ -929,6 +934,32 @@ func (s *FileStore) SetMailAccountSyncAt(id string, syncedAt time.Time) (MailAcc
 		return s.state.MailAccounts[i], s.saveLocked()
 	}
 	return MailAccount{}, errCode("mail_account_not_found", "mail.com 账号不存在", false)
+}
+
+func (s *FileStore) DeleteMailAccountForOwner(ownerID, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ownerID = strings.TrimSpace(ownerID)
+	id = strings.TrimSpace(id)
+	for _, mailbox := range s.state.Mailboxes {
+		if mailbox.ProviderKind() == MailboxProviderMail && constantTimeEqual(mailbox.AccountID, id) {
+			return errCode("mail_account_has_mailboxes", "MAIL 账号仍有关联别名邮箱，请先删除这些邮箱", false)
+		}
+	}
+	for i, account := range s.state.MailAccounts {
+		if !constantTimeEqual(account.ID, id) || (ownerID != "" && !constantTimeEqual(account.OwnerID, ownerID)) {
+			continue
+		}
+		previous := cloneState(s.state)
+		s.state.MailAccounts = append(s.state.MailAccounts[:i], s.state.MailAccounts[i+1:]...)
+		if err := s.saveLocked(); err != nil {
+			s.state = previous
+			return err
+		}
+		return nil
+	}
+	return errCode("mail_account_not_found", "mail.com 账号不存在", false)
 }
 
 func normalizeManagedDomainName(value string) string {
