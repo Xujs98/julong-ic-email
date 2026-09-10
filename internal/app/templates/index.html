@@ -2637,7 +2637,7 @@
         <section class="view-section panel domain-workspace mail-panel" data-view="mail">
           <div class="panel-head mail-panel-head"><div><span class="mail-panel-kicker">MAIL ALIAS OPERATIONS</span><h2>MAIL别名生成</h2><p>把 mail.com 账号、别名和接码通道集中在一个可追踪的工作台中。</p></div><span class="mail-panel-status"><i></i>服务就绪</span></div>
           <div class="commercial-hero mail-hero">
-            <div class="commercial-hero-copy"><span class="mail-hero-kicker">统一接码基础设施</span><strong>创建一个别名，立即获得两条接码通道</strong><span>账号凭据只保存在本机状态文件；创建后自动生成 HTML 接码页与独立 API，并由 IMAP 同步最新邮件。</span><div class="mail-hero-capabilities"><span><b>01</b>HTML 可视化接码</span><span><b>02</b>API 自动取码</span><span><b>03</b>统一收件归档</span></div></div>
+            <div class="commercial-hero-copy"><span class="mail-hero-kicker">统一接码基础设施</span><strong>创建一个别名，立即获得两条接码通道</strong><span>账号凭据只保存在本机状态文件；创建后自动生成 HTML 接码页与独立 API，并由 MAIL 移动端接口同步最新邮件。</span><div class="mail-hero-capabilities"><span><b>01</b>HTML 可视化接码</span><span><b>02</b>API 自动取码</span><span><b>03</b>统一收件归档</span></div></div>
             <div class="commercial-hero-metrics"><div class="commercial-metric"><strong id="mailAccountMetric">0</strong><span>MAIL 账号</span></div><div class="commercial-metric"><strong id="mailAliasMetric">0</strong><span>MAIL 别名</span></div><div class="commercial-metric metric-accent"><strong>HTML + API</strong><span>双接码通道</span></div></div>
           </div>
           <div class="domain-workspace-body mail-workspace-body">
@@ -2649,8 +2649,8 @@
                   <label>账号邮箱<input id="mailAccountEmail" type="email" autocomplete="username" placeholder="name@mail.com"></label>
                   <label>账号密码<input id="mailAccountPassword" type="password" autocomplete="current-password" placeholder="mail.com 密码"></label>
                   <label>账号标签<input id="mailAccountLabel" placeholder="例如：MAIL 主账号"></label>
-                </div><div class="mail-security-note"><span class="mail-security-icon">✓</span><span><strong>双通道验证 · 本机保存</strong><small>只有 Web 别名接口与 IMAP 均登录成功才会绑定；密码不会返回前端。</small></span></div></div>
-                <div class="domain-card-actions"><button type="button" class="primary" onclick="createMailAccount()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>验证并绑定</button><span id="mailAccountStatus" class="domain-card-status">绑定成功即代表账号密码已通过 Web 与 IMAP 验证。</span></div>
+                </div><div class="mail-security-note"><span class="mail-security-icon">✓</span><span><strong>双接口验证 · 本机保存</strong><small>Web 别名接口与移动端收件接口均登录成功后才会绑定；无需开通 Premium IMAP。</small></span></div></div>
+                <div class="domain-card-actions"><button type="button" class="primary" onclick="createMailAccount()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>验证并绑定</button><span id="mailAccountStatus" class="domain-card-status">绑定成功即代表 Web 别名与移动端收件接口均可用。</span></div>
               </section>
               <section class="domain-operation-card mail-operation-card mail-alias-card">
                 <header class="domain-card-head"><span class="domain-card-index">02</span><div class="domain-card-title"><span class="mail-card-kicker">ALIAS DELIVERY</span><h3>生成 MAIL 别名</h3><p>用可用前缀创建真实地址，接码链接会随邮箱一起生成。</p></div><span class="mail-step-badge">LIVE</span></header>
@@ -2678,7 +2678,7 @@
                 <div class="domain-card-actions"><button type="button" class="primary" onclick="createMailAlias()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15v10h-15z"/><path d="m5.5 8.5 6.5 5 6.5-5M17 4v4M15 6h4"/></svg>生成别名与接码地址</button><button type="button" class="mail-secondary-action" onclick="syncMailAliases()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v6h-6"/></svg>同步收件</button><span id="mailAliasStatus" class="domain-card-status">请选择账号后读取当前可用别名域名。</span></div>
               </section>
             </div>
-			<section class="domain-assets-card mail-assets-card"><header class="domain-assets-head"><div class="domain-assets-title"><span class="mail-card-kicker">CONNECTED ACCOUNTS</span><h3>MAIL 账号清单</h3><p>统一查看绑定状态和最近一次 IMAP 同步时间</p></div><button type="button" onclick="loadMailAccounts()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v6h-6"/></svg>刷新清单</button></header><div class="table-wrap domain-table"><table><thead><tr><th>标签</th><th>账号</th><th>状态</th><th>最近同步</th><th>创建时间</th><th>操作</th></tr></thead><tbody id="mailAccountRows"><tr><td colspan="6" class="muted empty">正在读取 MAIL 账号…</td></tr></tbody></table></div></section>
+			<section class="domain-assets-card mail-assets-card"><header class="domain-assets-head"><div class="domain-assets-title"><span class="mail-card-kicker">CONNECTED ACCOUNTS</span><h3>MAIL 账号清单</h3><p>统一查看绑定状态和最近一次移动接口同步时间</p></div><button type="button" onclick="loadMailAccounts()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v6h-6"/></svg>刷新清单</button></header><div class="table-wrap domain-table"><table><thead><tr><th>标签</th><th>账号</th><th>状态</th><th>最近同步</th><th>创建时间</th><th>操作</th></tr></thead><tbody id="mailAccountRows"><tr><td colspan="6" class="muted empty">正在读取 MAIL 账号…</td></tr></tbody></table></div></section>
           </div>
         </section>
 
@@ -5128,12 +5128,12 @@
       const label = ($('mailAccountLabel').value || '').trim();
       if (!email || !password) { showToast('请输入 mail.com 账号和密码'); return; }
       try {
-        $('mailAccountStatus').textContent = '正在检测 Web 别名接口与 IMAP…';
+		$('mailAccountStatus').textContent = '正在检测 Web 别名与移动端收件接口…';
         const data = await api('/api/mail/accounts', {method: 'POST', body: JSON.stringify({email, password, label})});
         $('mailAccountPassword').value = '';
         lastMailAliasDomains = data.alias_domains || [];
 		lastMailAliasDomainsByAccount[data.account.id] = lastMailAliasDomains;
-		$('mailAccountStatus').textContent = `绑定成功：${data.account.email} · Web 与 IMAP 均已验证`;
+		$('mailAccountStatus').textContent = `绑定成功：${data.account.email} · Web 与移动端收件接口均已验证`;
         await loadMailAccounts({silent: true}); await refresh(); showToast('MAIL 账号绑定成功');
       } catch (err) { $('mailAccountStatus').textContent = `绑定失败：${err.message}`; log('绑定 MAIL 账号失败：' + err.message); }
     }

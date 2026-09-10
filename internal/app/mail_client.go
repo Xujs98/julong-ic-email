@@ -1,24 +1,22 @@
 package app
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
 	"io"
-	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,8 +27,6 @@ const (
 	mailWebClientID         = "mailcom_mailcheck_chrome"
 	mailWebRedirectURI      = "https://lpebgcnlaohcgdfhbffjajlnpifdkllg.chromiumapp.org/"
 	mailAliasLimit          = 10
-	defaultMailIMAPHost     = "imap.mail.com"
-	defaultMailIMAPPort     = 993
 	mailWebUserAgent        = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 	mailWebOAuthBasicAuth   = "Basic bWFpbGNvbV9tYWlsY2hlY2tfY2hyb21lOnRJWkNZWjFZOFFhNUt0MjJMVXJXSDJTc29td1VhV1F5dGszWWdNem4="
 	mailSettingsBasicAuth   = "Basic bWFpbGNvbV9tYWlsc2V0X3Jvb3RfbGl2ZToqKioqKioq"
@@ -39,7 +35,11 @@ const (
 
 var mailAliasLocalPattern = regexp.MustCompile(`^[a-z0-9._-]{3,62}$`)
 
-type MailClient struct{ client *http.Client }
+type MailClient struct {
+	client         *http.Client
+	mobileMu       sync.Mutex
+	mobileSessions map[string]mailMobileSession
+}
 
 type mailAlias struct {
 	Address   string `json:"address"`
@@ -55,7 +55,21 @@ type mailDomainList struct {
 
 func NewMailClient() *MailClient {
 	jar, _ := cookiejar.New(nil)
-	return &MailClient{client: &http.Client{Timeout: 45 * time.Second, Jar: jar, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}}
+	return &MailClient{
+		client:         newMailHTTPClient(jar, nil),
+		mobileSessions: make(map[string]mailMobileSession),
+	}
+}
+
+func newMailHTTPClient(jar http.CookieJar, transport http.RoundTripper) *http.Client {
+	return &http.Client{
+		Transport: transport,
+		Timeout:   45 * time.Second,
+		Jar:       jar,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 func (c *MailClient) AvailableAliasDomains(ctx context.Context, account MailAccount) ([]string, error) {
@@ -164,92 +178,8 @@ func (c *MailClient) DeleteAlias(ctx context.Context, account MailAccount, addre
 	return c.settingsJSON(ctx, token, http.MethodPost, path, nil, nil)
 }
 
-func (c *MailClient) CheckIMAP(ctx context.Context, account MailAccount) error {
-	conn, reader, err := c.imapLogin(ctx, account)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	_, _ = imapCommand(conn, reader, "M002", "LOGOUT")
-	return nil
-}
-
 func (c *MailClient) SyncAliases(ctx context.Context, account MailAccount, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (map[string][]ICloudSyncedMessage, string, error) {
-	if maxMessages <= 0 {
-		maxMessages = 50
-	}
-	if maxMessages > 200 {
-		maxMessages = 200
-	}
-	conn, reader, err := c.imapLogin(ctx, account)
-	if err != nil {
-		return nil, "", err
-	}
-	defer conn.Close()
-	selectLines, err := imapCommand(conn, reader, "M002", "SELECT INBOX")
-	if err != nil || !imapTaggedOK(selectLines, "M002") {
-		return nil, "", errCode("mail_imap_select_failed", "打开 mail.com 收件箱失败："+imapResponseSummary(selectLines), true)
-	}
-	searchAfter := after
-	if searchAfter.IsZero() {
-		searchAfter = time.Now().Add(-24 * time.Hour)
-	}
-	searchLines, err := imapCommand(conn, reader, "M003", "UID SEARCH SINCE "+searchAfter.Format("2-Jan-2006"))
-	if err != nil || !imapTaggedOK(searchLines, "M003") {
-		return nil, "", errCode("mail_imap_search_failed", "搜索 mail.com 邮件失败："+imapResponseSummary(searchLines), true)
-	}
-	uids := imapSearchUIDs(searchLines)
-	if len(uids) == 0 {
-		_, _ = imapCommand(conn, reader, "M004", "LOGOUT")
-		return map[string][]ICloudSyncedMessage{}, "", nil
-	}
-	sortInts(uids)
-	uids = lastIntValues(uids, maxMessages)
-	lastUID := fmt.Sprint(uids[len(uids)-1])
-	fetched := make([]iCloudIMAPFetchedMessage, 0, len(uids))
-	tag := 4
-	for _, chunk := range chunkInts(uids, 20) {
-		tag++
-		name := fmt.Sprintf("M%03d", tag)
-		lines, literals, fetchErr := imapCommandWithLiterals(conn, reader, name, "UID FETCH "+imapUIDSet(chunk)+" (UID BODY.PEEK[]<0.200000>)")
-		if fetchErr != nil || !imapTaggedOK(lines, name) {
-			return nil, "", errCode("mail_imap_fetch_failed", "读取 mail.com 邮件失败："+imapResponseSummary(lines), true)
-		}
-		fetchUIDs := imapFetchUIDs(lines)
-		for i, raw := range literals {
-			uid := ""
-			if i < len(fetchUIDs) {
-				uid = fmt.Sprint(fetchUIDs[i])
-			}
-			fetched = append(fetched, iCloudIMAPFetchedMessage{UID: uid, Raw: raw})
-		}
-	}
-	_, _ = imapCommand(conn, reader, fmt.Sprintf("M%03d", tag+1), "LOGOUT")
-	return iCloudIMAPMessagesByMailbox(fetched, mailboxes, after, keyword, account.Email), lastUID, nil
-}
-
-func (c *MailClient) imapLogin(ctx context.Context, account MailAccount) (net.Conn, *bufio.Reader, error) {
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-	dialer := tls.Dialer{Config: &tls.Config{ServerName: defaultMailIMAPHost, MinVersion: tls.VersionTLS12}}
-	raw, err := dialer.DialContext(ctx, "tcp", fmt.Sprintf("%s:%d", defaultMailIMAPHost, defaultMailIMAPPort))
-	if err != nil {
-		return nil, nil, errCode("mail_imap_connect_failed", "连接 mail.com IMAP 失败："+err.Error(), true)
-	}
-	conn := raw.(*tls.Conn)
-	_ = conn.SetDeadline(time.Now().Add(45 * time.Second))
-	reader := bufio.NewReader(conn)
-	greeting, err := reader.ReadString('\n')
-	if err != nil || !strings.Contains(strings.ToUpper(greeting), "OK") {
-		conn.Close()
-		return nil, nil, errCode("mail_imap_greeting_failed", "mail.com IMAP 未就绪", true)
-	}
-	lines, err := imapCommand(conn, reader, "M001", "LOGIN "+imapQuote(account.Email)+" "+imapQuote(account.Password))
-	if err != nil || !imapTaggedOK(lines, "M001") {
-		conn.Close()
-		return nil, nil, errCode("mail_imap_login_failed", "mail.com IMAP 登录失败，请检查账号密码与 IMAP 权限", false)
-	}
-	return conn, reader, nil
+	return c.SyncAliasesMobile(ctx, account, mailboxes, after, keyword, maxMessages)
 }
 
 func normalizeMailAliasAddress(input string) (string, string, string, error) {

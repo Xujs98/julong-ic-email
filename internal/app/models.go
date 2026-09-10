@@ -125,7 +125,7 @@ type Account struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// MailAccount stores a mail.com account used for alias creation and IMAP
+// MailAccount stores a mail.com account used for alias creation and mobile API
 // synchronization. Passwords are kept locally alongside existing session
 // material so the service can refresh aliases without interactive login.
 type MailAccount struct {

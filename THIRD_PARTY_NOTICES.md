@@ -3,9 +3,9 @@
 矩龙邮箱保留其基于 `q1953258942/iCloud-Privacy-Mail` 二次开发的署名与许可说明，详见仓库 README。
 
 
-## maildotcom-sdk MAIL 别名流程参考
+## maildotcom-sdk MAIL 别名与收件流程参考
 
-MAIL 别名的登录、可用域名查询、创建与删除协议流程参考了 [tanu360/maildotcom-sdk](https://github.com/tanu360/maildotcom-sdk) 的公开实现。本项目未直接引入其 TypeScript/npm 运行时，而是以 Go 重新实现相关 HTTP 流程并接入矩龙邮箱现有权限、存储和接码能力。
+MAIL 别名的登录、可用域名查询、创建与删除，以及移动端 PKCE OAuth、会话刷新、文件夹遍历和邮件正文读取协议流程参考了 [tanu360/maildotcom-sdk](https://github.com/tanu360/maildotcom-sdk) 的公开实现。本项目未直接引入其 TypeScript/npm 运行时，而是以 Go 重新实现相关 HTTP 流程并接入矩龙邮箱现有权限、存储和接码能力。
 
 上游仓库许可证与版权信息以其仓库 `LICENSE` 文件为准。
 

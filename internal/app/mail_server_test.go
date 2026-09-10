@@ -16,7 +16,7 @@ func TestMailAliasCreatesHTMLAndAPIInbox(t *testing.T) {
 	server.mailAliasDomains = func(_ context.Context, _ MailAccount) ([]string, error) {
 		return []string{"email.com", "mail.com"}, nil
 	}
-	server.checkMailIMAP = func(_ context.Context, _ MailAccount) error { return nil }
+	server.checkMailInbox = func(_ context.Context, _ MailAccount) error { return nil }
 	server.createMailAlias = func(_ context.Context, _ MailAccount, address string) (string, error) {
 		return strings.ToLower(address), nil
 	}
@@ -48,7 +48,7 @@ func TestMailAliasCreatesHTMLAndAPIInbox(t *testing.T) {
 	if accountResponse.Account.ID == "" || accountResponse.Account.Email != "owner@mail.com" || strings.Contains(rr.Body.String(), "secret") {
 		t.Fatalf("unsafe or incomplete mail account response: %s", rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), `"web_alias":true`) || !strings.Contains(rr.Body.String(), `"imap":true`) {
+	if !strings.Contains(rr.Body.String(), `"web_alias":true`) || !strings.Contains(rr.Body.String(), `"mobile_api":true`) {
 		t.Fatalf("mail account verification missing: %s", rr.Body.String())
 	}
 
@@ -84,15 +84,15 @@ func TestMailAliasCreatesHTMLAndAPIInbox(t *testing.T) {
 	}
 }
 
-func TestMailAccountBindingRequiresWebAndIMAPValidation(t *testing.T) {
+func TestMailAccountBindingRequiresWebAndMobileAPIValidation(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		webError  error
-		imapError error
-		wantCode  string
+		name        string
+		webError    error
+		mobileError error
+		wantCode    string
 	}{
 		{name: "web", webError: errCode("mail_invalid_credentials", "bad web login", false), wantCode: "mail_invalid_credentials"},
-		{name: "imap", imapError: errCode("mail_imap_login_failed", "bad imap login", false), wantCode: "mail_imap_login_failed"},
+		{name: "mobile", mobileError: errCode("mail_mobile_login_failed", "bad mobile login", false), wantCode: "mail_mobile_login_failed"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := newTestStore(t)
@@ -100,7 +100,7 @@ func TestMailAccountBindingRequiresWebAndIMAPValidation(t *testing.T) {
 			server.mailAliasDomains = func(_ context.Context, _ MailAccount) ([]string, error) {
 				return []string{"mail.com"}, test.webError
 			}
-			server.checkMailIMAP = func(_ context.Context, _ MailAccount) error { return test.imapError }
+			server.checkMailInbox = func(_ context.Context, _ MailAccount) error { return test.mobileError }
 			cookie, _ := registerTestUser(t, server, "binding-"+test.name, "password-123")
 			rr := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, "/api/mail/accounts", strings.NewReader(`{"email":"owner@mail.com","password":"secret"}`))
@@ -108,9 +108,6 @@ func TestMailAccountBindingRequiresWebAndIMAPValidation(t *testing.T) {
 			server.ServeHTTP(rr, req)
 			if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"code":"`+test.wantCode+`"`) {
 				t.Fatalf("binding status=%d body=%s", rr.Code, rr.Body.String())
-			}
-			if test.name == "imap" && (!strings.Contains(rr.Body.String(), "Web 登录与别名接口验证已通过") || !strings.Contains(rr.Body.String(), "不是两步验证")) {
-				t.Fatalf("IMAP failure did not explain the validated Web login: %s", rr.Body.String())
 			}
 			if len(store.Snapshot().MailAccounts) != 0 {
 				t.Fatal("invalid MAIL account was persisted")

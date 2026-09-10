@@ -98,7 +98,7 @@ type Server struct {
 	checkIMAPLogin                 func(ctx context.Context, email, appPassword string) error
 	deletePrivacyMailbox           func(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error)
 	mailAliasDomains               func(ctx context.Context, account MailAccount) ([]string, error)
-	checkMailIMAP                  func(ctx context.Context, account MailAccount) error
+	checkMailInbox                 func(ctx context.Context, account MailAccount) error
 	createMailAlias                func(ctx context.Context, account MailAccount, address string) (string, error)
 	deleteMailAlias                func(ctx context.Context, account MailAccount, address string) error
 	syncMailAliases                func(ctx context.Context, account MailAccount, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (map[string][]ICloudSyncedMessage, string, error)
@@ -276,11 +276,13 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 	s.syncMailboxBatch = func(ctx context.Context, session ICloudSession, mailboxes []Mailbox, after time.Time, keyword string, maxThreads int) (map[string][]ICloudSyncedMessage, error) {
 		return NewICloudClient().SyncMailboxMessagesBatch(ctx, session, mailboxes, after, keyword, maxThreads)
 	}
+	mailMobileClient := NewMailClient()
 	s.mailAliasDomains = func(ctx context.Context, account MailAccount) ([]string, error) {
 		return NewMailClient().AvailableAliasDomains(ctx, account)
 	}
-	s.checkMailIMAP = func(ctx context.Context, account MailAccount) error {
-		return NewMailClient().CheckIMAP(ctx, account)
+	s.checkMailInbox = func(ctx context.Context, account MailAccount) error {
+		mailMobileClient.invalidateMobileSession(account.Email)
+		return mailMobileClient.CheckMobileAPI(ctx, account)
 	}
 	s.createMailAlias = func(ctx context.Context, account MailAccount, address string) (string, error) {
 		return NewMailClient().CreateAlias(ctx, account, address)
@@ -289,7 +291,7 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 		return NewMailClient().DeleteAlias(ctx, account, address)
 	}
 	s.syncMailAliases = func(ctx context.Context, account MailAccount, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (map[string][]ICloudSyncedMessage, string, error) {
-		return NewMailClient().SyncAliases(ctx, account, mailboxes, after, keyword, maxMessages)
+		return mailMobileClient.SyncAliases(ctx, account, mailboxes, after, keyword, maxMessages)
 	}
 	s.checkIMAPLogin = CheckICloudIMAPLogin
 	s.routes()

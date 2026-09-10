@@ -8,7 +8,7 @@
 
 独立 Go 服务，用来登录 iCloud、创建 Hide My Email 隐私邮箱，也可创建 mail.com 别名或接入自有域名；三类邮箱共用邮件管理、HTML 接码页和取码 API。
 
-> **MAIL 别名能力说明**：MAIL 别名创建参考 [tanu360/maildotcom-sdk](https://github.com/tanu360/maildotcom-sdk) 的 Web Settings OAuth/CATS 流程，并以 Go 接入现有存储、HTML 接码和 API 取码链路；完整声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+> **MAIL 别名能力说明**：MAIL 别名创建与收件参考 [tanu360/maildotcom-sdk](https://github.com/tanu360/maildotcom-sdk) 的 Web Settings OAuth/CATS 和移动端 OAuth/MobSI/HSP2 流程，并以 Go 接入现有存储、HTML 接码和 API 取码链路；完整声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 > **域名邮箱能力说明**：域名收件、邮箱生命周期和 DNS 引导思路参考 [DreamsHive/CloakMail](https://github.com/DreamsHive/cloakmail)（MIT License），本项目以 Go 重新实现并保留矩龙邮箱现有 UI；完整声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
@@ -21,7 +21,7 @@
 - 旧接口登录态：后端发起 iCloud 登录，用户收到 2FA 后提交 6 位验证码保存登录态。
 - 多 Apple 登录态：同一平台账号可保存多个 Apple/iCloud 登录态，前端按账号 TAB 分开显示和操作。
 - 隐私邮箱创建：优先调用 Apple Account 新接口创建，账号只有旧登录态时回落 iCloud Hide My Email `generate + reserve`。
-- MAIL 别名生成：在左侧“MAIL别名生成”绑定 mail.com 账号，读取实时可用别名域名并创建真实别名；每个别名自动生成独立 HTML 接码地址和取码 API，邮件通过 mail.com IMAP 同步。
+- MAIL 别名生成：在左侧“MAIL别名生成”绑定 mail.com 账号，读取实时可用别名域名并创建真实别名；每个别名自动生成独立 HTML 接码地址和取码 API，邮件通过 mail.com 移动端 API 同步，普通账号无需开通 Premium IMAP。
 - 域名资产管理：在矩龙邮箱原有商业化工作台接入、启停和删除收件域名；面板提供 MX/A DNS 指引、SMTP 服务状态与域名邮箱数量。
 - 域名邮箱生成与收件：按已启用域名批量生成 `随机6位-随机8位@收件域名` 地址；内置 receive-only SMTP 服务只接收已生成且启用的地址，保留纯文本/HTML 邮件并复用现有邮件弹窗、HTML 接码页和单邮箱取码 API。
 - Cloudflare 转发收件：左侧“转发邮箱”提供 Email Routing/Worker 配置、HMAC 密钥轮换、入站测试、收件统计和可收件地址列表；`cloudflare/forwarding-worker.ts` 将 Cloudflare 收到的原始 MIME 通过 HTTPS 投递到矩龙邮箱，支持多个已接入域名共用同一 Worker 和签名密钥，并支持可选外部副本转发。接入模型参考 [cloudflare_temp_email](https://github.com/dreamhunter2333/cloudflare_temp_email) 的 Email Worker/Email Routing 思路，本项目保留自己的 Go 存储与商业化 UI。
@@ -338,7 +338,7 @@ GET /api/v1/mailboxes/{email}/code?key=<mailbox_key>&after=<RFC3339>&keyword=Ope
 
 ### MAIL 别名生成 API
 
-登录后台后可使用以下接口管理 MAIL 账号与别名。绑定接口会先校验 Web Settings OAuth/可用别名域名和 IMAP 登录，只有两项均成功才保存账号；因此返回成功代表账号密码已通过两条链路验证。网页登录成功不代表 IMAP 同时可用：部分账号还需要开通 IMAP 权限、满足套餐要求或使用服务指定的专用密码；这与网页登录是否启用两步验证是两个独立状态。
+登录后台后可使用以下接口管理 MAIL 账号与别名。绑定接口会分别校验 Web Settings OAuth/可用别名域名和移动端 OAuth/MobSI 收件权限，只有两项均成功才保存账号；因此返回成功代表账号密码已通过别名管理与收件两条链路验证。收件使用与官方移动应用一致的 HSP2 邮件接口，不再要求账号开通 Premium IMAP，也无需为 IMAP 单独设置应用专用密码。
 
 ```http
 POST /api/mail/accounts
