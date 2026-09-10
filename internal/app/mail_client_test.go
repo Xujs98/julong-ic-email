@@ -25,6 +25,22 @@ func TestMailRedirectHandlesHTMLAndCredentialPage(t *testing.T) {
 	}
 }
 
+func TestMailLoginChallengeRequiresInteractiveControl(t *testing.T) {
+	if err := mailLoginPageError(`<script>window.loginChallenge = {captcha: false, markup: "data-sitekey login failed"};</script><p>Continue to mailbox</p>`); err != nil {
+		t.Fatalf("script vocabulary was classified as a challenge: %v", err)
+	}
+	for _, source := range []string{
+		`<form action="/login/challenge"><input name="verificationCode"></form>`,
+		`<div class="g-recaptcha" data-sitekey="site-key"></div>`,
+	} {
+		var coded codedError
+		err := mailLoginPageError(source)
+		if err == nil || !errors.As(err, &coded) || coded.code != "mail_login_challenge" {
+			t.Fatalf("interactive challenge was not detected: %v", err)
+		}
+	}
+}
+
 func TestMailNavigatorSIDSupportsURLFragmentAndCookie(t *testing.T) {
 	if got := mailNavigatorSID("https://navigator-lxa.mail.com/#sid=fragment-sid", nil); got != "fragment-sid" {
 		t.Fatalf("fragment sid=%q", got)

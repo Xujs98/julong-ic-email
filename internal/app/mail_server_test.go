@@ -109,6 +109,9 @@ func TestMailAccountBindingRequiresWebAndIMAPValidation(t *testing.T) {
 			if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"code":"`+test.wantCode+`"`) {
 				t.Fatalf("binding status=%d body=%s", rr.Code, rr.Body.String())
 			}
+			if test.name == "imap" && (!strings.Contains(rr.Body.String(), "Web 登录与别名接口验证已通过") || !strings.Contains(rr.Body.String(), "不是两步验证")) {
+				t.Fatalf("IMAP failure did not explain the validated Web login: %s", rr.Body.String())
+			}
 			if len(store.Snapshot().MailAccounts) != 0 {
 				t.Fatal("invalid MAIL account was persisted")
 			}

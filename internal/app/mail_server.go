@@ -77,7 +77,7 @@ func (s *Server) handleCreateMailAccount(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.checkMailIMAP(r.Context(), candidate); err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		writeError(w, http.StatusBadGateway, mailAccountIMAPValidationError(err))
 		return
 	}
 	account, err := s.store.AddMailAccountForOwner(candidate.OwnerID, candidate.Label, candidate.Email, candidate.Password)
@@ -89,6 +89,18 @@ func (s *Server) handleCreateMailAccount(w http.ResponseWriter, r *http.Request)
 		"success": true, "account": s.publicMailAccount(account), "alias_domains": domains,
 		"verification": map[string]any{"web_alias": true, "imap": true, "alias_domain_count": len(domains)},
 	})
+}
+
+func mailAccountIMAPValidationError(err error) error {
+	var coded codedError
+	if errors.As(err, &coded) && coded.code == "mail_imap_login_failed" {
+		return errCode(
+			"mail_imap_login_failed",
+			"Web 登录与别名接口验证已通过，但 mail.com IMAP 服务器拒绝账号密码登录；这不是两步验证，请检查该账号的 IMAP 权限或专用密码要求",
+			false,
+		)
+	}
+	return err
 }
 
 func (s *Server) handleDeleteMailAccount(w http.ResponseWriter, r *http.Request) {

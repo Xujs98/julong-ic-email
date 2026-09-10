@@ -338,7 +338,7 @@ GET /api/v1/mailboxes/{email}/code?key=<mailbox_key>&after=<RFC3339>&keyword=Ope
 
 ### MAIL 别名生成 API
 
-登录后台后可使用以下接口管理 MAIL 账号与别名。绑定接口会先校验 Web Settings OAuth/可用别名域名和 IMAP 登录，只有两项均成功才保存账号；因此返回成功代表账号密码已通过两条链路验证。
+登录后台后可使用以下接口管理 MAIL 账号与别名。绑定接口会先校验 Web Settings OAuth/可用别名域名和 IMAP 登录，只有两项均成功才保存账号；因此返回成功代表账号密码已通过两条链路验证。网页登录成功不代表 IMAP 同时可用：部分账号还需要开通 IMAP 权限、满足套餐要求或使用服务指定的专用密码；这与网页登录是否启用两步验证是两个独立状态。
 
 ```http
 POST /api/mail/accounts

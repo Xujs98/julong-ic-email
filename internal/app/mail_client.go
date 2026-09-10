@@ -556,11 +556,19 @@ func mailHTMLRedirectURL(source, base string) string {
 }
 
 func mailLoginPageError(source string) error {
-	lower := strings.ToLower(source)
-	challengeMarkers := []string{"captcha", "security check", "verify your identity", "two-factor", "two factor", "challenge"}
-	for _, marker := range challengeMarkers {
-		if strings.Contains(lower, marker) {
-			return errCode("mail_login_challenge", "mail.com 要求额外安全验证，请先在官网登录并完成验证后重试", false)
+	markup := regexp.MustCompile(`(?is)<(?:script|style)\b[^>]*>.*?</(?:script|style)>|<!--.*?-->`).ReplaceAllString(source, " ")
+	lower := strings.ToLower(markup)
+	// Login pages often ship scripts containing generic words such as
+	// "challenge" or "captcha". Only classify an actual challenge when the
+	// returned document contains an interactive verification control.
+	challengeControls := []*regexp.Regexp{
+		regexp.MustCompile(`(?is)<(?:input|textarea)\b[^>]*(?:name|id)\s*=\s*["'][^"']*(?:captcha|otp|security.?code|verification.?code|challenge)[^"']*["']`),
+		regexp.MustCompile(`(?is)<form\b[^>]*action\s*=\s*["'][^"']*(?:captcha|challenge|two.?factor|verify)[^"']*["']`),
+		regexp.MustCompile(`(?is)\b(?:data-sitekey|g-recaptcha|h-captcha|cf-turnstile)\b`),
+	}
+	for _, pattern := range challengeControls {
+		if pattern.MatchString(lower) {
+			return errCode("mail_login_challenge", "mail.com 登录页要求交互式安全验证，请在官网登录完成后重试", false)
 		}
 	}
 	credentialMarkers := []string{"invalid password", "incorrect password", "wrong password", "login failed", "status=login-failed", "authentication failed"}
@@ -569,7 +577,7 @@ func mailLoginPageError(source string) error {
 			return errCode("mail_invalid_credentials", "mail.com Web 登录失败，请检查账号和密码", false)
 		}
 	}
-	if regexp.MustCompile(`(?is)<input\b[^>]*type\s*=\s*["']password["']`).MatchString(source) {
+	if regexp.MustCompile(`(?is)<input\b[^>]*type\s*=\s*["']password["']`).MatchString(markup) {
 		return errCode("mail_invalid_credentials", "mail.com 返回了登录页，账号密码未通过 Web 登录验证", false)
 	}
 	return nil
