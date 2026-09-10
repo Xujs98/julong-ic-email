@@ -170,6 +170,30 @@ func TestThemePickerTemplateUsesCommercialCustomControl(t *testing.T) {
 	}
 }
 
+func TestICloudIMAPTemplateSupportsMultipleAccounts(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`id="imapAccountTabs"`,
+		`id="imapActiveAccount"`,
+		`id="imapAccountCount"`,
+		`startIndependentICloudIMAPLogin()`,
+		`onclick="checkICloudIMAPLogin(false)"`,
+		`onclick="checkICloudIMAPLogin(true)"`,
+		`let imapIndependentMode = false;`,
+		`function renderICloudIMAPAccounts(sessions, active)`,
+		`return (sessions || []).filter(session => session && session.saved);`,
+		`account_id: checkAll ? '' : accountID`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("iCloud IMAP multi-account source missing %q", want)
+		}
+	}
+}
+
 func TestAppleAccountKeepAliveTemplateShowsAutomaticRetry(t *testing.T) {
 	data, err := webFS.ReadFile("templates/index.html")
 	if err != nil {
@@ -4298,6 +4322,71 @@ func TestSaveICloudIMAPLoginFailureDoesNotStorePassword(t *testing.T) {
 	}
 	if sessions := store.ICloudSessionsForOwner(user.ID); len(sessions) != 0 {
 		t.Fatalf("sessions len = %d, want 0", len(sessions))
+	}
+}
+
+func TestCheckICloudIMAPLoginSupportsCurrentAndAllAccounts(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	cookie, user := registerTestUser(t, handler, "imap-multi-user", "imap123")
+
+	for _, email := range []string{"first@icloud.com", "second@icloud.com"} {
+		if err := store.SaveICloudSessionForOwner(user.ID, testIMAPSession(user.ID, "", email)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sessions := store.ICloudSessionsForOwner(user.ID)
+	if len(sessions) != 2 {
+		t.Fatalf("sessions len = %d, want 2", len(sessions))
+	}
+
+	var checkedEmails []string
+	server.checkIMAPLogin = func(ctx context.Context, email, appPassword string) error {
+		checkedEmails = append(checkedEmails, email)
+		return nil
+	}
+	check := func(accountID string) int {
+		t.Helper()
+		body := `{}`
+		if accountID != "" {
+			body = fmt.Sprintf(`{"account_id":%q}`, accountID)
+		}
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/icloud/imap-login/check", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("check imap login status = %d body=%s", rr.Code, rr.Body.String())
+		}
+		var response struct {
+			CheckedCount int `json:"checked_count"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response.CheckedCount
+	}
+
+	selected := sessions[1]
+	if count := check(selected.AccountID); count != 1 {
+		t.Fatalf("selected account checked_count = %d, want 1", count)
+	}
+	if len(checkedEmails) != 1 || checkedEmails[0] != selected.AppleID {
+		t.Fatalf("selected account checks = %v, want [%s]", checkedEmails, selected.AppleID)
+	}
+
+	checkedEmails = nil
+	if count := check(""); count != 2 {
+		t.Fatalf("all accounts checked_count = %d, want 2", count)
+	}
+	got := map[string]bool{}
+	for _, email := range checkedEmails {
+		got[email] = true
+	}
+	if len(checkedEmails) != 2 || !got["first@icloud.com"] || !got["second@icloud.com"] {
+		t.Fatalf("all account checks = %v", checkedEmails)
 	}
 }
 

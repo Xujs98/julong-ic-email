@@ -751,6 +751,43 @@
       line-height: 1.75;
       color: var(--green-2);
     }
+    .imap-account-manager {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--soft-glass);
+    }
+    .imap-account-manager-head, .imap-account-context {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .imap-account-manager-head > span, .imap-account-context > span {
+      display: grid;
+      gap: 3px;
+    }
+    .imap-account-manager-head strong, .imap-account-context strong { color: var(--text); font-size: 14px; }
+    .imap-account-manager-head small, .imap-account-context small { color: var(--muted); font-size: 11px; }
+    .imap-account-list { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+    .imap-account-option {
+      flex: 0 0 min(260px, 76vw);
+      display: grid;
+      gap: 3px;
+      min-height: 62px;
+      text-align: left;
+      white-space: normal;
+    }
+    .imap-account-option strong { overflow-wrap: anywhere; }
+    .imap-account-option small { color: var(--muted); font-size: 11px; }
+    .imap-account-option.active { color: var(--on-accent); border-color: transparent; background: var(--green-2); }
+    .imap-account-option.active small { color: currentColor; opacity: .82; }
+    .imap-account-context { padding-top: 10px; border-top: 1px solid var(--line); }
+    .imap-manager-action { display: inline-flex; align-items: center; gap: 7px; }
+    .imap-manager-action svg { width: 16px; height: 16px; }
     .create-account-selector {
       display: grid;
       gap: 8px;
@@ -2490,12 +2527,18 @@
           </div>
           <div class="hint">新接口每小时约可创建 20 个，旧接口每小时约可创建 5 个；两种登录态都保存后可一起创建，合计约 25 个/小时。</div>
           <div class="field-grid">
+            <div class="full imap-account-manager">
+              <div class="imap-account-manager-head"><span><strong>取码账号管理</strong><small>每个 Apple/IC 账号独立保存 iCloud 邮箱与 App 专用密码。</small></span><button type="button" class="imap-manager-action" onclick="startIndependentICloudIMAPLogin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>新增独立取码账号</button></div>
+              <div id="imapAccountTabs" class="imap-account-list"><span class="muted">尚未保存账号</span></div>
+              <div class="imap-account-context"><span><small>当前配置对象</small><strong id="imapActiveAccount">请选择账号</strong></span><small id="imapAccountCount">0 个取码账号</small></div>
+            </div>
             <label>iCloud 邮箱账号<input id="imapEmail" autocomplete="username" placeholder="name@icloud.com"></label>
             <label>App 专用密码<input id="imapAppPassword" type="password" autocomplete="new-password" placeholder="xxxx-xxxx-xxxx-xxxx"></label>
             <div class="full toolbar">
-              <button id="imapSaveButton" type="button" onclick="saveICloudIMAPLogin()">保存取码登录</button>
-              <button id="imapCheckButton" type="button" onclick="checkICloudIMAPLogin()">检测取码登录</button>
-              <span id="imapLoginStatus" class="muted">取码登录用于 IMAP 收件和快速获取验证码，不参与创建邮箱。</span>
+              <button id="imapSaveButton" type="button" class="primary" onclick="saveICloudIMAPLogin()">保存当前账号</button>
+              <button id="imapCheckButton" type="button" onclick="checkICloudIMAPLogin(false)">检测当前账号</button>
+              <button id="imapCheckAllButton" type="button" onclick="checkICloudIMAPLogin(true)">检测全部账号</button>
+              <span id="imapLoginStatus" class="muted">每个账号使用自己的 IMAP 取码登录，互不覆盖。</span>
             </div>
           </div>
           <div class="field-grid">
@@ -3186,6 +3229,8 @@
     let appToastTimer = null;
     let activeMailboxCopyMenuID = '';
     let activeICloudSessionKey = '';
+    let imapIndependentMode = false;
+    let imapFormContextKey = '';
     let protocolPendingID = '';
     let appleAccountPendingID = '';
     let sessionCheckTimer = null;
@@ -4186,9 +4231,7 @@
     }
 
     function visibleICloudSessions(sessions) {
-      const saved = (sessions || []).filter(session => session && session.saved);
-      const createSessions = saved.filter(createLoginSaved);
-      return createSessions.length > 0 ? createSessions : saved;
+      return (sessions || []).filter(session => session && session.saved);
     }
 
     function selectableCreateSessions() {
@@ -6348,6 +6391,8 @@
       const displaySessions = visibleICloudSessions(allSessions);
       if (displaySessions.length === 0) {
         $('icloudSessionInfo').textContent = '未完成创建登录。请输入 Apple ID/密码后选择新接口或旧接口登录；取码请单独保存取码登录。';
+        activeICloudSessionKey = '';
+        renderICloudIMAPAccounts([], null);
         renderCreateAccountSelector();
         return;
       }
@@ -6364,14 +6409,54 @@
         ? `<br>取码邮箱：${esc(active.icloud_imap_email || active.apple_id || '-')} ${active.icloud_imap_host ? `<span class="muted">/ ${esc(active.icloud_imap_host)}</span>` : ''}`
         : '';
       $('icloudSessionInfo').innerHTML =
-        `<div>已保存 ${displaySessions.length} 个 Apple 登录态，Apple 登录态只用于创建邮箱；取码走取码登录。</div>` +
+        `<div>已保存 ${displaySessions.length} 个 iCloud 账号配置；创建登录与 IMAP 取码登录按账号独立管理。</div>` +
         `<div class="session-tabs">${tabs}</div>` +
         `<div class="session-card"><div class="session-card-line"><span>Apple ID：${esc(active.apple_id || '-')}</span>${sessionManageRefreshBadge(active)}</div>` +
         `账号ID：${esc(active.account_id || '-')}${imapInfo}<br>` +
         `<div class="login-chips">${sessionLoginBadges(active)}</div>` +
         `${esc(overallLoginStateText(active))}</div>`;
+      renderICloudIMAPAccounts(displaySessions, active);
       renderCreateAccountSelector();
       updateManageRefreshClocks();
+    }
+
+    function renderICloudIMAPAccounts(sessions, active) {
+      const saved = (sessions || []).filter(session => session && session.saved);
+      const configuredCount = saved.filter(iCloudIMAPLoginSaved).length;
+      const list = $('imapAccountTabs');
+      if (list) {
+        list.innerHTML = saved.length === 0
+          ? '<span class="muted">尚未保存账号，可新增独立取码账号。</span>'
+          : saved.map((session, index) => {
+              const key = sessionKey(session);
+              const title = createAccountDisplayName(session) || `账号 ${index + 1}`;
+              const email = session.icloud_imap_email || '';
+              const status = iCloudIMAPLoginSaved(session)
+                ? `${session.icloud_imap_login_status || '已保存'} · ${email || '未返回邮箱'}`
+                : '待配置取码登录';
+              const selected = !imapIndependentMode && active && key === sessionKey(active);
+              return `<button type="button" class="imap-account-option${selected ? ' active' : ''}" onclick="setICloudSessionTab(${esc(JSON.stringify(key))})" aria-pressed="${selected ? 'true' : 'false'}"><strong>${esc(title)}</strong><small>${esc(status)}</small></button>`;
+            }).join('');
+      }
+      if ($('imapAccountCount')) {
+        $('imapAccountCount').textContent = `已配置 ${configuredCount} / 共 ${saved.length} 个账号`;
+      }
+
+      const activeLabel = imapIndependentMode
+        ? '新增独立取码账号'
+        : (active ? createAccountDisplayName(active) : '请选择账号');
+      if ($('imapActiveAccount')) $('imapActiveAccount').textContent = activeLabel;
+
+      const contextKey = imapIndependentMode ? '__independent__' : (active ? sessionKey(active) : '__empty__');
+      if (imapFormContextKey !== contextKey) {
+        imapFormContextKey = contextKey;
+        if ($('imapEmail')) $('imapEmail').value = imapIndependentMode ? '' : ((active && active.icloud_imap_email) || '');
+        if ($('imapAppPassword')) $('imapAppPassword').value = '';
+      }
+
+      const currentConfigured = !imapIndependentMode && active && iCloudIMAPLoginSaved(active);
+      if ($('imapCheckButton')) $('imapCheckButton').disabled = !currentConfigured;
+      if ($('imapCheckAllButton')) $('imapCheckAllButton').disabled = configuredCount === 0;
     }
 
     function sessionKey(session) {
@@ -6379,8 +6464,19 @@
     }
 
     function setICloudSessionTab(key) {
+      imapIndependentMode = false;
+      imapFormContextKey = '';
       activeICloudSessionKey = key || '';
       renderICloudSessions(lastICloudSessions);
+    }
+
+    function startIndependentICloudIMAPLogin() {
+      imapIndependentMode = true;
+      imapFormContextKey = '';
+      const active = activeICloudSessionForBinding();
+      renderICloudIMAPAccounts(visibleICloudSessions(lastICloudSessions), active);
+      if ($('imapEmail')) $('imapEmail').focus();
+      if ($('imapLoginStatus')) $('imapLoginStatus').textContent = '请输入新的 iCloud 邮箱和该账号的 App 专用密码。';
     }
 
     function activeICloudSessionForBinding() {
@@ -6389,9 +6485,9 @@
     }
 
     function activeICloudSessionAccountID() {
+      if (imapIndependentMode) return '';
       const session = activeICloudSessionForBinding();
-      if (!session || !createLoginSaved(session)) return '';
-      return session.account_id || '';
+      return session ? (session.account_id || '') : '';
     }
 
     async function syncICloudMailboxes() {
@@ -6421,7 +6517,7 @@
 
     async function saveICloudIMAPLogin() {
       const button = $('imapSaveButton');
-      const email = ($('imapEmail').value.trim() || $('protocolAppleId').value.trim()).toLowerCase();
+      const email = $('imapEmail').value.trim().toLowerCase();
       const appPassword = $('imapAppPassword').value.trim();
       if (!email) {
         $('imapLoginStatus').textContent = '请输入 iCloud 邮箱账号';
@@ -6436,13 +6532,17 @@
       button.disabled = true;
       $('imapLoginStatus').textContent = '正在检测 IMAP 取码登录...';
       try {
+        const accountID = activeICloudSessionAccountID();
         const data = await api('/api/icloud/imap-login/save', {method:'POST', body: JSON.stringify({
-          account_id: activeICloudSessionAccountID(),
+          account_id: accountID,
           email,
           app_password: appPassword
         })});
         $('imapAppPassword').value = '';
-        $('imapEmail').value = email;
+        imapIndependentMode = false;
+        const savedSession = data.session && data.session.saved ? data.session : null;
+        if (savedSession) activeICloudSessionKey = sessionKey(savedSession);
+        imapFormContextKey = '';
         if (data.sessions) renderICloudSessions(data.sessions);
         else if (data.session) renderICloudSession(data.session);
         $('imapLoginStatus').textContent = data.message || '取码登录已保存';
@@ -6456,12 +6556,20 @@
       }
     }
 
-    async function checkICloudIMAPLogin() {
-      const button = $('imapCheckButton');
-      button.disabled = true;
-      $('imapLoginStatus').textContent = '正在检测已保存的取码登录...';
+    async function checkICloudIMAPLogin(checkAll = false) {
+      const current = activeICloudSessionForBinding();
+      const accountID = activeICloudSessionAccountID();
+      if (!checkAll && (imapIndependentMode || !current || !accountID || !iCloudIMAPLoginSaved(current))) {
+        $('imapLoginStatus').textContent = '请先选择已保存取码登录的账号';
+        return;
+      }
+      const buttons = [$('imapCheckButton'), $('imapCheckAllButton')].filter(Boolean);
+      buttons.forEach(button => { button.disabled = true; });
+      $('imapLoginStatus').textContent = checkAll ? '正在检测全部取码账号...' : '正在检测当前取码账号...';
       try {
-        const data = await api('/api/icloud/imap-login/check', {method:'POST', body: JSON.stringify({})});
+        const data = await api('/api/icloud/imap-login/check', {method:'POST', body: JSON.stringify({
+          account_id: checkAll ? '' : accountID
+        })});
         if (data.sessions) renderICloudSessions(data.sessions);
         $('imapLoginStatus').textContent = data.message || '取码登录检测完成';
         log(data.message || '取码登录检测完成');
@@ -6469,8 +6577,10 @@
       } catch (err) {
         $('imapLoginStatus').textContent = '取码登录检测失败：' + err.message;
         log('取码登录检测失败：' + err.message);
+        await refresh().catch(() => {});
       } finally {
-        button.disabled = false;
+        const active = activeICloudSessionForBinding();
+        renderICloudIMAPAccounts(visibleICloudSessions(lastICloudSessions), active);
       }
     }
 
