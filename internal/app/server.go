@@ -995,7 +995,11 @@ func (s *Server) handleMailboxHTMLData(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errCode("mailbox_not_found", "邮箱不存在", false))
 		return
 	}
-	if mailbox.ProviderKind() == MailboxProviderMail {
+	// Public HTML pages must perform a best-effort refresh for every remote
+	// mailbox provider.  Previously only mail.com aliases were refreshed here;
+	// iCloud aliases relied exclusively on the background watcher, so a missed
+	// watcher event left the page showing an empty inbox indefinitely.
+	if mailbox.ProviderKind() != MailboxProviderDomain {
 		_, _ = s.syncMailbox(r.Context(), mailbox, time.Now().Add(-24*time.Hour), allMailboxMessagesKeyword)
 	}
 	messages := s.store.MessagesForMailbox(mailbox.ID)

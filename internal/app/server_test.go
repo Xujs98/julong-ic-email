@@ -7207,6 +7207,76 @@ func TestMailboxHTMLDataUsesConfiguredMessageLimit(t *testing.T) {
 	}
 }
 
+func TestMailboxHTMLDataRefreshesICloudMailbox(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	cookie, user := registerTestUser(t, handler, "html-icloud-refresh", "refresh123")
+	if err := store.SaveICloudSessionForOwner(user.ID, ICloudSession{
+		OwnerID:   user.ID,
+		AccountID: "acc-html-refresh",
+		AppleID:   "refresh-owner@icloud.com",
+		LoginStates: []LoginState{{
+			Kind:            LoginStateICloudIMAP,
+			IMAPEmail:       "refresh-owner@icloud.com",
+			IMAPUsername:    "refresh-owner@icloud.com",
+			IMAPAppPassword: "app-password",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := store.AddMailboxForOwner(user.ID, "acc-html-refresh", "refresh", "refresh-alias@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, ok := store.MailboxHTMLLinkForMailbox(mailbox.ID)
+	if !ok {
+		t.Fatal("mailbox HTML link missing")
+	}
+	var syncCalls int
+	server.syncCodeMailboxBatch = func(_ context.Context, _ LoginState, mailboxes []Mailbox, _ time.Time, keyword string, _ int) (map[string][]ICloudSyncedMessage, error) {
+		syncCalls++
+		if keyword != allMailboxMessagesKeyword || len(mailboxes) != 1 || mailboxes[0].ID != mailbox.ID {
+			t.Fatalf("unexpected HTML refresh sync input: keyword=%q mailboxes=%+v", keyword, mailboxes)
+		}
+		return map[string][]ICloudSyncedMessage{
+			mailbox.ID: {{
+				RemoteID:   "imap:html-refresh",
+				UID:        "html-refresh",
+				Subject:    "Your ChatGPT verification code",
+				From:       "noreply@example.test",
+				Body:       "Your verification code is 864209.",
+				ReceivedAt: time.Now(),
+			}},
+		}, nil
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/mailbox/"+link.Token+"/data", nil)
+	// The public endpoint does not require the user's session; keep the cookie
+	// on the request to exercise the same route shape used by the browser.
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("mailbox HTML data = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if syncCalls != 1 {
+		t.Fatalf("iCloud HTML refresh sync calls = %d, want 1", syncCalls)
+	}
+	var body struct {
+		Latest struct {
+			Code string `json:"code"`
+		} `json:"latest"`
+		Messages []publicMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Latest.Code != "864209" || len(body.Messages) != 1 {
+		t.Fatalf("HTML refresh response = %+v", body)
+	}
+}
+
 func TestExpiredMailboxHTMLLinksAreRetainedUntilExplicitRegeneration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	now := time.Now()
