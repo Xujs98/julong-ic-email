@@ -186,8 +186,21 @@ func LoadConfig(path string) (Config, error) {
 	if strings.TrimSpace(fromFile.DomainSMTPKeyFile) != "" {
 		cfg.DomainSMTPKeyFile = strings.TrimSpace(fromFile.DomainSMTPKeyFile)
 	}
+	applyAppleAccountKeepAliveEnvOverrides(&cfg)
 	applyDomainSMTPEnvOverrides(&cfg)
 	return cfg, nil
+}
+
+func applyAppleAccountKeepAliveEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if _, ok := os.LookupEnv("APPLE_ACCOUNT_KEEP_ALIVE_ENABLED"); ok {
+		cfg.AppleAccountKeepAliveEnabled = envBool("APPLE_ACCOUNT_KEEP_ALIVE_ENABLED", cfg.AppleAccountKeepAliveEnabled)
+	}
+	if _, ok := os.LookupEnv("APPLE_ACCOUNT_KEEP_ALIVE_MS"); ok {
+		cfg.AppleAccountKeepAliveMS = envPositiveInt("APPLE_ACCOUNT_KEEP_ALIVE_MS", cfg.AppleAccountKeepAliveMS)
+	}
 }
 
 func applyDomainSMTPEnvOverrides(cfg *Config) {

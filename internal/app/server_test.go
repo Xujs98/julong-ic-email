@@ -1090,6 +1090,22 @@ func TestLoadConfigPublicCodeSyncSettings(t *testing.T) {
 	}
 }
 
+func TestLoadConfigAppleAccountKeepAliveEnvironmentOverridesFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"apple_account_keep_alive_enabled":true,"apple_account_keep_alive_ms":120000}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("APPLE_ACCOUNT_KEEP_ALIVE_ENABLED", "false")
+	t.Setenv("APPLE_ACCOUNT_KEEP_ALIVE_MS", "600000")
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AppleAccountKeepAliveEnabled || cfg.AppleAccountKeepAliveMS != 600000 {
+		t.Fatalf("keepalive env override = enabled:%t ms:%d, want false/600000", cfg.AppleAccountKeepAliveEnabled, cfg.AppleAccountKeepAliveMS)
+	}
+}
+
 func TestAppleAccountOperationGateSerializesSameAccount(t *testing.T) {
 	release, err := acquireAppleAccountOperationGate(context.Background(), "test-owner:test-account")
 	if err != nil {
