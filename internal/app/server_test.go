@@ -1476,7 +1476,7 @@ func TestAppleAccountKeepAliveRoundSavesTransientFailureForRetry(t *testing.T) {
 		t.Fatal("failed session not found")
 	}
 	state, ok := appleAccountLoginState(got)
-	if !ok || state.LastCheckOK || !state.LastCheckedAt.After(checkedAt) {
+	if !ok || !state.LastCheckOK || !state.LastCheckedAt.After(checkedAt) {
 		t.Fatalf("saved failed apple account state = %+v ok=%v", state, ok)
 	}
 	if state.Scnt != "rotated-scnt" || state.APIKey != "old-key" || len(state.Cookies) != 1 {
@@ -1485,7 +1485,7 @@ func TestAppleAccountKeepAliveRoundSavesTransientFailureForRetry(t *testing.T) {
 	if state.KeepAliveFailures != 1 || state.KeepAliveRetryAt.IsZero() || time.Until(state.KeepAliveRetryAt) < 5*time.Second {
 		t.Fatalf("failed keepalive retry schedule = failures:%d retry:%s", state.KeepAliveFailures, state.KeepAliveRetryAt)
 	}
-	if !strings.Contains(state.LastStatusMessage, "10秒后自动复核") || !strings.Contains(state.LastStatusMessage, "temporary network timeout") {
+	if !strings.Contains(state.LastStatusMessage, "2分钟后重试") || !strings.Contains(state.LastStatusMessage, "temporary network timeout") {
 		t.Fatalf("failed keepalive status = %q", state.LastStatusMessage)
 	}
 }
@@ -1499,23 +1499,31 @@ func TestAppleAccountKeepAliveScanIntervalPollsBeforeBaseInterval(t *testing.T) 
 	}
 }
 
-func TestAppleAccountKeepAliveRetryDelayUsesFastBackoff(t *testing.T) {
+func TestAppleAccountKeepAliveRetryDelayUsesTransientBackoff(t *testing.T) {
 	tests := []struct {
 		failures int
 		want     time.Duration
 	}{
-		{failures: 1, want: 10 * time.Second},
-		{failures: 2, want: 30 * time.Second},
-		{failures: 3, want: time.Minute},
-		{failures: 4, want: 2 * time.Minute},
-		{failures: 5, want: 4 * time.Minute},
-		{failures: 6, want: 5 * time.Minute},
-		{failures: 9, want: 5 * time.Minute},
+		{failures: 1, want: 2 * time.Minute},
+		{failures: 2, want: 5 * time.Minute},
+		{failures: 3, want: 10 * time.Minute},
+		{failures: 4, want: 15 * time.Minute},
+		{failures: 5, want: 15 * time.Minute},
+		{failures: 9, want: 15 * time.Minute},
 	}
 	for _, tt := range tests {
 		if got := appleAccountKeepAliveRetryDelay(tt.failures); got != tt.want {
 			t.Fatalf("retry delay for %d failures = %s, want %s", tt.failures, got, tt.want)
 		}
+	}
+}
+
+func TestAppleAccountKeepAliveAuthRetryDelayRemainsFast(t *testing.T) {
+	if got := appleAccountKeepAliveAuthRetryDelay(1); got != 10*time.Second {
+		t.Fatalf("auth retry delay = %s, want 10s", got)
+	}
+	if got := appleAccountKeepAliveAuthRetryDelay(2); got != 30*time.Second {
+		t.Fatalf("second auth retry delay = %s, want 30s", got)
 	}
 }
 
@@ -1569,6 +1577,15 @@ func TestAppleAccountKeepAliveIntervalRefreshesBeforeShortTokenTTL(t *testing.T)
 	}}}
 	if got := appleAccountKeepAliveIntervalForSession(session, 4*time.Minute); got != time.Minute {
 		t.Fatalf("adaptive keepalive interval = %s, want 1m", got)
+	}
+}
+
+func TestSchedulerTransientCreateFailureIncludesAppleAccountTransient(t *testing.T) {
+	if !schedulerTransientCreateFailure(createMailboxFailure{Code: "apple_account_transient", Channel: string(mailboxCreateChannelAppleAccount)}) {
+		t.Fatal("apple_account_transient should be retried on the Apple Account channel")
+	}
+	if schedulerTransientCreateFailure(createMailboxFailure{Code: "apple_account_transient", Channel: string(mailboxCreateChannelICloudWeb)}) {
+		t.Fatal("apple_account_transient should not retry the iCloud Web channel")
 	}
 }
 
@@ -2394,6 +2411,34 @@ func TestICloudClientKeepAliveUsesLightProbeWhileTokenWorks(t *testing.T) {
 	}
 	if !state.LastCheckOK || state.Scnt != "bootstrap-scnt" || state.KeepAliveLastSuccessAt.IsZero() || state.ManageExpiresAt.Before(time.Now().Add(14*time.Minute)) {
 		t.Fatalf("light keepalive state = %+v", state)
+	}
+}
+
+func TestICloudClientKeepAliveDoesNotDeepRefreshOnTransientProbeFailure(t *testing.T) {
+	oldBaseURL := appleAccountManageBaseURL
+	defer func() { appleAccountManageBaseURL = oldBaseURL }()
+	var paths []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/account/manage/forwardemail" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"temporarily unavailable"}`))
+			return
+		}
+		t.Fatalf("unexpected deep refresh request %s", r.URL.Path)
+	}))
+	defer ts.Close()
+	appleAccountManageBaseURL = ts.URL
+	state := LoginState{Kind: LoginStateAppleAccount, Origin: ts.URL, Scnt: "saved-scnt", APIKey: "saved-key"}
+	got, err := (&ICloudClient{client: ts.Client()}).KeepAliveAppleAccountManageState(t.Context(), state)
+	if !isCodedError(err, "apple_account_transient") {
+		t.Fatalf("keepalive error = %v, want transient", err)
+	}
+	if strings.Join(paths, "\n") != "/account/manage/forwardemail" {
+		t.Fatalf("paths = %#v, want only light probe", paths)
+	}
+	if got.APIKey != state.APIKey || got.Scnt != state.Scnt {
+		t.Fatalf("credentials changed on transient probe failure: got %+v", got)
 	}
 }
 

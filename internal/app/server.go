@@ -4440,6 +4440,17 @@ func appleAccountKeepAliveEligible(session ICloudSession) bool {
 
 func appleAccountKeepAliveRetryDelay(failures int) time.Duration {
 	if failures <= 1 {
+		return 2 * time.Minute
+	}
+	delay := 5 * time.Minute * time.Duration(1<<min(failures-2, 2))
+	if delay > 15*time.Minute {
+		return 15 * time.Minute
+	}
+	return delay
+}
+
+func appleAccountKeepAliveAuthRetryDelay(failures int) time.Duration {
+	if failures <= 1 {
 		return 10 * time.Second
 	}
 	delay := 30 * time.Second * time.Duration(1<<min(failures-2, 4))
@@ -4483,6 +4494,9 @@ func appleAccountKeepAliveFailureState(previous, next LoginState, failedAt time.
 		}
 	}
 	retryDelay := appleAccountKeepAliveRetryDelay(failures)
+	if appleAccountKeepAliveAuthError(err) {
+		retryDelay = appleAccountKeepAliveAuthRetryDelay(authFailures)
+	}
 	next.KeepAliveFailures = failures
 	next.KeepAliveAuthFailures = authFailures
 	next.KeepAliveLastSuccessAt = lastSuccessAt
@@ -4490,9 +4504,10 @@ func appleAccountKeepAliveFailureState(previous, next LoginState, failedAt time.
 	next.LastCheckedAt = failedAt
 	recentlyHealthy := !lastSuccessAt.IsZero() && failedAt.Sub(lastSuccessAt) <= appleAccountKeepAliveHealthyGrace
 	confirmingAuthFailure := authFailures > 0 && authFailures < 2
-	next.LastCheckOK = previous.LastCheckOK && recentlyHealthy && (!appleAccountKeepAliveAuthError(err) || confirmingAuthFailure)
-	if next.LastCheckOK {
-		next.LastStatusMessage = fmt.Sprintf("新接口保活恢复中（连续失败 %d 次，%s后重试）", failures, appleAccountKeepAliveRetryText(retryDelay))
+	transientFailure := appleAccountKeepAliveTransientError(err)
+	next.LastCheckOK = transientFailure || (previous.LastCheckOK && recentlyHealthy && (!appleAccountKeepAliveAuthError(err) || confirmingAuthFailure))
+	if transientFailure || next.LastCheckOK {
+		next.LastStatusMessage = fmt.Sprintf("新接口保活恢复中（连续失败 %d 次，%s后重试）：%s", failures, appleAccountKeepAliveRetryText(retryDelay), err.Error())
 	} else {
 		next.LastStatusMessage = fmt.Sprintf("新接口登录态异常（连续失败 %d 次，%s后自动复核）：%s", failures, appleAccountKeepAliveRetryText(retryDelay), err.Error())
 	}
@@ -4503,6 +4518,10 @@ func appleAccountKeepAliveAuthError(err error) bool {
 	return isCodedError(err, "apple_account_auth_failed") ||
 		isCodedError(err, "apple_account_auth_suspect") ||
 		isCodedError(err, "apple_account_session_missing")
+}
+
+func appleAccountKeepAliveTransientError(err error) bool {
+	return err != nil && !appleAccountKeepAliveAuthError(err) && isAppleAccountTransientError(err)
 }
 
 func appleAccountKeepAliveRetryText(delay time.Duration) string {

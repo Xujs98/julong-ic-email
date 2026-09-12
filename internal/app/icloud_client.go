@@ -68,7 +68,7 @@ func NewICloudClient() *ICloudClient {
 const mailboxSyncCursorOverlap = 2 * time.Minute
 const allMailboxMessagesKeyword = "__all_mailbox_messages__"
 const appleAccountManageRefreshSkew = 0 * time.Second
-const appleAccountKeepAliveDefaultInterval = 2 * time.Minute
+const appleAccountKeepAliveDefaultInterval = 10 * time.Minute
 const appleAccountKeepAliveTimeout = 60 * time.Second
 
 var appleAccountManageBaseURL = "https://appleid.apple.com"
@@ -410,6 +410,12 @@ func (c *ICloudClient) keepAliveAppleAccountManageStateUnlocked(ctx context.Cont
 			}
 			markAppleAccountManageOK(&loginState)
 			return loginState, nil
+		} else if !appleAccountKeepAliveAuthError(err) {
+			// A gateway outage, rate limit, timeout, or malformed transient
+			// response does not prove that the saved session is invalid. Keep the
+			// credentials intact and let the scheduler retry with backoff. Portal
+			// warming and token rotation create extra traffic during these outages.
+			return loginState, err
 		}
 	}
 

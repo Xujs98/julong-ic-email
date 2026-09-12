@@ -619,7 +619,7 @@ func nextSchedulerCreateChannelAfter(channels []mailboxCreateChannel, disabled m
 
 func schedulerTransientCreateFailure(failure createMailboxFailure) bool {
 	switch strings.TrimSpace(failure.Code) {
-	case "apple_account_generate_empty", "apple_account_api_failed", "apple_account_bad_response":
+	case "apple_account_generate_empty", "apple_account_api_failed", "apple_account_bad_response", "apple_account_transient":
 		return normalizeMailboxCreateChannel(mailboxCreateChannel(failure.Channel)) == mailboxCreateChannelAppleAccount
 	default:
 		return false
