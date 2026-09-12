@@ -207,6 +207,7 @@ type mailboxWatcherOwnerGroup struct {
 type mailboxWatcherIMAPGroup struct {
 	key       string
 	ownerID   string
+	accountID string
 	state     LoginState
 	mailboxes []Mailbox
 	signature string
@@ -4587,17 +4588,7 @@ func (s *Server) ensureMailWatcherIMAPBaseline(ctx context.Context, group mailbo
 	if strings.TrimSpace(uid) == "" {
 		return nil
 	}
-	accountID := ""
-	resolver := s.imapSessionResolverForOwner(group.ownerID)
-	for _, mailbox := range group.mailboxes {
-		session, state, ok := resolver.sessionForMailbox(mailbox)
-		if !ok || imapStateKey(state) != imapStateKey(group.state) {
-			continue
-		}
-		accountID = strings.TrimSpace(session.AccountID)
-		break
-	}
-	if _, err := s.store.SetICloudIMAPSyncCursor(group.ownerID, accountID, imapStateKey(group.state), time.Now(), uid); err != nil {
+	if _, err := s.store.SetICloudIMAPSyncCursor(group.ownerID, group.accountID, imapStateKey(group.state), time.Now(), uid); err != nil {
 		return err
 	}
 	return nil
@@ -4717,12 +4708,18 @@ func (s *Server) mailWatcherGroups() []mailboxWatcherOwnerGroup {
 	state := s.store.Snapshot()
 	activeIDs := s.activeMailWatcherMailboxIDs(time.Now())
 	byOwner := make(map[string][]Mailbox)
+	resolvers := make(map[string]imapSessionResolver)
 	for _, mailbox := range state.Mailboxes {
 		if mailbox.ProviderKind() != MailboxProviderICloud || !mailbox.APIActive || !mailbox.ICloudActive || mailbox.Status == StatusDisabled {
 			continue
 		}
 		ownerID := strings.TrimSpace(mailbox.OwnerID)
-		if _, ok := s.imapStateForMailbox(ownerID, mailbox); !ok {
+		resolver, ok := resolvers[ownerID]
+		if !ok {
+			resolver = s.imapSessionResolverForOwner(ownerID)
+			resolvers[ownerID] = resolver
+		}
+		if len(resolver.candidatesForMailbox(mailbox)) == 0 {
 			continue
 		}
 		byOwner[ownerID] = append(byOwner[ownerID], mailbox)
@@ -4752,26 +4749,32 @@ func (s *Server) mailWatcherIMAPGroups() []mailboxWatcherIMAPGroup {
 	state := s.store.Snapshot()
 	type bucket struct {
 		ownerID   string
+		accountID string
 		state     LoginState
 		mailboxes []Mailbox
 	}
 	buckets := make(map[string]*bucket)
+	resolvers := make(map[string]imapSessionResolver)
 	for _, mailbox := range state.Mailboxes {
 		if mailbox.ProviderKind() != MailboxProviderICloud || !mailbox.APIActive || !mailbox.ICloudActive || mailbox.Status == StatusDisabled {
 			continue
 		}
 		ownerID := strings.TrimSpace(mailbox.OwnerID)
-		imapState, ok := s.imapStateForMailbox(ownerID, mailbox)
+		resolver, ok := resolvers[ownerID]
 		if !ok {
-			continue
+			resolver = s.imapSessionResolverForOwner(ownerID)
+			resolvers[ownerID] = resolver
 		}
-		key := ownerID + "|" + imapStateKey(imapState)
-		item := buckets[key]
-		if item == nil {
-			item = &bucket{ownerID: ownerID, state: imapState}
-			buckets[key] = item
+		for _, match := range resolver.candidatesForMailbox(mailbox) {
+			accountID := strings.TrimSpace(match.session.AccountID)
+			key := ownerID + "|" + accountID + "|" + imapStateKey(match.state)
+			item := buckets[key]
+			if item == nil {
+				item = &bucket{ownerID: ownerID, accountID: accountID, state: match.state}
+				buckets[key] = item
+			}
+			item.mailboxes = append(item.mailboxes, mailbox)
 		}
-		item.mailboxes = append(item.mailboxes, mailbox)
 	}
 	keys := make([]string, 0, len(buckets))
 	for key := range buckets {
@@ -4787,6 +4790,7 @@ func (s *Server) mailWatcherIMAPGroups() []mailboxWatcherIMAPGroup {
 		groups = append(groups, mailboxWatcherIMAPGroup{
 			key:       key,
 			ownerID:   item.ownerID,
+			accountID: item.accountID,
 			state:     item.state,
 			mailboxes: item.mailboxes,
 			signature: mailWatcherIMAPGroupSignature(item.state, item.mailboxes),
@@ -4870,32 +4874,52 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 		session   ICloudSession
 		state     LoginState
 		mailboxes []Mailbox
+		fallback  bool
 	}
 	groups := make(map[string]*imapGroup)
 	order := make([]string, 0)
 	resolver := s.imapSessionResolverForOwner(ownerID)
 	for _, mailbox := range refreshed {
-		session, state, ok := resolver.sessionForMailbox(mailbox)
-		if !ok {
+		candidates := resolver.candidatesForMailbox(mailbox)
+		if len(candidates) == 0 {
 			return 0, errCode("imap_session_missing", "未保存取码登录，请先保存 iCloud 邮箱账号和 App 专用密码", true)
 		}
-		key := firstNonEmpty(strings.TrimSpace(session.AccountID), "__imap__") + "|" + imapStateKey(state)
-		group := groups[key]
-		if group == nil {
-			group = &imapGroup{session: session, state: state}
-			groups[key] = group
-			order = append(order, key)
+		_, exact := resolver.byAccount[strings.TrimSpace(mailbox.AccountID)]
+		for _, candidate := range candidates {
+			key := firstNonEmpty(strings.TrimSpace(candidate.session.AccountID), "__imap__") + "|" + imapStateKey(candidate.state)
+			group := groups[key]
+			if group == nil {
+				group = &imapGroup{session: candidate.session, state: candidate.state}
+				groups[key] = group
+				order = append(order, key)
+			}
+			group.mailboxes = append(group.mailboxes, mailbox)
+			group.fallback = group.fallback || !exact
 		}
-		group.mailboxes = append(group.mailboxes, mailbox)
 	}
 	now := time.Now()
 	synced := 0
+	succeeded := 0
+	var firstSyncErr error
 	for _, key := range order {
 		group := groups[key]
-		syncResult, err := syncFn(ctx, group.state, group.mailboxes, after, syncKeyword, maxMessages)
-		if err != nil {
-			return synced, err
+		state := group.state
+		mailboxes := group.mailboxes
+		if group.fallback {
+			state.IMAPLastSyncUID = ""
+			mailboxes = append([]Mailbox(nil), group.mailboxes...)
+			for index := range mailboxes {
+				mailboxes[index].LastSyncUID = ""
+			}
 		}
+		syncResult, err := syncFn(ctx, state, mailboxes, after, syncKeyword, maxMessages)
+		if err != nil {
+			if firstSyncErr == nil {
+				firstSyncErr = err
+			}
+			continue
+		}
+		succeeded++
 		messagesByMailbox := syncResult.MessagesByMailbox
 		if messagesByMailbox == nil {
 			messagesByMailbox = map[string][]ICloudSyncedMessage{}
@@ -4944,6 +4968,9 @@ func (s *Server) syncMailboxCodeBatchForOwnerWithLimit(ctx context.Context, owne
 		if _, err := s.store.SetICloudIMAPSyncCursor(ownerID, group.session.AccountID, imapStateKey(group.state), now, lastAccountUID); err != nil {
 			return synced, err
 		}
+	}
+	if succeeded == 0 && firstSyncErr != nil {
+		return synced, firstSyncErr
 	}
 	return synced, nil
 }
@@ -5645,6 +5672,7 @@ func (s *Server) imapStateForMailbox(ownerID string, mailbox Mailbox) (LoginStat
 
 type imapSessionResolver struct {
 	byAccount map[string]imapSessionMatch
+	all       []imapSessionMatch
 	single    imapSessionMatch
 	hasSingle bool
 }
@@ -5669,6 +5697,7 @@ func (s *Server) imapSessionResolverForOwner(ownerID string) imapSessionResolver
 		}
 		matches = append(matches, match)
 	}
+	resolver.all = append(resolver.all, matches...)
 	if len(matches) == 1 {
 		resolver.single = matches[0]
 		resolver.hasSingle = true
@@ -5684,6 +5713,13 @@ func (r imapSessionResolver) sessionForMailbox(mailbox Mailbox) (ICloudSession, 
 		return r.single.session, r.single.state, true
 	}
 	return ICloudSession{}, LoginState{}, false
+}
+
+func (r imapSessionResolver) candidatesForMailbox(mailbox Mailbox) []imapSessionMatch {
+	if match, ok := r.byAccount[strings.TrimSpace(mailbox.AccountID)]; ok {
+		return []imapSessionMatch{match}
+	}
+	return append([]imapSessionMatch(nil), r.all...)
 }
 
 func imapStateKey(state LoginState) string {

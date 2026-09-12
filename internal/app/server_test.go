@@ -5884,6 +5884,61 @@ func TestSyncMailboxCodeBatchStoresIMAPAccountCursor(t *testing.T) {
 	}
 }
 
+func TestSyncMailboxCodeBatchFindsMailboxAcrossSplitAccountSessions(t *testing.T) {
+	oldInterval := mailboxMailSyncMinInterval
+	mailboxMailSyncMinInterval = 0
+	t.Cleanup(func() { mailboxMailSyncMinInterval = oldInterval })
+
+	store := newTestStore(t)
+	ownerID := "owner-split-imap"
+	first := testIMAPSession(ownerID, "acc-imap-first", "first-receiver@icloud.com")
+	first.LoginStates[0].IMAPLastSyncUID = "400"
+	second := testIMAPSession(ownerID, "acc-imap-second", "second-receiver@icloud.com")
+	second.LoginStates[0].IMAPLastSyncUID = "8"
+	for _, session := range []ICloudSession{first, second} {
+		if err := store.SaveICloudSessionForOwner(ownerID, session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mailbox, err := store.AddMailboxForOwner(ownerID, "acc-create-only", "split", "split-alias@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewServer(Config{}, store, discardLogger()).(*Server)
+	var called []string
+	server.syncCodeMailboxBatchWithCursor = func(_ context.Context, state LoginState, mailboxes []Mailbox, _ time.Time, _ string, _ int) (iCloudIMAPSyncResult, error) {
+		called = append(called, state.IMAPEmail)
+		if state.IMAPLastSyncUID != "" || mailboxes[0].LastSyncUID != "" {
+			t.Fatalf("fallback sync kept an unrelated UID cursor: state=%q mailbox=%q", state.IMAPLastSyncUID, mailboxes[0].LastSyncUID)
+		}
+		result := iCloudIMAPSyncResult{LastUID: "401", MessagesByMailbox: map[string][]ICloudSyncedMessage{}}
+		if state.IMAPEmail == "second-receiver@icloud.com" {
+			result.LastUID = "8"
+			result.MessagesByMailbox[mailbox.ID] = []ICloudSyncedMessage{{
+				RemoteID:   "imap:8",
+				UID:        "8",
+				Subject:    "Your ChatGPT verification code",
+				Body:       "Use 864209 to continue.",
+				ReceivedAt: time.Now(),
+			}}
+		}
+		return result, nil
+	}
+
+	count, err := server.syncMailbox(context.Background(), mailbox, time.Now().Add(-24*time.Hour), "ChatGPT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || len(called) != 2 {
+		t.Fatalf("split-account sync count/calls = %d/%v, want one message from two candidate sessions", count, called)
+	}
+	messages := store.MessagesForMailbox(mailbox.ID)
+	if len(messages) != 1 || extractOTP(messages[0].Subject+"\n"+messages[0].Body) != "864209" {
+		t.Fatalf("split-account messages = %+v", messages)
+	}
+}
+
 func TestSyncMailboxCodeBatchSkipsEmptyMailboxCursorWrites(t *testing.T) {
 	oldInterval := mailboxMailSyncMinInterval
 	mailboxMailSyncMinInterval = 0
@@ -6082,6 +6137,38 @@ func TestEnsureMailWatcherIMAPBaselineStoresAccountUID(t *testing.T) {
 	}
 	if !updated.LastSyncAt.IsZero() || updated.LastSyncUID != "" {
 		t.Fatalf("mailbox cursor changed: LastSyncAt=%s LastSyncUID=%q", updated.LastSyncAt, updated.LastSyncUID)
+	}
+}
+
+func TestMailWatcherGroupsIncludeSplitAccountMailboxInEachIMAPInbox(t *testing.T) {
+	store := newTestStore(t)
+	ownerID := "owner-watcher-split"
+	for _, session := range []ICloudSession{
+		testIMAPSession(ownerID, "acc-imap-one", "one@icloud.com"),
+		testIMAPSession(ownerID, "acc-imap-two", "two@icloud.com"),
+	} {
+		if err := store.SaveICloudSessionForOwner(ownerID, session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mailbox, err := store.AddMailboxForOwner(ownerID, "acc-create-only", "split", "watcher-split@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewServer(Config{}, store, discardLogger()).(*Server)
+	ownerGroups := server.mailWatcherGroups()
+	if len(ownerGroups) != 1 || len(ownerGroups[0].mailboxes) != 1 || ownerGroups[0].mailboxes[0].ID != mailbox.ID {
+		t.Fatalf("watcher owner groups = %+v", ownerGroups)
+	}
+	groups := server.mailWatcherIMAPGroups()
+	if len(groups) != 2 {
+		t.Fatalf("watcher IMAP groups = %d, want 2", len(groups))
+	}
+	for _, group := range groups {
+		if group.accountID == "" || len(group.mailboxes) != 1 || group.mailboxes[0].ID != mailbox.ID {
+			t.Fatalf("invalid watcher IMAP group: %+v", group)
+		}
 	}
 }
 
