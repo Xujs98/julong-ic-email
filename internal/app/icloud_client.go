@@ -1169,7 +1169,7 @@ type appleAccountRawResponse struct {
 	Body       []byte
 }
 
-func (c *ICloudClient) fetchAppleAccountManageTokenScnt(ctx context.Context, loginState LoginState, result any) (string, error) {
+func (c *ICloudClient) fetchAppleAccountManageTokenScnt(ctx context.Context, loginState *LoginState, result any) (string, error) {
 	var scnt string
 	err := retryAppleTransient(ctx, func() error {
 		next, err := c.fetchAppleAccountManageTokenScntOnce(ctx, loginState, result)
@@ -1181,27 +1181,29 @@ func (c *ICloudClient) fetchAppleAccountManageTokenScnt(ctx context.Context, log
 		}
 		return nil
 	})
-	if err != nil && isAppleAccountTransientError(err) && appleAccountShouldTryAlternateManageHost(loginState) {
-		alternate := loginState
+	if err != nil && isAppleAccountTransientError(err) && appleAccountShouldTryAlternateManageHost(*loginState) {
+		alternate := *loginState
+		alternate.Cookies = append([]SessionCookie(nil), loginState.Cookies...)
 		alternate.Host = "account.apple.com"
 		alternate.Origin = "https://account.apple.com"
 		var alternateScnt string
 		alternateErr := retryAppleTransient(ctx, func() error {
-			next, nextErr := c.fetchAppleAccountManageTokenScntOnce(ctx, alternate, result)
+			next, nextErr := c.fetchAppleAccountManageTokenScntOnce(ctx, &alternate, result)
 			if strings.TrimSpace(next) != "" {
 				alternateScnt = next
 			}
 			return nextErr
 		})
 		if alternateErr == nil || strings.TrimSpace(alternateScnt) != "" {
+			*loginState = alternate
 			return alternateScnt, alternateErr
 		}
 	}
 	return scnt, err
 }
 
-func (c *ICloudClient) fetchAppleAccountManageTokenScntOnce(ctx context.Context, loginState LoginState, result any) (string, error) {
-	base, err := url.Parse(strings.TrimRight(appleAccountManageBaseForState(loginState), "/") + "/")
+func (c *ICloudClient) fetchAppleAccountManageTokenScntOnce(ctx context.Context, loginState *LoginState, result any) (string, error) {
+	base, err := url.Parse(strings.TrimRight(appleAccountManageBaseForState(*loginState), "/") + "/")
 	if err != nil {
 		return "", err
 	}
@@ -1231,11 +1233,13 @@ func (c *ICloudClient) fetchAppleAccountManageTokenScntOnce(ctx context.Context,
 		req.Header.Set("Cookie", cookie)
 	}
 
-	resp, err := c.client.Do(req)
+	resp, err := c.doAppleAccountRequest(req, loginState)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
+	mergeSessionCookies(&loginState.Cookies, resp.Request.URL, resp.Cookies())
+	updateAppleAccountLoginStateFromHeaders(loginState, resp.Header)
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return "", err

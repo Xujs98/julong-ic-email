@@ -53,6 +53,9 @@ type appleAuthEndpoints struct {
 }
 
 type appleAuthSession struct {
+	manageLoginMu       sync.Mutex
+	TwoFactorVerified   bool
+	ManageLoginState    *LoginState
 	Endpoints           appleAuthEndpoints
 	AppleID             string
 	ClientID            string
@@ -375,25 +378,37 @@ func (c *AppleAuthClient) Submit2FA(ctx context.Context, pending appleAuthPendin
 }
 
 func (c *AppleAuthClient) SubmitAppleAccountManage2FA(ctx context.Context, pending appleAuthPending, code string, phoneNumber json.RawMessage) (ICloudSession, error) {
-	code = strings.TrimSpace(code)
-	if len(code) != 6 {
-		return ICloudSession{}, errCode("invalid_2fa_code", "2FA 验证码必须是 6 位", false)
+	if pending.Session == nil {
+		return ICloudSession{}, errCode("apple_login_pending_expired", "新接口登录已过期，请重新发起登录", true)
 	}
 	session := pending.Session
-	switch session.TwoFactorMethod {
-	case appleTwoFactorMethodPhone:
-		if err := c.validatePhoneSecurityCode(ctx, session, code, phoneNumber); err != nil {
-			return ICloudSession{}, err
+	session.manageLoginMu.Lock()
+	defer session.manageLoginMu.Unlock()
+	code = strings.TrimSpace(code)
+	if !session.TwoFactorVerified && len(code) != 6 {
+		return ICloudSession{}, errCode("invalid_2fa_code", "2FA 验证码必须是 6 位", false)
+	}
+	if !session.TwoFactorVerified {
+		switch session.TwoFactorMethod {
+		case appleTwoFactorMethodPhone:
+			if err := c.validatePhoneSecurityCode(ctx, session, code, phoneNumber); err != nil {
+				return ICloudSession{}, err
+			}
+		default:
+			if err := c.validateTrustedDeviceCode(ctx, session, code); err != nil {
+				return ICloudSession{}, err
+			}
 		}
-	default:
-		if err := c.validateTrustedDeviceCode(ctx, session, code); err != nil {
-			return ICloudSession{}, err
+		session.TwoFactorVerified = true
+		if err := c.trustSession(ctx, session); err != nil && os.Getenv("IPM_DEBUG_APPLE_ACCOUNT") == "1" {
+			fmt.Fprintf(os.Stderr, "APPLE_ACCOUNT_TRUST_DEBUG status=skipped err=%s\n", err.Error())
 		}
 	}
-	if err := c.trustSession(ctx, session); err != nil && os.Getenv("IPM_DEBUG_APPLE_ACCOUNT") == "1" {
-		fmt.Fprintf(os.Stderr, "APPLE_ACCOUNT_TRUST_DEBUG status=skipped err=%s\n", err.Error())
+	result, err := c.authWithAppleAccountManage(ctx, session)
+	if err != nil {
+		return ICloudSession{}, errCode("apple_account_login_incomplete", "验证码已通过，但管理会话尚未建立；请在本次登录有效期内再次点击提交以继续完成登录，无需重新获取验证码："+err.Error(), true)
 	}
-	return c.authWithAppleAccountManage(ctx, session)
+	return result, nil
 }
 
 func (c *AppleAuthClient) submit2FAWithSession(ctx context.Context, session *appleAuthSession, code string) (ICloudSession, error) {
@@ -674,7 +689,9 @@ func (c *AppleAuthClient) primeAppleAccountManageState(ctx context.Context, sess
 		Host:      "appleid.apple.com",
 		Origin:    appleAccountManageOrigin,
 		UserAgent: firstNonEmpty(session.UserAgent, appleAccountManageUserAgent),
+		Cookies:   session.cloneCookies(),
 	}
+	defer func() { session.Cookies = append([]SessionCookie(nil), state.Cookies...) }()
 	client := &ICloudClient{client: c.httpClient}
 	if err := client.warmAppleAccountPortal(ctx, &state); err != nil {
 		return err
@@ -682,9 +699,8 @@ func (c *AppleAuthClient) primeAppleAccountManageState(ctx context.Context, sess
 	var token struct {
 		TimeOutInterval int `json:"timeOutInterval"`
 	}
-	tokenState := state
-	tokenState.Scnt = ""
-	scnt, err := client.fetchAppleAccountManageTokenScnt(ctx, tokenState, &token)
+	state.Scnt = ""
+	scnt, err := client.fetchAppleAccountManageTokenScnt(ctx, &state, &token)
 	if err != nil {
 		if strings.TrimSpace(scnt) == "" {
 			return err
@@ -861,7 +877,14 @@ func (c *AppleAuthClient) authWithAppleAccountManage(ctx context.Context, sessio
 		UserAgent: appleAccountManageUserAgent,
 		Note:      "Apple Account management login state",
 	}
+	if session.ManageLoginState != nil {
+		loginState = *session.ManageLoginState
+		loginState.Cookies = append([]SessionCookie(nil), session.ManageLoginState.Cookies...)
+	}
 	refreshed, err := (&ICloudClient{client: c.httpClient}).RefreshAppleAccountManageState(ctx, loginState)
+	// A failed token response can rotate cookies/scnt. Keep them for completion
+	// retries without changing the authentication-domain challenge or replaying OTP.
+	session.ManageLoginState = &refreshed
 	if err != nil {
 		return ICloudSession{}, err
 	}
@@ -989,7 +1012,25 @@ func (c *AppleAuthClient) do(ctx context.Context, session *appleAuthSession, met
 	if cookie := cookieHeader(session.Cookies, rawURL); cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}
-	resp, err := c.httpClient.Do(req)
+	client := *c.httpClient
+	previousCheckRedirect := client.CheckRedirect
+	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if next.Response != nil {
+			session.extract(next.Response)
+		}
+		next.Header.Del("Cookie")
+		if cookie := cookieHeader(session.Cookies, next.URL.String()); cookie != "" {
+			next.Header.Set("Cookie", cookie)
+		}
+		if previousCheckRedirect != nil {
+			return previousCheckRedirect(next, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, nil, err
 	}
