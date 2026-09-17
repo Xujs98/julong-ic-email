@@ -4574,7 +4574,7 @@ func (s *Server) ensureMailWatcherIdleWorkers(ctx context.Context, workers map[s
 			worker.cancel()
 		}
 		if err := s.ensureMailWatcherIMAPBaseline(ctx, group); err != nil {
-			if s.logger != nil {
+			if s.logger != nil && !isIMAPCooldown(err) {
 				s.logger.Warn("mail watcher imap baseline failed", "owner", s.ownerName(group.ownerID), "mailboxes", len(group.mailboxes), "err", err)
 			}
 			continue
@@ -4623,17 +4623,23 @@ func (s *Server) runMailWatcherIdleWorker(ctx context.Context, group mailboxWatc
 			syncCtx, cancel := context.WithTimeout(ctx, mailWatcherSyncTimeout)
 			_, syncErr := s.syncMailboxCodeBatchForOwnerWithLimit(syncCtx, group.ownerID, group.mailboxes, time.Time{}, "ChatGPT", s.mailWatcherFetchLimit)
 			cancel()
-			if syncErr != nil && ctx.Err() == nil && s.logger != nil {
+			if syncErr != nil && !isIMAPCooldown(syncErr) && ctx.Err() == nil && s.logger != nil {
 				s.logger.Warn("mail watcher idle sync failed", "owner", s.ownerName(group.ownerID), "mailboxes", len(group.mailboxes), "err", syncErr)
 			}
 		})
 		if ctx.Err() != nil {
 			return
 		}
-		if err != nil && s.logger != nil {
+		if err != nil && !isIMAPCooldown(err) && s.logger != nil {
 			s.logger.Warn("mail watcher idle disconnected", "owner", s.ownerName(group.ownerID), "mailboxes", len(group.mailboxes), "err", err)
 		}
-		timer := time.NewTimer(backoff)
+		delay := backoff
+		if isCodedError(err, "imap_auth_rejected") || isCodedError(err, "imap_auth_cooldown") {
+			delay = imapAuthRetryDelay
+		} else if isIMAPCooldown(err) {
+			delay = imapTransientRetryDelay
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -4672,7 +4678,7 @@ func (s *Server) syncMailWatcherRound(ctx context.Context, initial bool) {
 		syncCtx, cancel := context.WithTimeout(ctx, mailWatcherSyncTimeout)
 		_, err := s.syncMailboxCodeBatchForOwnerWithLimit(syncCtx, group.ownerID, group.mailboxes, after, "OpenAI", fetchLimit)
 		cancel()
-		if err != nil && ctx.Err() == nil && s.logger != nil {
+		if err != nil && !isIMAPCooldown(err) && ctx.Err() == nil && s.logger != nil {
 			s.logger.Warn("mail watcher sync failed", "owner", s.ownerName(group.ownerID), "mailboxes", len(group.mailboxes), "initial", initial, "err", err)
 		}
 	}

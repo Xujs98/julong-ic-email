@@ -422,29 +422,11 @@ func CheckICloudIMAPLogin(ctx context.Context, email, appPassword string) error 
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 
-	conn, err := dialICloudIMAPTLS(ctx, defaultICloudIMAPHost, defaultICloudIMAPPort)
+	conn, reader, err := openICloudIMAPSession(ctx, LoginState{IMAPEmail: email, IMAPUsername: email, IMAPAppPassword: appPassword})
 	if err != nil {
-		return errCode("imap_connect_failed", "连接 iCloud IMAP 失败："+err.Error(), true)
+		return err
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(25 * time.Second))
-
-	reader := bufio.NewReader(conn)
-	greeting, err := reader.ReadString('\n')
-	if err != nil {
-		return errCode("imap_greeting_failed", "读取 iCloud IMAP 欢迎信息失败："+err.Error(), true)
-	}
-	if !strings.Contains(strings.ToUpper(greeting), "OK") {
-		return errCode("imap_greeting_failed", "iCloud IMAP 未就绪："+imapResponseSummary([]string{greeting}), true)
-	}
-
-	loginLines, err := imapCommand(conn, reader, "A001", "LOGIN "+imapQuote(email)+" "+imapQuote(appPassword))
-	if err != nil {
-		return errCode("imap_login_failed", "iCloud IMAP 登录请求失败："+err.Error(), true)
-	}
-	if !imapTaggedOK(loginLines, "A001") {
-		return errCode("imap_login_failed", "iCloud IMAP 登录失败，请确认 iCloud 邮箱账号和 App 专用密码："+imapResponseSummary(loginLines), false)
-	}
 
 	selectLines, err := imapCommand(conn, reader, "A002", "SELECT INBOX")
 	if err != nil {
@@ -465,36 +447,14 @@ func WatchICloudIMAPExists(ctx context.Context, state LoginState, onExists func(
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	conn, err := dialICloudIMAPTLS(ctx, state.IMAPHost, state.IMAPPort)
+	conn, reader, err := openICloudIMAPSession(ctx, state)
 	if err != nil {
-		return errCode("imap_connect_failed", "连接 iCloud IMAP 失败："+err.Error(), true)
+		return err
 	}
 	defer conn.Close()
-	stopClose := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = conn.Close()
-		case <-stopClose:
-		}
-	}()
-	defer close(stopClose)
+	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopClose()
 
-	reader := bufio.NewReader(conn)
-	greeting, err := reader.ReadString('\n')
-	if err != nil {
-		return errCode("imap_greeting_failed", "读取 iCloud IMAP 欢迎信息失败："+err.Error(), true)
-	}
-	if !strings.Contains(strings.ToUpper(greeting), "OK") {
-		return errCode("imap_greeting_failed", "iCloud IMAP 未就绪："+imapResponseSummary([]string{greeting}), true)
-	}
-	loginLines, err := imapCommand(conn, reader, "A001", "LOGIN "+imapQuote(state.IMAPUsername)+" "+imapQuote(state.IMAPAppPassword))
-	if err != nil {
-		return errCode("imap_login_failed", "iCloud IMAP 登录请求失败："+err.Error(), true)
-	}
-	if !imapTaggedOK(loginLines, "A001") {
-		return errCode("imap_login_failed", "iCloud IMAP 登录失败，请确认 iCloud 邮箱账号和 App 专用密码："+imapResponseSummary(loginLines), false)
-	}
 	selectLines, err := imapCommand(conn, reader, "A002", "SELECT INBOX")
 	if err != nil {
 		return errCode("imap_select_failed", "打开 iCloud 收件箱失败："+err.Error(), true)
@@ -603,9 +563,9 @@ func imapCommandWithLiterals(conn net.Conn, reader *bufio.Reader, tag, command s
 
 func imapTaggedOK(lines []string, tag string) bool {
 	for _, line := range lines {
-		upper := strings.ToUpper(strings.TrimSpace(line))
-		if strings.HasPrefix(upper, strings.ToUpper(tag)+" ") {
-			return strings.Contains(upper, " OK")
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && strings.EqualFold(fields[0], tag) {
+			return strings.EqualFold(fields[1], "OK")
 		}
 	}
 	return false
@@ -639,28 +599,12 @@ func LatestICloudIMAPUID(ctx context.Context, state LoginState) (string, error) 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	conn, err := dialICloudIMAPTLS(ctx, state.IMAPHost, state.IMAPPort)
+	conn, reader, err := openICloudIMAPSession(ctx, state)
 	if err != nil {
-		return "", errCode("imap_connect_failed", "连接 iCloud IMAP 失败："+err.Error(), true)
+		return "", err
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 
-	reader := bufio.NewReader(conn)
-	greeting, err := reader.ReadString('\n')
-	if err != nil {
-		return "", errCode("imap_greeting_failed", "读取 iCloud IMAP 欢迎信息失败："+err.Error(), true)
-	}
-	if !strings.Contains(strings.ToUpper(greeting), "OK") {
-		return "", errCode("imap_greeting_failed", "iCloud IMAP 未就绪："+imapResponseSummary([]string{greeting}), true)
-	}
-	loginLines, err := imapCommand(conn, reader, "A001", "LOGIN "+imapQuote(state.IMAPUsername)+" "+imapQuote(state.IMAPAppPassword))
-	if err != nil {
-		return "", errCode("imap_login_failed", "iCloud IMAP 登录请求失败："+err.Error(), true)
-	}
-	if !imapTaggedOK(loginLines, "A001") {
-		return "", errCode("imap_login_failed", "iCloud IMAP 登录失败，请确认 iCloud 邮箱账号和 App 专用密码："+imapResponseSummary(loginLines), false)
-	}
 	selectLines, err := imapCommand(conn, reader, "A002", "SELECT INBOX")
 	if err != nil {
 		return "", errCode("imap_select_failed", "打开 iCloud 收件箱失败："+err.Error(), true)
@@ -696,28 +640,12 @@ func SyncICloudIMAPMessagesWithCursor(ctx context.Context, state LoginState, mai
 
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	conn, err := dialICloudIMAPTLS(ctx, state.IMAPHost, state.IMAPPort)
+	conn, reader, err := openICloudIMAPSession(ctx, state)
 	if err != nil {
-		return iCloudIMAPSyncResult{}, errCode("imap_connect_failed", "连接 iCloud IMAP 失败："+err.Error(), true)
+		return iCloudIMAPSyncResult{}, err
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(60 * time.Second))
 
-	reader := bufio.NewReader(conn)
-	greeting, err := reader.ReadString('\n')
-	if err != nil {
-		return iCloudIMAPSyncResult{}, errCode("imap_greeting_failed", "读取 iCloud IMAP 欢迎信息失败："+err.Error(), true)
-	}
-	if !strings.Contains(strings.ToUpper(greeting), "OK") {
-		return iCloudIMAPSyncResult{}, errCode("imap_greeting_failed", "iCloud IMAP 未就绪："+imapResponseSummary([]string{greeting}), true)
-	}
-	loginLines, err := imapCommand(conn, reader, "A001", "LOGIN "+imapQuote(state.IMAPUsername)+" "+imapQuote(state.IMAPAppPassword))
-	if err != nil {
-		return iCloudIMAPSyncResult{}, errCode("imap_login_failed", "iCloud IMAP 登录请求失败："+err.Error(), true)
-	}
-	if !imapTaggedOK(loginLines, "A001") {
-		return iCloudIMAPSyncResult{}, errCode("imap_login_failed", "iCloud IMAP 登录失败，请确认 iCloud 邮箱账号和 App 专用密码："+imapResponseSummary(loginLines), false)
-	}
 	selectLines, err := imapCommand(conn, reader, "A002", "SELECT INBOX")
 	if err != nil {
 		return iCloudIMAPSyncResult{}, errCode("imap_select_failed", "打开 iCloud 收件箱失败："+err.Error(), true)
