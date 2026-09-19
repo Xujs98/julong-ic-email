@@ -104,6 +104,10 @@ func isIMAPCooldown(err error) bool {
 	return isCodedError(err, "imap_auth_cooldown") || isCodedError(err, "imap_retry_cooldown")
 }
 
+func isIMAPCredentialRejected(err error) bool {
+	return isCodedError(err, "imap_auth_rejected") || isCodedError(err, "imap_auth_cooldown")
+}
+
 func openICloudIMAPSession(ctx context.Context, state LoginState) (net.Conn, *bufio.Reader, error) {
 	return iCloudIMAPAuth.open(ctx, state, dialICloudIMAPTLS)
 }

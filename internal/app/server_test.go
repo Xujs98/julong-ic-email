@@ -212,6 +212,27 @@ func TestAppleLoginTemplateRequiresPrimaryPassword(t *testing.T) {
 	}
 }
 
+func TestSessionAutoRefreshDoesNotReauthenticateApple(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`开启自动刷新`,
+		`不会向 Apple 重复认证`,
+		`refresh().catch(err => log('自动状态刷新异常：' + err.message))`,
+		`account_id: options.checkAll ? '' : accountID`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("session refresh source missing %q", want)
+		}
+	}
+	if strings.Contains(source, `checkICloudSession({auto: true})`) {
+		t.Fatal("automatic status refresh still triggers active Apple authentication")
+	}
+}
+
 func TestAppleAccountKeepAliveTemplateShowsAutomaticRetry(t *testing.T) {
 	data, err := webFS.ReadFile("templates/index.html")
 	if err != nil {
@@ -4551,6 +4572,32 @@ func TestCheckICloudIMAPLoginSupportsCurrentAndAllAccounts(t *testing.T) {
 	}
 }
 
+func TestCheckSavedLoginStatesReusesAuthenticatedIMAPUsername(t *testing.T) {
+	checkedAt := time.Now()
+	session := testIMAPSession("imap-check-owner", "imap-check-account", "receiver@icloud.com")
+	state, _ := iCloudIMAPLoginState(session)
+	state.IMAPUsername = "receiver@icloud.com"
+	session = withICloudIMAPLoginState(session, state)
+	var checkedUsername string
+	updated, ok, err := checkSavedLoginStatesWithIMAP(
+		context.Background(),
+		NewICloudClient(),
+		session,
+		checkedAt,
+		func(ctx context.Context, email, appPassword, username string) (string, error) {
+			checkedUsername = username
+			return username, nil
+		},
+	)
+	if err != nil || !ok {
+		t.Fatalf("checkSavedLoginStatesWithIMAP err=%v ok=%v", err, ok)
+	}
+	updatedState, found := iCloudIMAPLoginState(updated)
+	if checkedUsername != "receiver@icloud.com" || !found || updatedState.IMAPUsername != checkedUsername || !updatedState.LastCheckOK {
+		t.Fatalf("checked username/state = %q/%+v found=%v", checkedUsername, updatedState, found)
+	}
+}
+
 func TestCheckICloudIMAPLoginUsesInputCredentialsWithoutSavingThem(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
@@ -6394,6 +6441,87 @@ func TestMailWatcherIMAPGroupSignatureIgnoresMailboxSyncCursor(t *testing.T) {
 	}})
 	if before != after {
 		t.Fatalf("signature changed after LastSyncUID update: %q vs %q", before, after)
+	}
+	state.IMAPAppPassword = "replacement-app-specific-password"
+	changedCredential := mailWatcherIMAPGroupSignature(state, []Mailbox{{
+		ID:          "mbx_1",
+		Email:       "alias@icloud.com",
+		LastSyncUID: "200",
+	}})
+	if changedCredential == after {
+		t.Fatal("signature did not change after App-specific password update")
+	}
+	state.IMAPAppPassword = "app-specific-password"
+	state.SavedAt = state.SavedAt.Add(time.Second)
+	resavedCredential := mailWatcherIMAPGroupSignature(state, []Mailbox{{
+		ID:          "mbx_1",
+		Email:       "alias@icloud.com",
+		LastSyncUID: "200",
+	}})
+	if resavedCredential == after {
+		t.Fatal("signature did not change after credentials were saved again")
+	}
+}
+
+func TestMailWatcherPausesRejectedIMAPUntilCredentialsChange(t *testing.T) {
+	store := newTestStore(t)
+	ownerID := "owner-imap-paused"
+	accountID := "acc-imap-paused"
+	session := testIMAPSession(ownerID, accountID, "paused@icloud.com")
+	if err := store.SaveICloudSessionForOwner(ownerID, session); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := store.AddMailboxForOwner(ownerID, accountID, "paused", "paused.alias@icloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(Config{}, store, discardLogger()).(*Server)
+	groups := server.mailWatcherIMAPGroups()
+	if len(groups) != 1 || len(groups[0].mailboxes) != 1 || groups[0].mailboxes[0].ID != mailbox.ID {
+		t.Fatalf("initial IMAP groups = %+v", groups)
+	}
+	oldSignature := groups[0].signature
+	server.markMailWatcherIMAPAuthRejected(groups[0], errCode("imap_auth_rejected", "rejected", false))
+
+	stored, ok := store.ICloudSessionForOwnerAccount(ownerID, accountID)
+	if !ok {
+		t.Fatal("stored session missing")
+	}
+	state, ok := iCloudIMAPLoginState(stored)
+	if !ok || !state.IMAPAutoRetryBlocked || state.LastCheckOK || !strings.Contains(state.LastStatusMessage, "自动重试已暂停") {
+		t.Fatalf("paused IMAP state = %+v ok=%v", state, ok)
+	}
+	if groups := server.mailWatcherIMAPGroups(); len(groups) != 0 {
+		t.Fatalf("rejected credentials still scheduled: %+v", groups)
+	}
+
+	state.IMAPAppPassword = "replacement-app-specific-password"
+	state.IMAPAutoRetryBlocked = false
+	state.LastCheckedAt = time.Now()
+	state.LastCheckOK = true
+	state.LastStatusMessage = "取码登录正常"
+	stored = withICloudIMAPLoginState(stored, state)
+	if err := store.SaveICloudSessionForOwner(ownerID, stored); err != nil {
+		t.Fatal(err)
+	}
+	groups = server.mailWatcherIMAPGroups()
+	if len(groups) != 1 || groups[0].signature == oldSignature {
+		t.Fatalf("replacement credentials did not restart watcher: %+v", groups)
+	}
+}
+
+func TestIMAPLoginStateAutoRetryEligibleMigratesRejectedStatus(t *testing.T) {
+	state := LoginState{
+		LastCheckedAt:     time.Now(),
+		LastCheckOK:       false,
+		LastStatusMessage: "取码登录异常：Apple 同时拒绝邮箱账号名前缀和完整邮箱地址两种 IMAP 用户名",
+	}
+	if imapLoginStateAutoRetryEligible(state) {
+		t.Fatal("legacy rejected status remained eligible for automatic retry")
+	}
+	state.LastStatusMessage = "连接 iCloud IMAP 失败：temporary network error"
+	if !imapLoginStateAutoRetryEligible(state) {
+		t.Fatal("transient connection failure should remain eligible for automatic retry")
 	}
 }
 

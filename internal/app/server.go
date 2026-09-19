@@ -1704,9 +1704,8 @@ func (s *Server) handleCheckICloudSession(w http.ResponseWriter, r *http.Request
 	client := NewICloudClient()
 	failed := 0
 	var lastErr error
-	imapChecker := func(ctx context.Context, email, appPassword string) error {
-		_, err := s.checkSavedIMAPLogin(ctx, email, appPassword, "")
-		return err
+	imapChecker := func(ctx context.Context, email, appPassword, username string) (string, error) {
+		return s.checkSavedIMAPLogin(ctx, email, appPassword, username)
 	}
 	for _, session := range sessions {
 		checkedSession, ok, err := checkSavedLoginStatesWithIMAP(r.Context(), client, session, checkedAt, imapChecker)
@@ -1895,11 +1894,13 @@ func (s *Server) handleCheckICloudIMAPLogin(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			failed++
 			lastErr = err
+			state.IMAPAutoRetryBlocked = isIMAPCredentialRejected(err)
 			state.LastCheckedAt = checkedAt
 			state.LastCheckOK = false
 			state.LastStatusMessage = "取码登录异常：" + err.Error()
 		} else {
 			state.IMAPUsername = username
+			state.IMAPAutoRetryBlocked = false
 			state.LastCheckedAt = checkedAt
 			state.LastCheckOK = true
 			state.LastStatusMessage = "取码登录正常"
@@ -2047,10 +2048,10 @@ func sameICloudSessionPublicIdentity(a, b ICloudSession) bool {
 }
 
 func checkSavedLoginStates(ctx context.Context, client *ICloudClient, session ICloudSession, checkedAt time.Time) (ICloudSession, bool, error) {
-	return checkSavedLoginStatesWithIMAP(ctx, client, session, checkedAt, CheckICloudIMAPLogin)
+	return checkSavedLoginStatesWithIMAP(ctx, client, session, checkedAt, checkICloudIMAPLoginWithUsername)
 }
 
-func checkSavedLoginStatesWithIMAP(ctx context.Context, client *ICloudClient, session ICloudSession, checkedAt time.Time, imapChecker func(context.Context, string, string) error) (ICloudSession, bool, error) {
+func checkSavedLoginStatesWithIMAP(ctx context.Context, client *ICloudClient, session ICloudSession, checkedAt time.Time, imapChecker func(context.Context, string, string, string) (string, error)) (ICloudSession, bool, error) {
 	var parts []string
 	checks := 0
 	successes := 0
@@ -2107,16 +2108,20 @@ func checkSavedLoginStatesWithIMAP(ctx context.Context, client *ICloudClient, se
 		checks++
 		state, _ := iCloudIMAPLoginState(session)
 		if imapChecker == nil {
-			imapChecker = CheckICloudIMAPLogin
+			imapChecker = checkICloudIMAPLoginWithUsername
 		}
-		if err := imapChecker(ctx, state.IMAPEmail, state.IMAPAppPassword); err != nil {
+		username, err := imapChecker(ctx, state.IMAPEmail, state.IMAPAppPassword, state.IMAPUsername)
+		if err != nil {
 			lastErr = err
+			state.IMAPAutoRetryBlocked = isIMAPCredentialRejected(err)
 			state.LastCheckedAt = checkedAt
 			state.LastCheckOK = false
 			state.LastStatusMessage = "取码登录异常：" + err.Error()
 			session = withICloudIMAPLoginState(session, state)
 			parts = append(parts, "取码登录异常")
 		} else {
+			state.IMAPUsername = username
+			state.IMAPAutoRetryBlocked = false
 			state.LastCheckedAt = checkedAt
 			state.LastCheckOK = true
 			state.LastStatusMessage = "取码登录正常"
@@ -4685,13 +4690,15 @@ func (s *Server) runMailWatcherIdleWorker(ctx context.Context, group mailboxWatc
 		if ctx.Err() != nil {
 			return
 		}
+		if isIMAPCredentialRejected(err) {
+			s.markMailWatcherIMAPAuthRejected(group, err)
+			return
+		}
 		if err != nil && !isIMAPCooldown(err) && s.logger != nil {
 			s.logger.Warn("mail watcher idle disconnected", "owner", s.ownerName(group.ownerID), "mailboxes", len(group.mailboxes), "err", err)
 		}
 		delay := backoff
-		if isCodedError(err, "imap_auth_rejected") || isCodedError(err, "imap_auth_cooldown") {
-			delay = imapAuthRetryDelay
-		} else if isIMAPCooldown(err) {
+		if isIMAPCooldown(err) {
 			delay = imapTransientRetryDelay
 		}
 		timer := time.NewTimer(delay)
@@ -4705,6 +4712,47 @@ func (s *Server) runMailWatcherIdleWorker(ctx context.Context, group mailboxWatc
 			backoff *= 2
 		}
 	}
+}
+
+func (s *Server) markMailWatcherIMAPAuthRejected(group mailboxWatcherIMAPGroup, authErr error) {
+	session, ok := s.sessionForOwnerAccount(group.ownerID, group.accountID)
+	if !ok {
+		session, ok = s.sessionForOwnerIMAPEmail(group.ownerID, group.state.IMAPEmail)
+	}
+	if !ok {
+		return
+	}
+	state, ok := iCloudIMAPLoginState(session)
+	if !ok || imapAuthKey(state) != imapAuthKey(group.state) {
+		return
+	}
+	now := time.Now()
+	state.IMAPAutoRetryBlocked = true
+	state.LastCheckedAt = now
+	state.LastCheckOK = false
+	state.LastStatusMessage = "取码登录被 Apple 拒绝；后台自动重试已暂停，保存新的 App 专用密码后恢复"
+	session = withICloudIMAPLoginState(session, state)
+	session.LastCheckedAt = now
+	session.LastCheckOK = false
+	session.LastStatusMessage = state.LastStatusMessage
+	if err := s.store.SaveICloudSessionForOwner(group.ownerID, session); err != nil {
+		if s.logger != nil {
+			s.logger.Warn("mail watcher failed to persist imap pause", "account_id", group.accountID, "err", err)
+		}
+		return
+	}
+	if s.logger != nil {
+		s.logger.Warn("mail watcher imap authentication paused", "account_id", group.accountID, "code", codedErrorCode(authErr))
+	}
+	s.pokeMailWatcher()
+}
+
+func codedErrorCode(err error) string {
+	var coded codedError
+	if errors.As(err, &coded) {
+		return coded.code
+	}
+	return "uncoded"
 }
 
 func (s *Server) syncMailWatcherRound(ctx context.Context, initial bool) {
@@ -4846,6 +4894,9 @@ func (s *Server) mailWatcherIMAPGroups() []mailboxWatcherIMAPGroup {
 			resolvers[ownerID] = resolver
 		}
 		for _, match := range resolver.candidatesForMailbox(mailbox) {
+			if !imapLoginStateAutoRetryEligible(match.state) {
+				continue
+			}
 			accountID := strings.TrimSpace(match.session.AccountID)
 			key := ownerID + "|" + accountID + "|" + imapStateKey(match.state)
 			item := buckets[key]
@@ -4880,16 +4931,33 @@ func (s *Server) mailWatcherIMAPGroups() []mailboxWatcherIMAPGroup {
 }
 
 func mailWatcherIMAPGroupSignature(state LoginState, mailboxes []Mailbox) string {
+	credentialKey := imapAuthKey(state)
 	parts := []string{
 		normalizeICloudIMAPEmail(state.IMAPEmail),
 		strings.TrimSpace(state.IMAPUsername),
 		state.IMAPHost,
 		strconv.Itoa(state.IMAPPort),
+		state.SavedAt.UTC().Format(time.RFC3339Nano),
+		fmt.Sprintf("%x", credentialKey[:]),
 	}
 	for _, mailbox := range mailboxes {
 		parts = append(parts, strings.TrimSpace(mailbox.ID), normalizeICloudIMAPEmail(mailbox.Email))
 	}
 	return strings.Join(parts, "|")
+}
+
+func imapLoginStateAutoRetryEligible(state LoginState) bool {
+	if state.IMAPAutoRetryBlocked {
+		return false
+	}
+	if state.LastCheckedAt.IsZero() || state.LastCheckOK {
+		return true
+	}
+	message := strings.ToLower(strings.TrimSpace(state.LastStatusMessage))
+	return !strings.Contains(message, "apple 拒绝 imap") &&
+		!strings.Contains(message, "apple 同时拒绝") &&
+		!strings.Contains(message, "authenticationfailed") &&
+		!strings.Contains(message, "authorizationfailed")
 }
 
 func (s *Server) syncMailbox(ctx context.Context, mailbox Mailbox, after time.Time, keyword string) (int, error) {

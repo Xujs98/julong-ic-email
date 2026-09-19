@@ -2542,9 +2542,9 @@
             </div>
           </div>
           <div class="field-grid">
-            <label>自动检测间隔（分钟）<input id="sessionCheckMinutes" type="number" min="1" max="120" value="3" onchange="saveSessionCheckSettings()" placeholder="3"></label>
-            <label class="checkline"><input id="autoSessionCheck" type="checkbox" onchange="saveSessionCheckSettings()"> 开启自动检测</label>
-            <div class="full muted" id="sessionCheckStatus">自动检测未开启。</div>
+            <label>状态刷新间隔（分钟）<input id="sessionCheckMinutes" type="number" min="1" max="120" value="3" onchange="saveSessionCheckSettings()" placeholder="3"></label>
+            <label class="checkline"><input id="autoSessionCheck" type="checkbox" onchange="saveSessionCheckSettings()"> 开启自动刷新</label>
+            <div class="full muted" id="sessionCheckStatus">自动状态刷新未开启。</div>
           </div>
         </section>
 
@@ -5302,27 +5302,35 @@
       const minutes = boundedInt('sessionCheckMinutes', 3, 1, 120);
       if (!$('sessionCheckStatus')) return;
       if (!enabled) {
-        $('sessionCheckStatus').textContent = '自动检测未开启。需要时可手动点击“检测登录态”。';
+        $('sessionCheckStatus').textContent = '自动状态刷新未开启。需要时可手动点击“检测登录态”。';
         return;
       }
-      $('sessionCheckStatus').textContent = `自动检测已开启：每 ${minutes} 分钟检测一次。`;
+      $('sessionCheckStatus').textContent = `自动状态刷新已开启：每 ${minutes} 分钟读取一次服务器状态，不会向 Apple 重复认证。`;
       sessionCheckTimer = setInterval(() => {
-        checkICloudSession({auto: true}).catch(err => log('自动检测异常：' + err.message));
+        refresh().catch(err => log('自动状态刷新异常：' + err.message));
       }, minutes * 60 * 1000);
       if (runNow) {
-        checkICloudSession({auto: true}).catch(err => log('自动检测异常：' + err.message));
+        refresh().catch(err => log('自动状态刷新异常：' + err.message));
       }
     }
 
     async function checkICloudSession(options = {}) {
       if (sessionCheckInFlight) return false;
+      const accountID = activeICloudSessionAccountID();
+      if (!accountID && !options.checkAll) {
+        if ($('sessionCheckStatus')) $('sessionCheckStatus').textContent = '请先选择要检测的账号。';
+        if ($('createSessionCheckStatus')) $('createSessionCheckStatus').textContent = '请先选择要检测的账号。';
+        return false;
+      }
       sessionCheckInFlight = true;
       const buttons = ['sessionCheckButton', 'createCheckSessionButton'].map(id => $(id)).filter(Boolean);
       buttons.forEach(button => { button.disabled = true; });
-      if ($('sessionCheckStatus')) $('sessionCheckStatus').textContent = '正在检测新接口和旧接口登录态...';
+      if ($('sessionCheckStatus')) $('sessionCheckStatus').textContent = '正在检测当前账号的新接口、旧接口和取码登录态...';
       if ($('createSessionCheckStatus')) $('createSessionCheckStatus').textContent = '正在检测...';
       try {
-        const data = await api('/api/icloud/session/check', {method:'POST', body:'{}'});
+        const data = await api('/api/icloud/session/check', {method:'POST', body: JSON.stringify({
+          account_id: options.checkAll ? '' : accountID
+        })});
         lastICloudSessions = data.sessions || (data.session && data.session.saved ? [data.session] : []);
         renderICloudSessions(lastICloudSessions);
         if ($('sessionCheckStatus')) $('sessionCheckStatus').textContent = data.message || '登录态检测完成';
