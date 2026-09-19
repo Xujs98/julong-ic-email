@@ -6494,6 +6494,9 @@ func TestMailWatcherPausesRejectedIMAPUntilCredentialsChange(t *testing.T) {
 	if groups := server.mailWatcherIMAPGroups(); len(groups) != 0 {
 		t.Fatalf("rejected credentials still scheduled: %+v", groups)
 	}
+	if groups := server.mailWatcherGroups(); len(groups) != 0 {
+		t.Fatalf("polling sync still scheduled rejected credentials: %+v", groups)
+	}
 
 	state.IMAPAppPassword = "replacement-app-specific-password"
 	state.IMAPAutoRetryBlocked = false
@@ -6507,6 +6510,9 @@ func TestMailWatcherPausesRejectedIMAPUntilCredentialsChange(t *testing.T) {
 	groups = server.mailWatcherIMAPGroups()
 	if len(groups) != 1 || groups[0].signature == oldSignature {
 		t.Fatalf("replacement credentials did not restart watcher: %+v", groups)
+	}
+	if groups := server.mailWatcherGroups(); len(groups) != 1 {
+		t.Fatalf("replacement credentials did not restore polling sync: %+v", groups)
 	}
 }
 

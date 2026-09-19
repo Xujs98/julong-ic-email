@@ -5865,9 +5865,18 @@ func (r imapSessionResolver) sessionForMailbox(mailbox Mailbox) (ICloudSession, 
 
 func (r imapSessionResolver) candidatesForMailbox(mailbox Mailbox) []imapSessionMatch {
 	if match, ok := r.byAccount[strings.TrimSpace(mailbox.AccountID)]; ok {
+		if !imapLoginStateAutoRetryEligible(match.state) {
+			return nil
+		}
 		return []imapSessionMatch{match}
 	}
-	return append([]imapSessionMatch(nil), r.all...)
+	eligible := make([]imapSessionMatch, 0, len(r.all))
+	for _, match := range r.all {
+		if imapLoginStateAutoRetryEligible(match.state) {
+			eligible = append(eligible, match)
+		}
+	}
+	return eligible
 }
 
 func imapStateKey(state LoginState) string {
