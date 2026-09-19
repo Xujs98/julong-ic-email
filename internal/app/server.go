@@ -4513,7 +4513,7 @@ func (s *Server) appleAccountKeepAliveSessions() []ICloudSession {
 
 func appleAccountKeepAliveEligible(session ICloudSession) bool {
 	state, ok := appleAccountLoginState(session)
-	return ok && strings.TrimSpace(state.APIKey) != ""
+	return ok && strings.TrimSpace(state.APIKey) != "" && state.KeepAliveAuthFailures < 2
 }
 
 func appleAccountKeepAliveRetryDelay(failures int) time.Duration {
@@ -4584,7 +4584,10 @@ func appleAccountKeepAliveFailureState(previous, next LoginState, failedAt time.
 	confirmingAuthFailure := authFailures > 0 && authFailures < 2
 	transientFailure := appleAccountKeepAliveTransientError(err)
 	next.LastCheckOK = transientFailure || (previous.LastCheckOK && recentlyHealthy && (!appleAccountKeepAliveAuthError(err) || confirmingAuthFailure))
-	if transientFailure || next.LastCheckOK {
+	if appleAccountKeepAliveAuthError(err) && authFailures >= 2 {
+		next.KeepAliveRetryAt = time.Time{}
+		next.LastStatusMessage = fmt.Sprintf("新接口登录态异常（连续认证失败 %d 次，已暂停自动保活）：%s", authFailures, err.Error())
+	} else if transientFailure || next.LastCheckOK {
 		next.LastStatusMessage = fmt.Sprintf("新接口保活恢复中（连续失败 %d 次，%s后重试）：%s", failures, appleAccountKeepAliveRetryText(retryDelay), err.Error())
 	} else {
 		next.LastStatusMessage = fmt.Sprintf("新接口登录态异常（连续失败 %d 次，%s后自动复核）：%s", failures, appleAccountKeepAliveRetryText(retryDelay), err.Error())
@@ -6423,10 +6426,12 @@ func publicSessionWithKeepAliveInterval(session *ICloudSession, keepAliveInterva
 	appleAccountState, _ := appleAccountLoginState(*session)
 	icloudIMAPState, _ := iCloudIMAPLoginState(*session)
 	appleAccountNextRefreshAt := time.Time{}
-	if !appleAccountState.KeepAliveRetryAt.IsZero() {
-		appleAccountNextRefreshAt = appleAccountState.KeepAliveRetryAt
-	} else if appleAccountKeepAliveEligible(*session) && !appleAccountState.LastCheckedAt.IsZero() {
-		appleAccountNextRefreshAt = appleAccountState.LastCheckedAt.Add(appleAccountKeepAliveIntervalForSession(*session, keepAliveInterval))
+	if appleAccountKeepAliveEligible(*session) {
+		if !appleAccountState.KeepAliveRetryAt.IsZero() {
+			appleAccountNextRefreshAt = appleAccountState.KeepAliveRetryAt
+		} else if !appleAccountState.LastCheckedAt.IsZero() {
+			appleAccountNextRefreshAt = appleAccountState.LastCheckedAt.Add(appleAccountKeepAliveIntervalForSession(*session, keepAliveInterval))
+		}
 	}
 	return publicICloudSession{
 		Saved:                         true,

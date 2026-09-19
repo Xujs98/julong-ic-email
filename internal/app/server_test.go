@@ -1656,8 +1656,14 @@ func TestAppleAccountKeepAliveFailureKeepsRecentHealthyStateDuringRecovery(t *te
 		t.Fatalf("first auth verification state = %+v", firstAuth)
 	}
 	secondAuth := appleAccountKeepAliveFailureState(firstAuth, firstAuth, now.Add(10*time.Second), errCode("apple_account_auth_suspect", "unauthorized", true))
-	if secondAuth.LastCheckOK || secondAuth.KeepAliveAuthFailures != 2 || !strings.Contains(secondAuth.LastStatusMessage, "登录态异常") {
+	if secondAuth.LastCheckOK || secondAuth.KeepAliveAuthFailures != 2 || !secondAuth.KeepAliveRetryAt.IsZero() || !strings.Contains(secondAuth.LastStatusMessage, "已暂停自动保活") {
 		t.Fatalf("confirmed auth failure state = %+v", secondAuth)
+	}
+	if appleAccountKeepAliveEligible(ICloudSession{LoginStates: []LoginState{secondAuth}}) {
+		t.Fatal("confirmed invalid Apple Account state remained eligible for automatic keepalive")
+	}
+	if got := publicSession(&ICloudSession{LoginStates: []LoginState{secondAuth}}); got.AppleAccountNextRefreshAt != "" {
+		t.Fatalf("paused Apple Account state exposed next retry time %q", got.AppleAccountNextRefreshAt)
 	}
 }
 
