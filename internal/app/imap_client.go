@@ -411,18 +411,70 @@ func dnsFallbackNetworks(network string) []string {
 }
 
 func CheckICloudIMAPLogin(ctx context.Context, email, appPassword string) error {
+	_, err := checkICloudIMAPLoginWithUsername(ctx, email, appPassword, "")
+	return err
+}
+
+func checkICloudIMAPLoginWithUsername(ctx context.Context, email, appPassword, username string) (string, error) {
+	return checkICloudIMAPLoginWithOpener(ctx, email, appPassword, username, openICloudIMAPSession)
+}
+
+func checkICloudIMAPLoginWithOpener(
+	ctx context.Context,
+	email, appPassword, username string,
+	opener func(context.Context, LoginState) (net.Conn, *bufio.Reader, error),
+) (string, error) {
 	email = strings.TrimSpace(email)
 	appPassword = strings.TrimSpace(appPassword)
 	if email == "" {
-		return errCode("imap_email_missing", "请输入 iCloud 邮箱账号", false)
+		return "", errCode("imap_email_missing", "请输入 iCloud 邮箱账号", false)
 	}
 	if appPassword == "" {
-		return errCode("imap_app_password_missing", "请输入 App 专用密码", false)
+		return "", errCode("imap_app_password_missing", "请输入 App 专用密码", false)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 
-	conn, reader, err := openICloudIMAPSession(ctx, LoginState{IMAPEmail: email, IMAPUsername: email, IMAPAppPassword: appPassword})
+	username = strings.TrimSpace(username)
+	if username == "" {
+		username = preferredICloudIMAPUsername(email)
+	}
+	candidates := []string{username}
+	if full := normalizeICloudIMAPEmail(email); full != "" && !strings.EqualFold(full, username) {
+		candidates = append(candidates, full)
+	}
+
+	var lastErr error
+	for index, candidate := range candidates {
+		err := checkICloudIMAPLoginUsername(ctx, email, appPassword, candidate, opener)
+		if err == nil {
+			return candidate, nil
+		}
+		lastErr = err
+		if index+1 == len(candidates) {
+			break
+		}
+		if !isCodedError(err, "imap_auth_rejected") && !isCodedError(err, "imap_auth_cooldown") {
+			return "", err
+		}
+	}
+
+	if len(candidates) > 1 && (isCodedError(lastErr, "imap_auth_rejected") || isCodedError(lastErr, "imap_auth_cooldown")) {
+		return "", errCode(
+			"imap_auth_rejected",
+			"Apple 同时拒绝邮箱账号名前缀和完整邮箱地址两种 IMAP 用户名；请确认这是该主 iCloud 邮箱所属 Apple 账号刚生成且未撤销的 App 专用密码。最后响应："+lastErr.Error(),
+			false,
+		)
+	}
+	return "", lastErr
+}
+
+func checkICloudIMAPLoginUsername(
+	ctx context.Context,
+	email, appPassword, username string,
+	opener func(context.Context, LoginState) (net.Conn, *bufio.Reader, error),
+) error {
+	conn, reader, err := opener(ctx, LoginState{IMAPEmail: email, IMAPUsername: username, IMAPAppPassword: appPassword})
 	if err != nil {
 		return err
 	}
@@ -858,7 +910,7 @@ func normalizeICloudIMAPState(state LoginState) (LoginState, error) {
 	}
 	state.IMAPEmail = email
 	username := strings.TrimSpace(state.IMAPUsername)
-	if username == "" || strings.EqualFold(username, email) {
+	if username == "" {
 		username = preferredICloudIMAPUsername(email)
 	}
 	state.IMAPUsername = username

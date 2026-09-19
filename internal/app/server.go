@@ -95,7 +95,7 @@ type Server struct {
 	syncCodeMailboxBatch           func(ctx context.Context, state LoginState, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (map[string][]ICloudSyncedMessage, error)
 	syncCodeMailboxBatchWithCursor func(ctx context.Context, state LoginState, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (iCloudIMAPSyncResult, error)
 	latestIMAPUID                  func(ctx context.Context, state LoginState) (string, error)
-	checkIMAPLogin                 func(ctx context.Context, email, appPassword string) error
+	checkIMAPLogin                 func(ctx context.Context, email, appPassword, username string) (string, error)
 	deletePrivacyMailbox           func(ctx context.Context, session ICloudSession, email string) (ICloudMailboxDeleteResult, error)
 	mailAliasDomains               func(ctx context.Context, account MailAccount) ([]string, error)
 	checkMailInbox                 func(ctx context.Context, account MailAccount) error
@@ -294,7 +294,7 @@ func NewServer(cfg Config, store *FileStore, logger *slog.Logger) http.Handler {
 	s.syncMailAliases = func(ctx context.Context, account MailAccount, mailboxes []Mailbox, after time.Time, keyword string, maxMessages int) (map[string][]ICloudSyncedMessage, string, error) {
 		return mailClient.SyncAliases(ctx, account, mailboxes, after, keyword, maxMessages)
 	}
-	s.checkIMAPLogin = CheckICloudIMAPLogin
+	s.checkIMAPLogin = checkICloudIMAPLoginWithUsername
 	s.routes()
 	return s
 }
@@ -1704,8 +1704,12 @@ func (s *Server) handleCheckICloudSession(w http.ResponseWriter, r *http.Request
 	client := NewICloudClient()
 	failed := 0
 	var lastErr error
+	imapChecker := func(ctx context.Context, email, appPassword string) error {
+		_, err := s.checkSavedIMAPLogin(ctx, email, appPassword, "")
+		return err
+	}
 	for _, session := range sessions {
-		checkedSession, ok, err := checkSavedLoginStatesWithIMAP(r.Context(), client, session, checkedAt, s.checkSavedIMAPLogin)
+		checkedSession, ok, err := checkSavedLoginStatesWithIMAP(r.Context(), client, session, checkedAt, imapChecker)
 		if !ok {
 			failed++
 			lastErr = err
@@ -1774,7 +1778,8 @@ func (s *Server) handleSaveICloudIMAPLogin(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := s.checkSavedIMAPLogin(r.Context(), email, appPassword); err != nil {
+	username, err := s.checkSavedIMAPLogin(r.Context(), email, appPassword, "")
+	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -1796,7 +1801,7 @@ func (s *Server) handleSaveICloudIMAPLogin(w http.ResponseWriter, r *http.Reques
 		Origin:            "imaps://" + defaultICloudIMAPHost,
 		SavedAt:           now,
 		IMAPEmail:         email,
-		IMAPUsername:      preferredICloudIMAPUsername(email),
+		IMAPUsername:      username,
 		IMAPHost:          defaultICloudIMAPHost,
 		IMAPPort:          defaultICloudIMAPPort,
 		IMAPAppPassword:   appPassword,
@@ -1826,7 +1831,9 @@ func (s *Server) handleSaveICloudIMAPLogin(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleCheckICloudIMAPLogin(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		AccountID string `json:"account_id"`
+		AccountID   string `json:"account_id"`
+		Email       string `json:"email"`
+		AppPassword string `json:"app_password"`
 	}
 	if r.ContentLength != 0 {
 		if err := decodeJSON(r, &payload); err != nil {
@@ -1837,7 +1844,38 @@ func (s *Server) handleCheckICloudIMAPLogin(w http.ResponseWriter, r *http.Reque
 		_ = r.Body.Close()
 	}
 	ownerID := requestOwnerID(r, s.store)
-	sessions := s.sessionsForOwner(ownerID, payload.AccountID)
+	accountID := strings.TrimSpace(payload.AccountID)
+	email := normalizeICloudIMAPEmail(payload.Email)
+	appPassword := strings.TrimSpace(payload.AppPassword)
+	if accountID != "" && !s.canAccessAccountID(r, accountID) {
+		writeError(w, http.StatusForbidden, errCode("account_forbidden", "无权操作该 Apple 账号", false))
+		return
+	}
+	if email != "" || appPassword != "" {
+		if email == "" {
+			writeError(w, http.StatusBadRequest, errCode("imap_email_missing", "请输入 iCloud 邮箱账号", false))
+			return
+		}
+		if appPassword == "" {
+			writeError(w, http.StatusBadRequest, errCode("imap_app_password_missing", "请输入 App 专用密码", false))
+			return
+		}
+		if _, err := s.checkSavedIMAPLogin(r.Context(), email, appPassword, ""); err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success":           true,
+			"message":           "输入的取码登录检测正常，尚未保存",
+			"checked_at":        formatTime(time.Now()),
+			"sessions":          s.publicSessionsForOwner(ownerID),
+			"checked_count":     1,
+			"failed_count":      0,
+			"credential_source": "input",
+		})
+		return
+	}
+	sessions := s.sessionsForOwner(ownerID, accountID)
 	if len(sessions) == 0 {
 		writeError(w, http.StatusBadRequest, errCode("imap_session_missing", "未保存取码登录，请先保存 iCloud 邮箱账号和 App 专用密码", true))
 		return
@@ -1853,13 +1891,15 @@ func (s *Server) handleCheckICloudIMAPLogin(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 		checks++
-		if err := s.checkSavedIMAPLogin(r.Context(), state.IMAPEmail, state.IMAPAppPassword); err != nil {
+		username, err := s.checkSavedIMAPLogin(r.Context(), state.IMAPEmail, state.IMAPAppPassword, state.IMAPUsername)
+		if err != nil {
 			failed++
 			lastErr = err
 			state.LastCheckedAt = checkedAt
 			state.LastCheckOK = false
 			state.LastStatusMessage = "取码登录异常：" + err.Error()
 		} else {
+			state.IMAPUsername = username
 			state.LastCheckedAt = checkedAt
 			state.LastCheckOK = true
 			state.LastStatusMessage = "取码登录正常"
@@ -1897,11 +1937,11 @@ func (s *Server) handleCheckICloudIMAPLogin(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func (s *Server) checkSavedIMAPLogin(ctx context.Context, email, appPassword string) error {
+func (s *Server) checkSavedIMAPLogin(ctx context.Context, email, appPassword, username string) (string, error) {
 	if s.checkIMAPLogin != nil {
-		return s.checkIMAPLogin(ctx, email, appPassword)
+		return s.checkIMAPLogin(ctx, email, appPassword, username)
 	}
-	return CheckICloudIMAPLogin(ctx, email, appPassword)
+	return checkICloudIMAPLoginWithUsername(ctx, email, appPassword, username)
 }
 
 func (s *Server) sessionForIMAPSave(ownerID, accountID, email string) (ICloudSession, error) {

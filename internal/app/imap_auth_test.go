@@ -220,7 +220,96 @@ func TestPreferredICloudIMAPUsernameUsesAppleDocumentedAccountName(t *testing.T)
 	}
 }
 
-func TestNormalizeICloudIMAPStateMigratesFullAppleUsername(t *testing.T) {
+func imapLoginTestOpener(t *testing.T, attempts *[]string, failures map[string]error) func(context.Context, LoginState) (net.Conn, *bufio.Reader, error) {
+	t.Helper()
+	return func(ctx context.Context, state LoginState) (net.Conn, *bufio.Reader, error) {
+		*attempts = append(*attempts, state.IMAPUsername)
+		if err := failures[state.IMAPUsername]; err != nil {
+			return nil, nil, err
+		}
+		client, server := net.Pipe()
+		go func() {
+			defer server.Close()
+			_ = server.SetDeadline(time.Now().Add(5 * time.Second))
+			reader := bufio.NewReader(server)
+			line, err := reader.ReadString('\n')
+			if err != nil || strings.TrimSpace(line) != "A002 SELECT INBOX" {
+				t.Errorf("unexpected SELECT command: %q err=%v", strings.TrimSpace(line), err)
+				return
+			}
+			_, _ = fmt.Fprint(server, "A002 OK selected\r\n")
+			line, err = reader.ReadString('\n')
+			if err != nil || strings.TrimSpace(line) != "A003 LOGOUT" {
+				t.Errorf("unexpected LOGOUT command: %q err=%v", strings.TrimSpace(line), err)
+				return
+			}
+			_, _ = fmt.Fprint(server, "A003 OK logout\r\n")
+		}()
+		return client, bufio.NewReader(client), nil
+	}
+}
+
+func TestCheckICloudIMAPLoginUsesLocalPartWithoutFallbackWhenAccepted(t *testing.T) {
+	var attempts []string
+	username, err := checkICloudIMAPLoginWithOpener(
+		context.Background(),
+		"user@icloud.com",
+		"new-secret",
+		"",
+		imapLoginTestOpener(t, &attempts, nil),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if username != "user" || len(attempts) != 1 || attempts[0] != "user" {
+		t.Fatalf("username/attempts = %q/%v", username, attempts)
+	}
+}
+
+func TestCheckICloudIMAPLoginFallsBackToFullAddressAfterAuthRejection(t *testing.T) {
+	var attempts []string
+	username, err := checkICloudIMAPLoginWithOpener(
+		context.Background(),
+		"user@icloud.com",
+		"new-secret",
+		"",
+		imapLoginTestOpener(t, &attempts, map[string]error{
+			"user": errCode("imap_auth_rejected", "local part rejected", false),
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if username != "user@icloud.com" || len(attempts) != 2 || attempts[0] != "user" || attempts[1] != "user@icloud.com" {
+		t.Fatalf("username/attempts = %q/%v", username, attempts)
+	}
+}
+
+func TestCheckICloudIMAPLoginStopsAfterBothUsernameFormsFail(t *testing.T) {
+	const password = "must-not-leak"
+	var attempts []string
+	_, err := checkICloudIMAPLoginWithOpener(
+		context.Background(),
+		"user@icloud.com",
+		password,
+		"",
+		imapLoginTestOpener(t, &attempts, map[string]error{
+			"user":            errCode("imap_auth_rejected", "local part rejected", false),
+			"user@icloud.com": errCode("imap_auth_rejected", "full address rejected", false),
+		}),
+	)
+	if !isCodedError(err, "imap_auth_rejected") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(attempts) != 2 || attempts[0] != "user" || attempts[1] != "user@icloud.com" {
+		t.Fatalf("attempts = %v", attempts)
+	}
+	if strings.Contains(err.Error(), password) {
+		t.Fatalf("error leaked password: %v", err)
+	}
+}
+
+func TestNormalizeICloudIMAPStatePreservesSuccessfulFullAppleUsername(t *testing.T) {
 	state, err := normalizeICloudIMAPState(LoginState{
 		IMAPEmail:       "User@iCloud.com",
 		IMAPUsername:    "user@icloud.com",
@@ -229,7 +318,7 @@ func TestNormalizeICloudIMAPStateMigratesFullAppleUsername(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.IMAPUsername != "user" {
-		t.Fatalf("username = %q, want local account name", state.IMAPUsername)
+	if state.IMAPUsername != "user@icloud.com" {
+		t.Fatalf("username = %q, want successful full address", state.IMAPUsername)
 	}
 }

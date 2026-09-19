@@ -4125,10 +4125,10 @@ func TestSaveICloudIMAPLoginStoresStateWithoutReturningPassword(t *testing.T) {
 	handler := NewServer(Config{}, store, discardLogger())
 	server := handler.(*Server)
 	var checkedEmail, checkedPassword string
-	server.checkIMAPLogin = func(ctx context.Context, email, appPassword string) error {
+	server.checkIMAPLogin = func(ctx context.Context, email, appPassword, username string) (string, error) {
 		checkedEmail = email
 		checkedPassword = appPassword
-		return nil
+		return preferredICloudIMAPUsername(email), nil
 	}
 	cookie, user := registerTestUser(t, handler, "imap-user", "imap123")
 
@@ -4165,15 +4165,42 @@ func TestSaveICloudIMAPLoginStoresStateWithoutReturningPassword(t *testing.T) {
 	}
 }
 
+func TestSaveICloudIMAPLoginPersistsUsernameThatActuallyAuthenticated(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	server.checkIMAPLogin = func(ctx context.Context, email, appPassword, username string) (string, error) {
+		return email, nil
+	}
+	cookie, user := registerTestUser(t, handler, "imap-full-username", "imap123")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/icloud/imap-login/save", strings.NewReader(`{"email":"full.user@icloud.com","app_password":"app-secret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save imap login status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	sessions := store.ICloudSessionsForOwner(user.ID)
+	if len(sessions) != 1 {
+		t.Fatalf("sessions len = %d, want 1", len(sessions))
+	}
+	state, ok := iCloudIMAPLoginState(sessions[0])
+	if !ok || state.IMAPUsername != "full.user@icloud.com" {
+		t.Fatalf("saved authenticated username = %q ok=%v", state.IMAPUsername, ok)
+	}
+}
+
 func TestSaveICloudIMAPLoginCanAttachICloudMailAliasToDifferentAppleID(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
 	server := handler.(*Server)
 	var checkedEmail, checkedPassword string
-	server.checkIMAPLogin = func(ctx context.Context, email, appPassword string) error {
+	server.checkIMAPLogin = func(ctx context.Context, email, appPassword, username string) (string, error) {
 		checkedEmail = email
 		checkedPassword = appPassword
-		return nil
+		return preferredICloudIMAPUsername(email), nil
 	}
 	cookie, user := registerTestUser(t, handler, "imap-alias-user", "imap123")
 
@@ -4256,8 +4283,8 @@ func TestSaveICloudIMAPLoginMatchesCreateAccountByEmailLocalPart(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
 	server := handler.(*Server)
-	server.checkIMAPLogin = func(ctx context.Context, email, appPassword string) error {
-		return nil
+	server.checkIMAPLogin = func(ctx context.Context, email, appPassword, username string) (string, error) {
+		return preferredICloudIMAPUsername(email), nil
 	}
 	cookie, user := registerTestUser(t, handler, "imap-localpart-user", "imap123")
 
@@ -4302,8 +4329,8 @@ func TestSaveICloudIMAPLoginMatchesAppleSecondaryEmailPrefix(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
 	server := handler.(*Server)
-	server.checkIMAPLogin = func(ctx context.Context, email, appPassword string) error {
-		return nil
+	server.checkIMAPLogin = func(ctx context.Context, email, appPassword, username string) (string, error) {
+		return preferredICloudIMAPUsername(email), nil
 	}
 	cookie, user := registerTestUser(t, handler, "imap-prefix-user", "imap123")
 
@@ -4365,8 +4392,8 @@ func TestSaveICloudIMAPLoginFailureDoesNotStorePassword(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewServer(Config{}, store, discardLogger())
 	server := handler.(*Server)
-	server.checkIMAPLogin = func(ctx context.Context, email, appPassword string) error {
-		return errCode("imap_login_failed", "IMAP 登录失败", false)
+	server.checkIMAPLogin = func(ctx context.Context, email, appPassword, username string) (string, error) {
+		return "", errCode("imap_login_failed", "IMAP 登录失败", false)
 	}
 	cookie, user := registerTestUser(t, handler, "imap-fail", "imap123")
 
@@ -4403,9 +4430,9 @@ func TestCheckICloudIMAPLoginSupportsCurrentAndAllAccounts(t *testing.T) {
 	}
 
 	var checkedEmails []string
-	server.checkIMAPLogin = func(ctx context.Context, email, appPassword string) error {
+	server.checkIMAPLogin = func(ctx context.Context, email, appPassword, username string) (string, error) {
 		checkedEmails = append(checkedEmails, email)
-		return nil
+		return username, nil
 	}
 	check := func(accountID string) int {
 		t.Helper()
@@ -4448,6 +4475,46 @@ func TestCheckICloudIMAPLoginSupportsCurrentAndAllAccounts(t *testing.T) {
 	}
 	if len(checkedEmails) != 2 || !got["first@icloud.com"] || !got["second@icloud.com"] {
 		t.Fatalf("all account checks = %v", checkedEmails)
+	}
+}
+
+func TestCheckICloudIMAPLoginUsesInputCredentialsWithoutSavingThem(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	cookie, user := registerTestUser(t, handler, "imap-input-check", "imap123")
+	if err := store.SaveICloudSessionForOwner(user.ID, testIMAPSession(user.ID, "", "input.check@icloud.com")); err != nil {
+		t.Fatal(err)
+	}
+	session := store.ICloudSessionsForOwner(user.ID)[0]
+	var checkedEmail, checkedPassword, checkedUsername string
+	server.checkIMAPLogin = func(ctx context.Context, email, appPassword, username string) (string, error) {
+		checkedEmail = email
+		checkedPassword = appPassword
+		checkedUsername = username
+		return preferredICloudIMAPUsername(email), nil
+	}
+
+	const newPassword = "new-app-secret"
+	payload := fmt.Sprintf(`{"account_id":%q,"email":"INPUT.CHECK@iCloud.com","app_password":%q}`, session.AccountID, newPassword)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/icloud/imap-login/check", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("check input imap login status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if checkedEmail != "input.check@icloud.com" || checkedPassword != newPassword || checkedUsername != "" {
+		t.Fatalf("checked input credentials = %q/%q/%q", checkedEmail, checkedPassword, checkedUsername)
+	}
+	if strings.Contains(rr.Body.String(), newPassword) {
+		t.Fatalf("response leaked app password: %s", rr.Body.String())
+	}
+	stored := store.ICloudSessionsForOwner(user.ID)
+	state, ok := iCloudIMAPLoginState(stored[0])
+	if !ok || state.IMAPAppPassword != "app-specific-password" || state.IMAPUsername != "input.check@icloud.com" {
+		t.Fatalf("input-only check changed saved credentials: %+v ok=%v", state, ok)
 	}
 }
 

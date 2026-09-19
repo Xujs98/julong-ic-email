@@ -6559,7 +6559,14 @@
     async function checkICloudIMAPLogin(checkAll = false) {
       const current = activeICloudSessionForBinding();
       const accountID = activeICloudSessionAccountID();
-      if (!checkAll && (imapIndependentMode || !current || !accountID || !iCloudIMAPLoginSaved(current))) {
+      const email = $('imapEmail').value.trim().toLowerCase();
+      const appPassword = $('imapAppPassword').value.trim();
+      const checkInput = !checkAll && appPassword !== '';
+      if (checkInput && !email) {
+        $('imapLoginStatus').textContent = '请输入 iCloud 邮箱账号';
+        return;
+      }
+      if (!checkInput && !checkAll && (imapIndependentMode || !current || !accountID || !iCloudIMAPLoginSaved(current))) {
         $('imapLoginStatus').textContent = '请先选择已保存取码登录的账号';
         return;
       }
@@ -6568,7 +6575,9 @@
       $('imapLoginStatus').textContent = checkAll ? '正在检测全部取码账号...' : '正在检测当前取码账号...';
       try {
         const data = await api('/api/icloud/imap-login/check', {method:'POST', body: JSON.stringify({
-          account_id: checkAll ? '' : accountID
+          account_id: checkAll ? '' : accountID,
+          email: checkInput ? email : '',
+          app_password: checkInput ? appPassword : ''
         })});
         if (data.sessions) renderICloudSessions(data.sessions);
         $('imapLoginStatus').textContent = data.message || '取码登录检测完成';
