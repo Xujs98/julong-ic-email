@@ -1694,7 +1694,25 @@ func (s *Server) handleCheckICloudSession(w http.ResponseWriter, r *http.Request
 		_ = r.Body.Close()
 	}
 	ownerID := requestOwnerID(r, s.store)
-	sessions := s.sessionsForOwner(ownerID, payload.AccountID)
+	accountID := strings.TrimSpace(payload.AccountID)
+	if accountID == "" {
+		publicSessions := s.publicSessionsForOwner(ownerID)
+		if len(publicSessions) == 0 {
+			writeError(w, http.StatusBadRequest, errCode("icloud_session_missing", "未保存 iCloud 登录态，请先保存登录态", true))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success":       true,
+			"checked_at":    formatTime(time.Now()),
+			"message":       "已刷新服务器记录的登录状态；未向 Apple 发起认证",
+			"session":       publicSessions[0],
+			"sessions":      publicSessions,
+			"checked_count": 0,
+			"failed_count":  0,
+		})
+		return
+	}
+	sessions := s.sessionsForOwner(ownerID, accountID)
 	if len(sessions) == 0 {
 		writeError(w, http.StatusBadRequest, errCode("icloud_session_missing", "未保存 iCloud 登录态，请先保存旧接口登录态", true))
 		return

@@ -2933,6 +2933,39 @@ func TestCheckSavedLoginStatesChecksAppleAccountState(t *testing.T) {
 	}
 }
 
+func TestEmptyAccountSessionCheckOnlyReadsStoredStatus(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewServer(Config{}, store, discardLogger())
+	server := handler.(*Server)
+	cookie, user := registerTestUser(t, handler, "status-only-user", "status123")
+	if err := store.SaveICloudSessionForOwner(user.ID, testIMAPSession(user.ID, "status-only-account", "status.only@icloud.com")); err != nil {
+		t.Fatal(err)
+	}
+	checks := 0
+	server.checkIMAPLogin = func(ctx context.Context, email, appPassword, username string) (string, error) {
+		checks++
+		return username, nil
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/icloud/session/check", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || checks != 0 || !strings.Contains(rr.Body.String(), `"checked_count":0`) || !strings.Contains(rr.Body.String(), "未向 Apple 发起认证") {
+		t.Fatalf("status-only check = %d checks=%d body=%s", rr.Code, checks, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/icloud/session/check", strings.NewReader(`{"account_id":"status-only-account"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || checks != 1 || !strings.Contains(rr.Body.String(), `"checked_count":1`) {
+		t.Fatalf("scoped active check = %d checks=%d body=%s", rr.Code, checks, rr.Body.String())
+	}
+}
+
 func TestCheckSavedLoginStatesKeepsRecentlyHealthyAppleAccountState(t *testing.T) {
 	called := false
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
