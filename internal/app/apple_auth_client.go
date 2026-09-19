@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +28,8 @@ const (
 	appleHashcashMaxAttempts        = 1 << 24
 )
 
+var appleAppSpecificPasswordPattern = regexp.MustCompile(`(?i)^[a-z]{4}(?:-[a-z]{4}){3}$`)
+
 const (
 	appleTwoFactorMethodTrustedDevice = "trusted_device"
 	appleTwoFactorMethodPhone         = "phone"
@@ -39,6 +42,20 @@ func normalizeAppleTwoFactorMethod(method string) string {
 	default:
 		return appleTwoFactorMethodTrustedDevice
 	}
+}
+
+func validateAppleAccountPasswordInput(password string) error {
+	trimmed := strings.TrimSpace(password)
+	if trimmed == "" {
+		return errCode("apple_credentials_missing", "缺少 Apple ID 或主密码", false)
+	}
+	if trimmed != password {
+		return errCode("apple_password_whitespace", "Apple ID 主密码首尾包含空格或换行，请清除后重试", false)
+	}
+	if appleAppSpecificPasswordPattern.MatchString(trimmed) {
+		return errCode("apple_app_password_unsupported", "旧接口和新接口必须使用 Apple ID 主密码，不能使用 App 专用密码；App 专用密码只用于下方取码登录", false)
+	}
+	return nil
 }
 
 type AppleAuthClient struct {
@@ -187,8 +204,11 @@ func (s *appleAuthPendingStore) cleanupLocked(now time.Time) {
 
 func (c *AppleAuthClient) StartLogin(ctx context.Context, appleID, password, defaultHost, clientID string, pendingStore *appleAuthPendingStore, twoFactorMethod string) (appleAuthStartResult, error) {
 	appleID = strings.ToLower(strings.TrimSpace(appleID))
-	if appleID == "" || strings.TrimSpace(password) == "" {
-		return appleAuthStartResult{}, errCode("apple_credentials_missing", "缺少 Apple ID 或密码", false)
+	if appleID == "" {
+		return appleAuthStartResult{}, errCode("apple_credentials_missing", "缺少 Apple ID 或主密码", false)
+	}
+	if err := validateAppleAccountPasswordInput(password); err != nil {
+		return appleAuthStartResult{}, err
 	}
 	method := normalizeAppleTwoFactorMethod(twoFactorMethod)
 	result, err := c.startLoginOnHost(ctx, appleID, password, defaultHost, clientID, pendingStore, method)
@@ -209,8 +229,11 @@ func (c *AppleAuthClient) StartLogin(ctx context.Context, appleID, password, def
 
 func (c *AppleAuthClient) StartAppleAccountManageLogin(ctx context.Context, appleID, password string, pendingStore *appleAuthPendingStore, twoFactorMethod string) (appleAuthStartResult, error) {
 	appleID = strings.ToLower(strings.TrimSpace(appleID))
-	if appleID == "" || strings.TrimSpace(password) == "" {
-		return appleAuthStartResult{}, errCode("apple_credentials_missing", "缺少 Apple ID 或密码", false)
+	if appleID == "" {
+		return appleAuthStartResult{}, errCode("apple_credentials_missing", "缺少 Apple ID 或主密码", false)
+	}
+	if err := validateAppleAccountPasswordInput(password); err != nil {
+		return appleAuthStartResult{}, err
 	}
 	method := normalizeAppleTwoFactorMethod(twoFactorMethod)
 	frameID, err := randomUUID()
@@ -609,7 +632,7 @@ func (c *AppleAuthClient) authSRP(ctx context.Context, session *appleAuthSession
 	}
 	status, _, err := c.doWithTransientRetry(ctx, session, http.MethodPost, session.Endpoints.Auth+"/signin/complete?isRememberMeEnabled=true", headers, completeBody, nil, true)
 	if status == http.StatusUnauthorized {
-		return false, errCode("apple_credentials_invalid", "Apple ID 或密码错误，请检查后重新协议登录", false)
+		return false, errCode("apple_credentials_invalid", "Apple 拒绝 Apple ID 主密码认证；旧接口和新接口不能使用 App 专用密码，请核对 Apple ID、主密码及账号安全状态后重试", false)
 	}
 	return status == http.StatusConflict, err
 }

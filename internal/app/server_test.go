@@ -194,6 +194,24 @@ func TestICloudIMAPTemplateSupportsMultipleAccounts(t *testing.T) {
 	}
 }
 
+func TestAppleLoginTemplateRequiresPrimaryPassword(t *testing.T) {
+	data, err := webFS.ReadFile("templates/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`<label>Apple ID 主密码<input id="protocolPassword"`,
+		`placeholder="不是 App 专用密码"`,
+		`旧接口登录失败：请输入 Apple ID 和主密码，不能使用 App 专用密码。`,
+		`新接口登录失败：请输入 Apple ID 和主密码，不能使用 App 专用密码。`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Apple login primary-password source missing %q", want)
+		}
+	}
+}
+
 func TestAppleAccountKeepAliveTemplateShowsAutomaticRetry(t *testing.T) {
 	data, err := webFS.ReadFile("templates/index.html")
 	if err != nil {
@@ -937,6 +955,8 @@ func TestAppleLoginErrorHTTPStatusSeparatesCredentialsFromGateway(t *testing.T) 
 	}{
 		{code: "apple_credentials_invalid", want: http.StatusBadRequest},
 		{code: "apple_credentials_missing", want: http.StatusBadRequest},
+		{code: "apple_password_whitespace", want: http.StatusBadRequest},
+		{code: "apple_app_password_unsupported", want: http.StatusBadRequest},
 		{code: "invalid_2fa_code", want: http.StatusBadRequest},
 		{code: "apple_login_pending_expired", want: http.StatusBadRequest},
 		{code: "apple_login_forbidden", want: http.StatusForbidden},
@@ -945,6 +965,59 @@ func TestAppleLoginErrorHTTPStatusSeparatesCredentialsFromGateway(t *testing.T) 
 		if got := appleLoginErrorHTTPStatus(errCode(tt.code, "test", false)); got != tt.want {
 			t.Fatalf("status for %s = %d, want %d", tt.code, got, tt.want)
 		}
+	}
+}
+
+func TestValidateAppleAccountPasswordInputRejectsIMAPPasswordAndPasteWhitespace(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		password string
+		code     string
+	}{
+		{name: "missing", password: "", code: "apple_credentials_missing"},
+		{name: "spaces", password: "  ", code: "apple_credentials_missing"},
+		{name: "paste whitespace", password: " MainPassword1\n", code: "apple_password_whitespace"},
+		{name: "app password lower", password: "abcd-efgh-ijkl-mnop", code: "apple_app_password_unsupported"},
+		{name: "app password upper", password: "ABCD-EFGH-IJKL-MNOP", code: "apple_app_password_unsupported"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateAppleAccountPasswordInput(tt.password)
+			if !isCodedError(err, tt.code) {
+				t.Fatalf("error = %v, want code %s", err, tt.code)
+			}
+		})
+	}
+	for _, password := range []string{"MainPassword1!", "valid-main-password-2"} {
+		if err := validateAppleAccountPasswordInput(password); err != nil {
+			t.Fatalf("valid main password %q rejected: %v", password, err)
+		}
+	}
+}
+
+func TestICloudProtocolLoginRejectsAppPasswordWithoutLoggingCredentials(t *testing.T) {
+	var logs bytes.Buffer
+	handler := NewServer(Config{}, newTestStore(t), slog.New(slog.NewTextHandler(&logs, nil)))
+	cookie, _ := registerTestUser(t, handler, "primary-password-user", "local-login-password")
+	const appleID = "primary.password@example.test"
+	const appPassword = "abcd-efgh-ijkl-mnop"
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/icloud/protocol-login/start", strings.NewReader(`{"apple_id":"`+appleID+`","password":"`+appPassword+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"apple_app_password_unsupported"`) {
+		t.Fatalf("protocol login response = %d %s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), appPassword) {
+		t.Fatalf("response leaked password: %s", rr.Body.String())
+	}
+	logText := logs.String()
+	if !strings.Contains(logText, "stage=icloud_protocol_start") || !strings.Contains(logText, "code=apple_app_password_unsupported") {
+		t.Fatalf("structured failure log missing stage or code: %s", logText)
+	}
+	if strings.Contains(logText, appleID) || strings.Contains(logText, appPassword) {
+		t.Fatalf("structured failure log leaked credentials: %s", logText)
 	}
 }
 

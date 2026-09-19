@@ -2501,7 +2501,7 @@
           <div class="notice" id="icloudSessionInfo">未完成创建登录。建议先点“新接口登录”或“旧接口登录”；收到 2FA 后提交对应验证码。取码登录会单独保存。</div>
           <div class="field-grid">
             <label>Apple ID<input id="protocolAppleId" autocomplete="username" placeholder="name@icloud.com"></label>
-            <label>密码<input id="protocolPassword" type="password" autocomplete="current-password" placeholder="Apple ID 密码"></label>
+            <label>Apple ID 主密码<input id="protocolPassword" type="password" autocomplete="current-password" placeholder="不是 App 专用密码"></label>
             <label class="full">2FA 验证码<input id="protocol2FA" inputmode="numeric" maxlength="6" placeholder="收到后输入 6 位验证码"></label>
             <label>新接口验证码方式
               <select id="appleAccount2FAMethod">
@@ -6614,8 +6614,8 @@
       const appleId = $('protocolAppleId').value.trim();
       const password = $('protocolPassword').value;
       if (!appleId || !password) {
-        setLoginFeedback('旧接口登录失败：请输入 Apple ID 和密码。');
-        showToast('请输入 Apple ID 和密码');
+        setLoginFeedback('旧接口登录失败：请输入 Apple ID 和主密码，不能使用 App 专用密码。');
+        showToast('请输入 Apple ID 主密码');
         return;
       }
       button.disabled = true;
@@ -6694,8 +6694,8 @@
       const appleId = $('protocolAppleId').value.trim();
       const password = $('protocolPassword').value;
       if (!appleId || !password) {
-        setLoginFeedback('新接口登录失败：请输入 Apple ID 和密码。');
-        showToast('请输入 Apple ID 和密码');
+        setLoginFeedback('新接口登录失败：请输入 Apple ID 和主密码，不能使用 App 专用密码。');
+        showToast('请输入 Apple ID 主密码');
         return;
       }
       button.disabled = true;

@@ -2170,6 +2170,7 @@ func (s *Server) handleStartICloudProtocolLogin(w http.ResponseWriter, r *http.R
 		payload.TwoFactorMethod,
 	)
 	if err != nil {
+		s.logAppleLoginFailure("icloud_protocol_start", err)
 		writeError(w, appleLoginErrorHTTPStatus(err), err)
 		return
 	}
@@ -2205,13 +2206,24 @@ func appleLoginErrorHTTPStatus(err error) int {
 	var coded codedError
 	if errors.As(err, &coded) {
 		switch coded.code {
-		case "apple_credentials_missing", "apple_credentials_invalid", "invalid_2fa_code", "apple_login_pending_expired":
+		case "apple_credentials_missing", "apple_credentials_invalid", "apple_password_whitespace", "apple_app_password_unsupported", "invalid_2fa_code", "apple_login_pending_expired":
 			return http.StatusBadRequest
 		case "apple_login_forbidden":
 			return http.StatusForbidden
 		}
 	}
 	return http.StatusBadGateway
+}
+
+func (s *Server) logAppleLoginFailure(stage string, err error) {
+	code := "uncoded"
+	retryable := false
+	var coded codedError
+	if errors.As(err, &coded) {
+		code = coded.code
+		retryable = coded.retryable
+	}
+	s.logger.Warn("apple login failed", "stage", stage, "code", code, "retryable", retryable)
 }
 
 func (s *Server) handleSubmitICloudProtocol2FA(w http.ResponseWriter, r *http.Request) {
@@ -2230,6 +2242,7 @@ func (s *Server) handleSubmitICloudProtocol2FA(w http.ResponseWriter, r *http.Re
 	}
 	session, err := NewAppleAuthClient().Submit2FA(r.Context(), pending, payload.Code)
 	if err != nil {
+		s.logAppleLoginFailure("icloud_protocol_2fa", err)
 		writeError(w, appleLoginErrorHTTPStatus(err), err)
 		return
 	}
@@ -2265,6 +2278,7 @@ func (s *Server) handleStartAppleAccountLogin(w http.ResponseWriter, r *http.Req
 		payload.TwoFactorMethod,
 	)
 	if err != nil {
+		s.logAppleLoginFailure("apple_account_start", err)
 		writeError(w, appleLoginErrorHTTPStatus(err), err)
 		return
 	}
@@ -2310,6 +2324,7 @@ func (s *Server) handleSubmitAppleAccount2FA(w http.ResponseWriter, r *http.Requ
 	}
 	session, err := NewAppleAuthClient().SubmitAppleAccountManage2FA(r.Context(), pending, payload.Code, payload.PhoneNumber)
 	if err != nil {
+		s.logAppleLoginFailure("apple_account_2fa", err)
 		writeError(w, appleLoginErrorHTTPStatus(err), err)
 		return
 	}
