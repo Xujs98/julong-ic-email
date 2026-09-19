@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -31,8 +32,15 @@ func imapAuthTestDial(t *testing.T, calls *atomic.Int32, response string) func(c
 			if err != nil {
 				return
 			}
-			if !strings.HasPrefix(line, "A001 LOGIN ") {
-				t.Error("expected LOGIN command")
+			fields := strings.Fields(line)
+			if len(fields) != 4 || fields[0] != "A001" || fields[1] != "AUTHENTICATE" || fields[2] != "PLAIN" {
+				t.Errorf("expected SASL PLAIN command, got %q", strings.TrimSpace(line))
+				return
+			}
+			plain, err := base64.StdEncoding.DecodeString(fields[3])
+			parts := strings.Split(string(plain), "\x00")
+			if err != nil || len(parts) != 3 || parts[0] != "" || parts[1] == "" || parts[2] == "" {
+				t.Errorf("invalid SASL PLAIN initial response")
 				return
 			}
 			_, _ = fmt.Fprintf(server, "A001 %s\r\n", response)
@@ -196,5 +204,32 @@ func TestIMAPTaggedOKRequiresSuccessStatus(t *testing.T) {
 	}
 	if !imapTaggedOK([]string{"* OK greeting", "A001 OK done"}, "A001") {
 		t.Fatal("rejected successful tagged response")
+	}
+}
+
+func TestPreferredICloudIMAPUsernameUsesAppleDocumentedAccountName(t *testing.T) {
+	for input, want := range map[string]string{
+		"xujs98@icloud.com":  "xujs98",
+		"legacy@me.com":      "legacy",
+		"classic@mac.com":    "classic",
+		"other@example.test": "other@example.test",
+	} {
+		if got := preferredICloudIMAPUsername(input); got != want {
+			t.Fatalf("preferredICloudIMAPUsername(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestNormalizeICloudIMAPStateMigratesFullAppleUsername(t *testing.T) {
+	state, err := normalizeICloudIMAPState(LoginState{
+		IMAPEmail:       "User@iCloud.com",
+		IMAPUsername:    "user@icloud.com",
+		IMAPAppPassword: "abcd-efgh-ijkl-mnop",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.IMAPUsername != "user" {
+		t.Fatalf("username = %q, want local account name", state.IMAPUsername)
 	}
 }

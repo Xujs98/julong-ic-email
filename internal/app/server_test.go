@@ -4160,7 +4160,7 @@ func TestSaveICloudIMAPLoginStoresStateWithoutReturningPassword(t *testing.T) {
 		t.Fatalf("sessions len = %d, want 1", len(sessions))
 	}
 	state, ok := iCloudIMAPLoginState(sessions[0])
-	if !ok || state.IMAPEmail != "imap.user@icloud.com" || state.IMAPAppPassword != "app-secret" || !state.LastCheckOK {
+	if !ok || state.IMAPEmail != "imap.user@icloud.com" || state.IMAPUsername != "imap.user" || state.IMAPAppPassword != "app-secret" || !state.LastCheckOK {
 		t.Fatalf("saved imap state = %+v ok=%v", state, ok)
 	}
 }

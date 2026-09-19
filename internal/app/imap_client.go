@@ -857,7 +857,11 @@ func normalizeICloudIMAPState(state LoginState) (LoginState, error) {
 		return LoginState{}, errCode("imap_app_password_missing", "取码登录缺少 App 专用密码，请重新保存取码登录", false)
 	}
 	state.IMAPEmail = email
-	state.IMAPUsername = firstNonEmpty(strings.TrimSpace(state.IMAPUsername), email)
+	username := strings.TrimSpace(state.IMAPUsername)
+	if username == "" || strings.EqualFold(username, email) {
+		username = preferredICloudIMAPUsername(email)
+	}
+	state.IMAPUsername = username
 	state.IMAPHost = firstNonEmpty(strings.TrimSpace(state.IMAPHost), defaultICloudIMAPHost)
 	if state.IMAPPort == 0 {
 		state.IMAPPort = defaultICloudIMAPPort

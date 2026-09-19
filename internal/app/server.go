@@ -1796,7 +1796,7 @@ func (s *Server) handleSaveICloudIMAPLogin(w http.ResponseWriter, r *http.Reques
 		Origin:            "imaps://" + defaultICloudIMAPHost,
 		SavedAt:           now,
 		IMAPEmail:         email,
-		IMAPUsername:      email,
+		IMAPUsername:      preferredICloudIMAPUsername(email),
 		IMAPHost:          defaultICloudIMAPHost,
 		IMAPPort:          defaultICloudIMAPPort,
 		IMAPAppPassword:   appPassword,

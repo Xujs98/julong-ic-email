@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -141,7 +142,8 @@ func (g *imapAuthGate) open(ctx context.Context, state LoginState, dial func(con
 	if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(greeting)), "* OK") {
 		return nil, nil, errCode("imap_greeting_failed", "iCloud IMAP 未就绪："+imapResponseSummary([]string{greeting}), true)
 	}
-	lines, loginErr := imapCommand(conn, reader, "A001", "LOGIN "+imapQuote(state.IMAPUsername)+" "+imapQuote(state.IMAPAppPassword))
+	plain := "\x00" + state.IMAPUsername + "\x00" + state.IMAPAppPassword
+	lines, loginErr := imapCommand(conn, reader, "A001", "AUTHENTICATE PLAIN "+base64.StdEncoding.EncodeToString([]byte(plain)))
 	if loginErr != nil {
 		return nil, nil, errCode("imap_login_failed", "iCloud IMAP 登录请求失败："+loginErr.Error(), true)
 	}
@@ -160,4 +162,18 @@ func (g *imapAuthGate) open(ctx context.Context, state LoginState, dial func(con
 	deadline, _ = ctx.Deadline()
 	_ = conn.SetDeadline(deadline)
 	return conn, reader, nil
+}
+
+func preferredICloudIMAPUsername(email string) string {
+	email = normalizeICloudIMAPEmail(email)
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
+		return email
+	}
+	switch strings.ToLower(parts[1]) {
+	case "icloud.com", "me.com", "mac.com":
+		return parts[0]
+	default:
+		return email
+	}
 }
